@@ -1,0 +1,19 @@
+* text=auto eol=lf
+
+# Windows-only script
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Unix script
+*.sh  text eol=lf
+
+# Images/binaries
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
