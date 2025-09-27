@@ -16,6 +16,7 @@ use App\Http\Controllers\LocationController;
 use App\Http\Controllers\RentalController;
 use App\Http\Controllers\AssignmentController;
 use App\Http\Controllers\BlockController;
+use App\Http\Controllers\OrganizationController;
 
 use App\Http\Controllers\VehicleDocumentController;
 
@@ -39,9 +40,7 @@ Route::middleware([
     | Vista principale con tiles e menu radiale.
     | Permessi: gestiti nella view via Gate (le tiles e il menu si auto-filtrano).
     */
-    Route::get('/dashboard', function () {
-        return view('dashboard');
-    })->name('dashboard');
+    Route::get('/dashboard', DashboardController::class)->name('dashboard');
 
 /*
 |--------------------------------------------------------------------------
@@ -354,6 +353,34 @@ Route::middleware([
     Route::delete('/vehicle-documents/{document}', [VehicleDocumentController::class, 'destroy'])
         ->name('vehicle-documents.destroy')
         ->middleware('permission:vehicle_documents.manage');
+
+/* --------------------------------------------------------------------------
+| AMMINISTRAZIONE (solo admin via Gate 'manage.renters')
+|-------------------------------------------------------------------------- */
+
+    /*
+     | Renter / Organizations (CRUD base – puoi ampliare dopo)
+     | Permesso: manage.renters (definito in AuthServiceProvider)
+     */
+    Route::resource('organizations', OrganizationController::class)
+        ->middleware('can:manage.renters')
+        ->names([
+            'index'   => 'organizations.index',
+            'create'  => 'organizations.create',
+            'store'   => 'organizations.store',
+            'show'    => 'organizations.show',
+            'edit'    => 'organizations.edit',
+            'update'  => 'organizations.update',
+            'destroy' => 'organizations.destroy',
+        ]);
+
+    /*
+     | Alias admin per "Assegna veicoli" (usa la index attuale ma è visibile/visitabile solo agli admin)
+     | Permesso: manage.renters (definito in AuthServiceProvider)
+     */
+    Route::get('/admin/assignments', [AssignmentController::class, 'index'])
+        ->name('admin.assignments')
+        ->middleware('can:manage.renters');
 
 /*
 |--------------------------------------------------------------------------

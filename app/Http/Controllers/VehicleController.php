@@ -16,10 +16,10 @@ class VehicleController extends Controller
         $this->authorizeResource(Vehicle::class, 'vehicle');
     }
 
-    public function index()      { return view('vehicles.index'); }
-    public function create()     { return view('vehicles.create'); }
-    public function show(Vehicle $vehicle)   { return view('vehicles.show', compact('vehicle')); }
-    public function edit(Vehicle $vehicle)   { return view('vehicles.edit', compact('vehicle')); }
+    public function index()      { return view('pages.vehicles.index'); }
+    public function create()     { return view('pages.vehicles.create'); }
+    public function show(Vehicle $vehicle)   { return view('pages.vehicles.show', compact('vehicle')); }
+    public function edit(Vehicle $vehicle)   { return view('pages.vehicles.edit', compact('vehicle')); }
 
     public function store(Request $request)
     {

@@ -35,13 +35,13 @@ class CustomerController extends Controller
     public function index()
     {
         // NB: qui potrai sostituire con Livewire o query reali
-        return view('customers.index');
+        return view('pages.customers.index');
     }
 
     /** Form creazione (Policy: create) */
     public function create()
     {
-        return view('customers.create');
+        return view('pages.customers.create');
     }
 
     /** Salvataggio nuovo cliente (Policy: create) */
@@ -54,13 +54,13 @@ class CustomerController extends Controller
     /** Dettaglio cliente (Policy: view) */
     public function show(Customer $customer)
     {
-        return view('customers.show', compact('customer'));
+        return view('pages.customers.show', compact('customer'));
     }
 
     /** Form modifica (Policy: update) */
     public function edit(Customer $customer)
     {
-        return view('customers.edit', compact('customer'));
+        return view('pages.customers.edit', compact('customer'));
     }
 
     /** Aggiornamento cliente (Policy: update) */

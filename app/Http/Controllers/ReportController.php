@@ -13,13 +13,13 @@ class ReportController extends Controller
     /** Indice/dispatcher dei report disponibili */
     public function index()
     {
-        return view('reports.index');
+        return view('pages.reports.index');
     }
 
     /** Facoltativo: show per un report specifico */
     public function show(string $slug)
     {
         // TODO: renderizza il report $slug
-        return view('reports.show', compact('slug'));
+        return view('pages.reports.show', compact('slug'));
     }
 }

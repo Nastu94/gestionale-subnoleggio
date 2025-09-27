@@ -16,10 +16,10 @@ class BlockController extends Controller
         $this->authorizeResource(VehicleBlock::class, 'block');
     }
 
-    public function index()   { return view('blocks.index'); }
-    public function create()  { return view('blocks.create'); }
-    public function show(VehicleBlock $block) { return view('blocks.show', compact('block')); }
-    public function edit(VehicleBlock $block) { return view('blocks.edit', compact('block')); }
+    public function index()   { return view('pages.blocks.index'); }
+    public function create()  { return view('pages.blocks.create'); }
+    public function show(VehicleBlock $block) { return view('pages.blocks.show', compact('block')); }
+    public function edit(VehicleBlock $block) { return view('pages.blocks.edit', compact('block')); }
 
     public function store(Request $request)
     {

@@ -16,10 +16,10 @@ class RentalController extends Controller
         $this->authorizeResource(Rental::class, 'rental');
     }
 
-    public function index()   { return view('rentals.index'); }
-    public function create()  { return view('rentals.create'); }
-    public function show(Rental $rental) { return view('rentals.show', compact('rental')); }
-    public function edit(Rental $rental) { return view('rentals.edit', compact('rental')); }
+    public function index()   { return view('pages.rentals.index'); }
+    public function create()  { return view('pages.rentals.create'); }
+    public function show(Rental $rental) { return view('pages.rentals.show', compact('rental')); }
+    public function edit(Rental $rental) { return view('pages.rentals.edit', compact('rental')); }
 
     public function store(Request $request)
     {

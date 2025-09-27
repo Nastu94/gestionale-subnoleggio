@@ -73,5 +73,11 @@ class AuthServiceProvider extends ServiceProvider
 
             return $user->hasRole('admin') ? true : null;
         });
+        
+        /**
+         * Abilità esplicita per area admin "Gestione renter"
+         * - Vero solo se l'utente ha ruolo 'admin'
+         */
+        Gate::define('manage.renters', fn($user) => $user->hasRole('admin'));
     }
 }

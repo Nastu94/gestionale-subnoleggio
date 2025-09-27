@@ -16,10 +16,10 @@ class AssignmentController extends Controller
         $this->authorizeResource(VehicleAssignment::class, 'assignment');
     }
 
-    public function index()   { return view('assignments.index'); }
-    public function create()  { return view('assignments.create'); }
-    public function show(VehicleAssignment $assignment) { return view('assignments.show', compact('assignment')); }
-    public function edit(VehicleAssignment $assignment) { return view('assignments.edit', compact('assignment')); }
+    public function index()   { return view('pages.assignments.index'); }
+    public function create()  { return view('pages.assignments.create'); }
+    public function show(VehicleAssignment $assignment) { return view('pages.assignments.show', compact('assignment')); }
+    public function edit(VehicleAssignment $assignment) { return view('pages.assignments.edit', compact('assignment')); }
 
     public function store(Request $request)
     {

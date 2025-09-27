@@ -16,10 +16,10 @@ class VehicleDocumentController extends Controller
         $this->authorizeResource(VehicleDocument::class, 'document');
     }
 
-    public function index()   { return view('vehicle-documents.index'); }
-    public function create()  { return view('vehicle-documents.create'); }
-    public function show(VehicleDocument $document) { return view('vehicle-documents.show', compact('document')); }
-    public function edit(VehicleDocument $document) { return view('vehicle-documents.edit', compact('document')); }
+    public function index()   { return view('pages.vehicle-documents.index'); }
+    public function create()  { return view('pages.vehicle-documents.create'); }
+    public function show(VehicleDocument $document) { return view('pages.vehicle-documents.show', compact('document')); }
+    public function edit(VehicleDocument $document) { return view('pages.vehicle-documents.edit', compact('document')); }
 
     public function store(Request $request)
     {

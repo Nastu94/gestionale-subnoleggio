@@ -13,12 +13,12 @@ class AuditController extends Controller
     /** Log eventi/azioni */
     public function index()
     {
-        return view('audit.index');
+        return view('pages.audit.index');
     }
 
     /** Facoltativo: dettaglio evento */
     public function show(string $eventId)
     {
-        return view('audit.show', compact('eventId'));
+        return view('pages.audit.show', compact('eventId'));
     }
 }

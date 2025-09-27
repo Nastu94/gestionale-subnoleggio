@@ -16,10 +16,10 @@ class LocationController extends Controller
         $this->authorizeResource(Location::class, 'location');
     }
 
-    public function index()      { return view('locations.index'); }
-    public function create()     { return view('locations.create'); }
-    public function show(Location $location) { return view('locations.show', compact('location')); }
-    public function edit(Location $location) { return view('locations.edit', compact('location')); }
+    public function index()      { return view('pages.locations.index'); }
+    public function create()     { return view('pages.locations.create'); }
+    public function show(Location $location) { return view('pages.locations.show', compact('location')); }
+    public function edit(Location $location) { return view('pages.locations.edit', compact('location')); }
 
     public function store(Request $request)
     {

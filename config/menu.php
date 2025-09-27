@@ -51,6 +51,13 @@ return [
                 ['label' => 'Audit',  'route' => 'audit.index',   'permission' => 'audit.view'],
             ],
         ],
+        [
+            'section' => 'Amministrazione',
+            'items'   => [
+                ['label'=>'Renter (Organizzazioni)', 'route'=>'organizations.index', 'permission'=>'manage.renters'],
+                ['label'=>'Assegna veicoli',         'route'=>'admin.assignments',   'permission'=>'manage.renters'],
+            ],
+        ],
         // NB: Se in futuro introdurrai permessi per utenti/ruoli, potrai riattivare una sezione ACL qui.
     ],
 
@@ -90,6 +97,14 @@ return [
             'items'   => [
                 ['label' => 'Report', 'route' => 'reports.index', 'icon' => 'fa-chart-pie',  'permission' => 'reports.view'],
                 ['label' => 'Audit',  'route' => 'audit.index',   'icon' => 'fa-clipboard',  'permission' => 'audit.view'],
+            ],
+        ],
+        [
+            'section' => 'Amministrazione',
+            'icon'    => 'fa-user-shield',
+            'items'   => [
+                ['label'=>'Renter (Organizzazioni)', 'route'=>'organizations.index', 'icon'=>'fa-building',       'permission'=>'manage.renters'],
+                ['label'=>'Assegna veicoli',         'route'=>'admin.assignments',   'icon'=>'fa-people-arrows', 'permission'=>'manage.renters'],
             ],
         ],
     ],
