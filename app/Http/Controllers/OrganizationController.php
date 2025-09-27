@@ -17,7 +17,37 @@ class OrganizationController extends Controller
     /** Elenco organizations (renter/admin) */
     public function index()
     {
-        return view('pages.organizations.index');
+        // 1) Boundaries del giorno corrente nell’app timezone (es. Europe/Rome)
+        $startOfToday = now()->startOfDay();
+        $endOfToday   = now()->endOfDay();
+
+        /**
+         * 2) Elenco renter con colonna calcolata "vehicles_count":
+         *    numero di veicoli che risultano assegnati OGGI (overlap sui datetime).
+         *
+         *    Overlap condition:
+         *      - va.start_at <= endOfToday
+         *      - AND (va.end_at IS NULL OR va.end_at >= startOfToday)
+         *
+         *    COUNT(DISTINCT) a prova di doppie assegnazioni “sporche”.
+         */
+        $organizations = Organization::query()
+            ->where('type', 'renter')
+            ->select('organizations.*')
+            ->selectSub(function ($q) use ($startOfToday, $endOfToday) {
+                $q->from('vehicle_assignments as va')
+                ->selectRaw('COUNT(DISTINCT va.vehicle_id)')
+                ->whereColumn('va.renter_org_id', 'organizations.id')
+                ->where('va.start_at', '<=', $endOfToday)
+                ->where(function ($q2) use ($startOfToday) {
+                    $q2->whereNull('va.end_at')
+                        ->orWhere('va.end_at', '>=', $startOfToday);
+                });
+            }, 'vehicles_count')
+            ->orderBy('id')
+            ->paginate(15);
+
+        return view('pages.organizations.index', compact('organizations'));
     }
 
     /** Form creazione */
