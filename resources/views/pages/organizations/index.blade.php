@@ -1,3 +1,5 @@
+{{-- resources/views/pages/organizations/index.blade.php --}}
+
 {{-- Organizations ▸ Index (Gestione Renter) --}}
 <x-app-layout>
     <x-slot name="header">
