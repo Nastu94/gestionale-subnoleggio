@@ -1,7 +1,7 @@
-{{-- Livewire: Organizations ▸ Tabella Renter --}}
+{{-- Livewire: Organizations ▸ Tabella Renter (una riga per ogni utente dell'organizzazione) --}}
 <div class="p-4">
 
-    {{-- Barra comandi: ricerca / filtro / perPage + pulsante Nuovo (apre modale via evento browser) --}}
+    {{-- Barra comandi --}}
     <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-4">
         <div class="flex flex-wrap items-end gap-3">
             {{-- Ricerca --}}
@@ -9,14 +9,14 @@
                 <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Cerca</label>
                 <input type="text"
                        wire:model.live.debounce.400ms="search"
-                       placeholder="Cerca per nome…"
+                       placeholder="Nome renter / nome utente / email"
                        class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
                               text-gray-900 dark:text-gray-100">
             </div>
 
-            {{-- Filtro per # veicoli --}}
+            {{-- Filtro veicoli --}}
             <div>
-                <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1 ">Veicoli assegnati (oggi)</label>
+                <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Veicoli assegnati (oggi)</label>
                 <select wire:model.live="countFilter"
                         class="px-6 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
                                text-gray-900 dark:text-gray-100">
@@ -26,7 +26,7 @@
                 </select>
             </div>
 
-            {{-- Per page --}}
+            {{-- Per pagina --}}
             <div>
                 <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Per pagina</label>
                 <select wire:model.live="perPage"
@@ -58,19 +58,22 @@
                 <tr class="uppercase tracking-wider text-left">
                     <th class="px-6 py-2 w-16">#</th>
 
-                    {{-- Nome: colonna sortabile --}}
+                    {{-- Renter: sortabile --}}
                     <th class="px-6 py-2">
                         <button type="button" wire:click="setSort('name')" class="inline-flex items-center gap-1">
-                            Nome
+                            Renter
                             @if($sort === 'name')
-                                <i class="fas fa-sort-{{ $dir === 'asc' ? 'alpha-down' : 'alpha-up' }}"></i>
+                                <i class="fas fa-sort-alpha-{{ $dir === 'asc' ? 'down' : 'up' }}"></i>
                             @else
                                 <i class="fas fa-sort text-gray-500"></i>
                             @endif
                         </button>
                     </th>
 
-                    {{-- Veicoli assegnati oggi: colonna sortabile --}}
+                    {{-- Utente collegato --}}
+                    <th class="px-6 py-2">Utente</th>
+
+                    {{-- Veicoli assegnati oggi: sortabile --}}
                     <th class="px-6 py-2">
                         <button type="button" wire:click="setSort('vehicles_count')" class="inline-flex items-center gap-1">
                             Veicoli assegnati
@@ -85,37 +88,59 @@
             </thead>
 
             <tbody class="bg-white dark:bg-gray-800" x-data="{ openId: null }">
-                @forelse($organizations as $org)
+                @forelse($organizations as $row)
                     @php
-                        $rowNum = $loop->iteration + ($organizations->currentPage()-1)*$organizations->perPage();
-                        $vehCnt = (int) $org->vehicles_count;
+                        // RowKey unico per riga (org + user); se user NULL, uso 0
+                        $rowKey   = $row->id . '-' . ($row->user_id ?? 0);
+                        $rowNum   = $loop->iteration + ($organizations->currentPage()-1)*$organizations->perPage();
+                        $vehCnt   = (int) $row->vehicles_count;
+                        $userName = $row->user_name ?: '—';
+                        $userMail = $row->user_email ?: '';
                     @endphp
 
-                    {{-- Riga principale (espandibile) --}}
+                    {{-- Riga principale (espandibile per riga) --}}
                     <tr
-                        @click="openId = openId === {{ $org->id }} ? null : {{ $org->id }}"
+                        @click="openId = openId === '{{ $rowKey }}' ? null : '{{ $rowKey }}'"
                         class="cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700"
-                        :class="openId === {{ $org->id }} ? 'bg-gray-200 dark:bg-gray-700' : ''"
+                        :class="openId === '{{ $rowKey }}' ? 'bg-gray-200 dark:bg-gray-700' : ''"
                     >
                         <td class="px-6 py-2 whitespace-nowrap">{{ $rowNum }}</td>
-                        <td class="px-6 py-2 whitespace-nowrap">{{ $org->name }}</td>
+                        <td class="px-6 py-2 whitespace-nowrap">{{ $row->name }}</td>
+                        <td class="px-6 py-2 whitespace-nowrap">
+                            @if($row->user_id)
+                                <div class="flex flex-col">
+                                    <span>{{ $userName }}</span>
+                                    <span class="text-[11px] text-gray-500 dark:text-gray-400">{{ $userMail }}</span>
+                                </div>
+                            @else
+                                <span class="text-gray-500">—</span>
+                            @endif
+                        </td>
                         <td class="px-6 py-2 whitespace-nowrap">{{ $vehCnt }}</td>
                     </tr>
 
-                    {{-- Riga azioni --}}
-                    <tr x-show="openId === {{ $org->id }}" x-cloak>
-                        <td colspan="3" class="px-6 py-2 bg-gray-200 dark:bg-gray-700">
+                    {{-- Riga azioni (per-utente/per-riga) --}}
+                    <tr x-show="openId === '{{ $rowKey }}'" x-cloak>
+                        <td colspan="4" class="px-6 py-2 bg-gray-200 dark:bg-gray-700">
                             <div class="flex flex-wrap gap-6 items-center text-xs">
-                                {{-- Modifica: apre il modale (evento browser) --}}
+
+                                {{-- Aggiungi utente (solo user su renter esistente) --}}
                                 <button type="button"
-                                        wire:click.stop="openEdit({{ $org->id }})"
+                                        wire:click.stop="openAddUser({{ $row->id }})"
+                                        class="inline-flex items-center hover:text-indigo-600">
+                                    <i class="fas fa-user-plus mr-1"></i> Aggiungi utente
+                                </button>
+
+                                {{-- Modifica: apre modale precompilando org + (eventuale) user di questa riga --}}
+                                <button type="button"
+                                        wire:click.stop="openEdit({{ $row->id }}, {{ $row->user_id ?? 'null' }})"
                                         class="inline-flex items-center hover:text-yellow-600">
                                     <i class="fas fa-pencil-alt mr-1"></i> Modifica
                                 </button>
 
-                                {{-- Elimina: lasciamo form REST classica alle tue rotte --}}
+                                {{-- Elimina RENTER (come da UX precedente) --}}
                                 <form
-                                    action="{{ route('organizations.destroy', $org) }}"
+                                    action="{{ route('organizations.destroy', $row->id) }}"
                                     method="POST"
                                     onsubmit="return confirm('Eliminare definitivamente questo renter?');"
                                 >
@@ -124,12 +149,13 @@
                                         <i class="fas fa-trash-alt mr-1"></i> Elimina
                                     </button>
                                 </form>
+
                             </div>
                         </td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="3" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                        <td colspan="4" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
                             Nessun renter trovato.
                         </td>
                     </tr>

@@ -3,52 +3,25 @@
 namespace App\Livewire\Organizations;
 
 use App\Models\Organization;
+use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Query\Builder as BaseBuilder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
-use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithPagination;
 
-/**
- * Livewire: Tabella Renter (Organizations type='renter')
- *
- * - Ricerca per nome
- * - Filtro per numero veicoli assegnati OGGI (tutti, zero, >0)
- * - Ordinamento per nome o vehicles_count
- * - Paginazione
- * - Pulsanti "Modifica" / "Elimina" nella riga espansa
- *
- * Nota: NON esegue create/update/delete; apre soltanto il modale
- * tramite eventi browser. Il salvataggio resterà ai controller HTTP.
- */
 class Table extends Component
 {
     use WithPagination;
 
-    /** Ricerca fulltext "povera" sul nome */
     public string $search = '';
+    public string $sort = 'name';     // 'name' | 'vehicles_count'
+    public string $dir  = 'asc';
+    public int    $perPage = 15;
+    public string $countFilter = 'all'; // 'all' | 'zero' | 'gt0'
 
-    /** Campo di ordinamento: 'name' | 'vehicles_count' */
-    public string $sort = 'name';
-
-    /** Direzione di ordinamento: 'asc' | 'desc' */
-    public string $dir = 'asc';
-
-    /** Elementi per pagina */
-    public int $perPage = 15;
-
-    /**
-     * Filtro sul conteggio veicoli assegnati OGGI:
-     * - 'all' (tutti) | 'zero' (nessun veicolo) | 'gt0' (almeno uno)
-     */
-    public string $countFilter = 'all';
-
-    /**
-     * Query string “pulita”: mantiene lo stato della tabella tra refresh/navigazione.
-     */
     protected array $queryString = [
         'search'      => ['except' => ''],
         'sort'        => ['except' => 'name'],
@@ -58,16 +31,10 @@ class Table extends Component
         'page'        => ['except' => 1],
     ];
 
-    /** Reset paginazione quando cambiano questi filtri */
-    public function updatedSearch(): void { $this->resetPage(); }
-    public function updatedPerPage(): void { $this->resetPage(); }
+    public function updatedSearch(): void      { $this->resetPage(); }
+    public function updatedPerPage(): void     { $this->resetPage(); }
     public function updatedCountFilter(): void { $this->resetPage(); }
 
-    /**
-     * Sicurezza: solo admin devono poter usare questo componente.
-     * La pagina è già protetta dal Gate 'manage.renters', ma qui
-     * mettiamo un guard addizionale a prova di mount diretto.
-     */
     public function mount(): void
     {
         if (! Gate::allows('manage.renters')) {
@@ -75,9 +42,7 @@ class Table extends Component
         }
     }
 
-    /**
-     * Imposta l’ordinamento. Se clicco di nuovo sullo stesso campo, inverte la direzione.
-     */
+    /** Ordina per campo, invertendo direzione se ricliccato. */
     public function setSort(string $field): void
     {
         if (! in_array($field, ['name', 'vehicles_count'], true)) {
@@ -92,42 +57,62 @@ class Table extends Component
         $this->resetPage();
     }
 
-    /**
-     * Apre il modale “nuovo renter” (il modale è gestito da Alpine nella pagina).
-     */
+    /** Apre modale di creazione (evento browser intercettato da Alpine). */
     public function openCreate(): void
     {
-        // Livewire v3: evento verso il browser (catturato da Alpine in pages/organizations/index.blade.php)
         $this->dispatch('open-org-create');
     }
 
     /**
-     * Apre il modale in modalità edit caricando i dati del renter.
+     * Apre il modale in modalità "crea SOLO utente per renter esistente".
      */
-    public function openEdit(int $organizationId): void
+    public function openAddUser(int $organizationId): void
     {
-        $org = Organization::query()
+        $org = \App\Models\Organization::query()
             ->where('type', 'renter')
             ->findOrFail($organizationId);
 
-        $this->dispatch('open-org-edit', org: [
+        // Nessun utente precompilato: il modale saprà che deve creare un nuovo user
+        $this->dispatch('open-org-add-user', org: [
             'id'   => $org->id,
             'name' => $org->name,
         ]);
     }
 
     /**
-     * Genera il paginator con tutte le feature (ricerca, filtro, sort).
-     * Calcola vehicles_count con una LEFT JOIN su subquery aggregata
-     * che conta i veicoli assegnati OGGI (intervallo che interseca il giorno corrente).
+     * Apre modale di modifica.
+     * - Se $userId è fornito, carica quell'utente; altrimenti prende il primo dell'org.
+     */
+    public function openEdit(int $organizationId, ?int $userId = null): void
+    {
+        $org = Organization::query()
+            ->where('type', 'renter')
+            ->findOrFail($organizationId);
+
+        $user = User::query()
+            ->where('organization_id', $org->id)
+            ->when($userId, fn($q) => $q->whereKey($userId))
+            ->orderBy('id')
+            ->first();
+
+        $this->dispatch('open-org-edit',
+            org: ['id' => $org->id, 'name' => $org->name],
+            user: $user ? ['id'=>$user->id, 'name'=>$user->name, 'email'=>$user->email] : null
+        );
+    }
+
+    /**
+     * Costruisce il paginator:
+     *  - LEFT JOIN su subquery di conteggio veicoli assegnati OGGI (overlap)
+     *  - LEFT JOIN su users per avere una riga per ogni utente dell'organizzazione
+     *  - Ricerca su nome org, nome utente, mail
      */
     private function paginateOrganizations(): LengthAwarePaginator
     {
-        // Boundaries del giorno corrente nel timezone app
         $startOfToday = Carbon::now()->startOfDay();
         $endOfToday   = Carbon::now()->endOfDay();
 
-        // Subquery: conteggio veicoli assegnati oggi per org
+        // Subquery: veicoli assegnati OGGI (overlap)
         $assignTodaySub = DB::table('vehicle_assignments as va')
             ->selectRaw('va.renter_org_id as org_id, COUNT(DISTINCT va.vehicle_id) as cnt')
             ->where('va.start_at', '<=', $endOfToday)
@@ -137,33 +122,52 @@ class Table extends Component
             })
             ->groupBy('va.renter_org_id');
 
-        // Query principale: organizations renter + join subquery
+        // Query principale: una riga per (organization x user) – le org senza utenti compaiono comunque (user_* = NULL)
         $q = Organization::query()
             ->from('organizations')
             ->where('organizations.type', 'renter')
             ->leftJoinSub($assignTodaySub, 'ac', function ($join) {
                 $join->on('ac.org_id', '=', 'organizations.id');
             })
+            ->leftJoin('users', 'users.organization_id', '=', 'organizations.id')
             ->select([
                 'organizations.*',
                 DB::raw('COALESCE(ac.cnt, 0) as vehicles_count'),
+                'users.id   as user_id',
+                'users.name as user_name',
+                'users.email as user_email',
             ])
             ->when($this->search !== '', function ($q) {
-                $s = '%' . str_replace(['%', '_'], ['\%', '\_'], $this->search) . '%';
-                $q->where('organizations.name', 'like', $s);
+                /**
+                 * Costruisci il pattern LIKE:
+                 * - trim e lowercase (coerente con LOWER(...) lato SQL)
+                 * - '*' diventa '%' (wildcard amichevole)
+                 * - spazi → '%' per consentire ricerche multi-parola "staccate"
+                 * - NON si escapa '%' o '_' per permettere all'utente wildcard manuali
+                 * - incapsula con %...% per match "contiene"
+                 */
+                $term = mb_strtolower(trim($this->search), 'UTF-8');
+                $term = str_replace('*', '%', $term);
+                $term = preg_replace('/\s+/', '%', $term);
+                $like = "%{$term}%";
+
+                // Ricerca su nome renter, nome utente, email (in lowercase per coerenza)
+                $q->where(function ($w) use ($like) {
+                    $w->whereRaw('LOWER(organizations.name) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(users.name) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(users.email) LIKE ?', [$like]);
+                });
             });
 
-        // Filtro per numero veicoli (usa direttamente l’alias della join)
+        // Filtro per numero veicoli assegnati oggi
         $q->when($this->countFilter === 'zero', fn($q) => $q->whereRaw('COALESCE(ac.cnt,0) = 0'))
           ->when($this->countFilter === 'gt0',  fn($q) => $q->whereRaw('COALESCE(ac.cnt,0) > 0'));
 
-        // Ordinamento: gestisci alias 'vehicles_count', altrimenti ordina per colonna reale
+        // Ordinamento
         if ($this->sort === 'vehicles_count') {
-            $q->orderBy(DB::raw('vehicles_count'), $this->dir);
+            $q->orderBy(DB::raw('vehicles_count'), $this->dir)->orderBy('organizations.name'); // tie-breaker
         } else {
-            // sicurezza: il default è 'name'; qualora venga altro valore, fallback
-            $column = $this->sort === 'name' ? 'organizations.name' : 'organizations.name';
-            $q->orderBy($column, $this->dir);
+            $q->orderBy('organizations.name', $this->dir)->orderBy('users.name');
         }
 
         return $q->paginate($this->perPage);
@@ -172,9 +176,10 @@ class Table extends Component
     public function render()
     {
         return view('livewire.organizations.table', [
+            // Mantengo il nome 'organizations' per compatibilità con la Blade
             'organizations' => $this->paginateOrganizations(),
-            'sort'  => $this->sort,
-            'dir'   => $this->dir,
+            'sort' => $this->sort,
+            'dir'  => $this->dir,
         ]);
     }
 }

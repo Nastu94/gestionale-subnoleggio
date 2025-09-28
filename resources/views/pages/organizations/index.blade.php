@@ -31,28 +31,44 @@
 
     {{-- Stato Alpine per il modale; riceve eventi dal componente Livewire --}}
     <div class="py-6"
-         x-data="{
-            showModal: false,
-            mode: 'create',            // 'create' | 'edit'
-            form: { id:null, name:'' },
-            errors: {},
+        x-data="{
+            showModal:false, mode:'create',
+            // id = organization_id; se presente in 'create' ⇒ significa 'aggiungi utente al renter esistente'
+            form:{ id:null, name:'', user_id:null, user_name:'', user_email:'', user_password:'', user_password_confirmation:'' },
 
             openCreate(){
-                this.mode = 'create';
-                this.form = { id:null, name:'' };
-                this.errors = {};
+                this.mode='create';
+                this.form={ id:null, name:'', user_id:null, user_name:'', user_email:'', user_password:'', user_password_confirmation:'' };
+                this.showModal=true;
+            },
+            openEdit(org, user){
+                this.mode='edit';
+                this.form.id   = org.id;
+                this.form.name = org.name;
+                this.form.user_id    = user?.id ?? null;
+                this.form.user_name  = user?.name ?? '';
+                this.form.user_email = user?.email ?? '';
+                this.form.user_password = '';
+                this.form.user_password_confirmation = '';
+                this.showModal=true;
+            },
+            // nuovo: crea SOLO utente su renter esistente
+            openAddUser(org){
+                this.mode='create';
+                this.form.id   = org.id;     // id del renter esistente
+                this.form.name = org.name;   // solo display
+                this.form.user_id = null;
+                this.form.user_name = '';
+                this.form.user_email = '';
+                this.form.user_password = '';
+                this.form.user_password_confirmation = '';
                 this.showModal = true;
             },
-            openEdit(org){
-                this.mode = 'edit';
-                this.form = { id: org.id, name: org.name };
-                this.errors = {};
-                this.showModal = true;
-            },
-         }"
-         @open-org-create.window="openCreate()"
-         @open-org-edit.window="openEdit($event.detail.org)"
-         @keydown.escape.window="showModal=false">
+        }"
+        @open-org-create.window="openCreate()"
+        @open-org-edit.window="openEdit($event.detail.org, $event.detail.user)"
+        @open-org-add-user.window="openAddUser($event.detail.org)"
+        @keydown.escape.window="showModal=false">
 
         <div class="bg-white dark:bg-gray-800 shadow sm:rounded-lg max-w-7xl mx-auto sm:px-6 lg:px-8">
 
