@@ -25,8 +25,8 @@
             {{-- Al (facoltativo) --}}
             <div>
                 <label class="block text-sm font-medium mb-1">Al (facoltativo)</label>
-                <input type="datetime-local" class="w-full border rounded p-2" wire:model.live="dateTo">
-                @error('dateTo') <p class="text-red-600 text-sm mt-1">{{ $message }}</p> @enderror
+                <input type="datetime-local" class="w-full border rounded p-2">
+                @error('dateTo') <p class="text-red-600 text-sm mt-1">{{ $message }}</p> @enderror  
             </div>
 
             {{-- Ricerca libera --}}
@@ -180,6 +180,7 @@
                                     <th class="px-3 py-2">Veicolo</th>
                                     <th class="px-3 py-2">Periodo</th>
                                     <th class="px-3 py-2">Stato</th>
+                                    <th class="px-3 py-2">Azioni</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y">
@@ -207,6 +208,16 @@
                                                 };
                                             @endphp
                                             <span class="text-xs px-2 py-1 rounded {{ $badge }}">{{ $a->status }}</span>
+                                        </td>
+                                        <td class="px-3 py-2">
+                                            {{-- Mostra "Rimuovi" se l'utente ha permesso delete e lo stato è gestibile --}}
+                                            @if(in_array($a->status, ['scheduled','active','revoked','ended']))
+                                                <button type="button"
+                                                        class="text-red-700 hover:underline"
+                                                        x-on:click.prevent="confirm('Confermi la rimozione di questa assegnazione?') && $wire.deleteAssignment({{ $a->id }})">
+                                                    Rimuovi
+                                                </button>
+                                            @endif
                                         </td>
                                     </tr>
                                 @empty

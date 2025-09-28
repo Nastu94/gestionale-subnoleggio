@@ -12,6 +12,7 @@ use App\Models\{
     Vehicle,
     VehicleAssignment,
     VehicleBlock,
+    VehicleState,
     Organization
 };
 
@@ -62,7 +63,6 @@ class VehicleAssigner extends Component
     {
         $now = Carbon::now();
         $this->dateFrom = $now->format('Y-m-d\TH:i');
-        $this->dateTo   = $now->copy()->addDays(30)->format('Y-m-d\TH:i');
     }
 
     /** Regole di validazione (Laravel 12) */
@@ -93,18 +93,40 @@ class VehicleAssigner extends Component
 
         $q = Vehicle::query()
             ->with(['adminOrganization'])
-            ->when($this->filters['fuel_type'],      fn($qq, $v) => $qq->where('fuel_type', $v))
-            ->when($this->filters['transmission'],   fn($qq, $v) => $qq->where('transmission', $v))
-            ->when($this->filters['segment'],        fn($qq, $v) => $qq->where('segment', $v))
-            ->when($this->filters['seats'],          fn($qq, $v) => $qq->where('seats', $v))
+
+            // Filtri testuali: passiamo da '=' a LIKE, normalizzando l'input
+            ->when($this->filters['fuel_type'], function ($qq, $v) {
+                /** Esempi che matchano:
+                 *  'die*' → diesel; 'die' → %die%; 'die el' → %die%el%
+                 */
+                $qq->whereRaw('LOWER(fuel_type) LIKE ?', [$this->normalizeLike($v)]);
+            })
+            ->when($this->filters['transmission'], function ($qq, $v) {
+                /** Esempi che matchano:
+                 *  'man%' → manuale; 'man' → %man%; 'man auto' → %man%auto%
+                 */
+                $qq->whereRaw('LOWER(transmission) LIKE ?', [$this->normalizeLike($v)]);
+            })
+            ->when($this->filters['segment'], function ($qq, $v) {
+                $qq->whereRaw('LOWER(segment) LIKE ?', [$this->normalizeLike($v)]);
+            })
+
+            // Filtri numerici: qui resta '=' (se servisse range, lo estendiamo dopo)
+            ->when($this->filters['seats'], fn ($qq, $v) => $qq->where('seats', $v))
+
             ->where('is_active', true)
-            ->when(strlen(trim($this->q)) > 0, function ($qq) use ($like) {
+
+            // Ricerca libera: estendiamo anche a fuel_type & transmission
+            ->when(strlen(trim($this->q)) > 0, function ($qq) {
+                $like = $this->normalizeLike($this->q);
                 $qq->where(function ($w) use ($like) {
-                    $w->whereRaw('LOWER(plate) LIKE ?', [$like])
-                      ->orWhereRaw('LOWER(make) LIKE ?',  [$like])
-                      ->orWhereRaw('LOWER(model) LIKE ?', [$like])
-                      ->orWhereRaw('LOWER(color) LIKE ?', [$like])
-                      ->orWhereRaw('LOWER(segment) LIKE ?', [$like]);
+                    $w->whereRaw('LOWER(plate) LIKE ?',       [$like])
+                    ->orWhereRaw('LOWER(make) LIKE ?',      [$like])
+                    ->orWhereRaw('LOWER(model) LIKE ?',     [$like])
+                    ->orWhereRaw('LOWER(color) LIKE ?',     [$like])
+                    ->orWhereRaw('LOWER(segment) LIKE ?',   [$like])
+                    ->orWhereRaw('LOWER(fuel_type) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(transmission) LIKE ?', [$like]);
                 });
             });
 
@@ -211,7 +233,7 @@ class VehicleAssigner extends Component
             ->exists();
     }
 
-        /**
+    /**
      * Restituisce gli ID dei veicoli della pagina corrente.
      * Usiamo il Paginator → collection corrente per evitare N+1.
      */
@@ -284,6 +306,50 @@ class VehicleAssigner extends Component
         }
     }
 
+    /**
+     * Registra un log in vehicle_states in base all'assegnazione creata.
+     * - Se l'assegnazione è futura (scheduled): crea un record 'assigned'
+     *   con started_at = start_at e ended_at = end_at (non è lo stato corrente).
+     * - Se è attiva (active): chiude l'eventuale stato aperto del veicolo
+     *   e crea il nuovo stato 'assigned' con started_at = start_at (o now se preferisci).
+     */
+    protected function logStateForAssignment(VehicleAssignment $va): void
+    {
+        // Per sicurezza: lock sull'insieme degli stati del veicolo
+        // (siamo già in transazione quando chiamata da assignSelected)
+        $now = now();
+
+        if ($va->start_at->isFuture()) {
+            // Caso SCHEDULED: non tocchiamo lo stato corrente, logghiamo l'evento futuro
+            VehicleState::create([
+                'vehicle_id' => $va->vehicle_id,
+                'state'      => 'assigned',
+                'started_at' => $va->start_at,
+                'ended_at'   => $va->end_at, // può essere null (assegnazione aperta futura)
+                'reason'     => 'assignment#'.$va->id.' scheduled to org '.$va->renter_org_id,
+                'created_by' => Auth::id(),
+            ]);
+            return;
+        }
+
+        // Caso ACTIVE: chiudiamo lo stato corrente (se esiste) alla data di inizio assegnazione
+        VehicleState::query()
+            ->where('vehicle_id', $va->vehicle_id)
+            ->whereNull('ended_at')
+            ->lockForUpdate()
+            ->update(['ended_at' => $va->start_at]);
+
+        // Apriamo lo stato "assigned" valido da start_at → end_at (null = corrente)
+        VehicleState::create([
+            'vehicle_id' => $va->vehicle_id,
+            'state'      => 'assigned',
+            'started_at' => $va->start_at,
+            'ended_at'   => $va->end_at, // se null, diventa lo stato corrente
+            'reason'     => 'assignment#'.$va->id.' to org '.$va->renter_org_id,
+            'created_by' => Auth::id(),
+        ]);
+    }
+
     /** Crea le assegnazioni per i veicoli selezionati (una per veicolo) */
     public function assignSelected(): void
     {
@@ -337,6 +403,8 @@ class VehicleAssigner extends Component
                     'created_by'   => Auth::id(),
                 ]);
 
+                // 🔎 Log stato veicolo
+                $this->logStateForAssignment($va);
                 $created++;
             }
         });
@@ -351,6 +419,82 @@ class VehicleAssigner extends Component
         $this->resetPage();
     }
 
+    /**
+     * Rimuove un'affidamento.
+     * - scheduled: elimina l'assegnazione e rimuove il log "assigned" programmato
+     * - active   : imposta status=revoked + end_at=now, chiude stato 'assigned' corrente e apre 'available'
+     * - ended/revoked: elimina (lasciando il log storico intatto)
+     */
+    public function deleteAssignment(int $assignmentId): void
+    {
+        $va = VehicleAssignment::query()->findOrFail($assignmentId);
+        $this->authorize('delete', $va);
+
+        DB::transaction(function () use ($va) {
+            $now = now();
+
+            if ($va->status === 'scheduled') {
+                // Elimina eventuale log programmato che corrisponde esattamente a questa assegnazione
+                VehicleState::query()
+                    ->where('vehicle_id', $va->vehicle_id)
+                    ->where('state', 'assigned')
+                    ->where('started_at', $va->start_at)
+                    ->when($va->end_at, fn($q) => $q->where('ended_at', $va->end_at), fn($q) => $q->whereNull('ended_at'))
+                    ->delete();
+
+                $va->delete();
+                return;
+            }
+
+            if ($va->status === 'active') {
+                // Chiudi lo stato 'assigned' corrente
+                VehicleState::query()
+                    ->where('vehicle_id', $va->vehicle_id)
+                    ->where('state', 'assigned')
+                    ->whereNull('ended_at')
+                    ->lockForUpdate()
+                    ->update(['ended_at' => $now, 'reason' => DB::raw("CONCAT(COALESCE(reason,''),' | revoked#{$va->id}')")]);
+
+                // Apre lo stato 'available' da ora
+                VehicleState::create([
+                    'vehicle_id' => $va->vehicle_id,
+                    'state'      => 'available',
+                    'started_at' => $now,
+                    'ended_at'   => null,
+                    'reason'     => 'assignment revoked#'.$va->id,
+                    'created_by' => Auth::id(),
+                ]);
+
+                // Aggiorna l'assegnazione a revoked
+                $va->update([
+                    'status' => 'revoked',
+                    'end_at' => $now,
+                ]);
+
+                return;
+            }
+
+            // ended o già revoked: elimino record amministrativo (il log storico resta)
+            $va->delete();
+        });
+
+        // refresh tabella
+        $this->resetPage('assignmentsPage');
+        $this->confirmMessage = 'Assegnazione rimossa.';
+    }
+    
+    /**
+     * Renderizza il componente con i dati necessari.
+     * - Veicoli filtrati e paginati
+     * - Opzioni renter per la select
+     * - Assegnazioni dell'organizzazione selezionata, filtrate per tab
+     * - Messaggi di conferma
+     * - Mantiene la paginazione separata per veicoli e assegnazioni
+     * - Usa Blade per la view (resources/views/livewire/assignments/vehicle-assigner.blade.php)
+     * - Usa Alpine.js per interazioni UI leggere (es. mostra/nascondi messaggi)
+     * - Non include logica di autorizzazione: si assume che il middleware o il controller
+     *   che carica questo componente abbiano già verificato i permessi necessari.
+     */
     public function render()
     {
         return view('livewire.assignments.vehicle-assigner', [
