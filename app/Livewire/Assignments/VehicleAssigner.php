@@ -58,6 +58,9 @@ class VehicleAssigner extends Component
     /** @var string Tab corrente della tabella assegnazioni (active|scheduled|history) */
     public string $tab = 'active';
 
+    /** @var array<string,string|null> Nuove date fine per estensioni (chiave = assignmentId) */
+    public array $extend = [];
+
     /** Inizializza range date con “oggi → +30gg” per default */
     public function mount(): void
     {
@@ -75,6 +78,14 @@ class VehicleAssigner extends Component
             'selectedVehicleIds' => ['array'],
             'selectedVehicleIds.*' => [Rule::exists('vehicles', 'id')],
         ];
+    }
+
+    /**
+     * Restituisce gli ID selezionati **normalizzati a int** e unici.
+     */
+    protected function selectedIds(): array
+    {
+        return array_values(array_unique(array_map('intval', $this->selectedVehicleIds)));
     }
 
     /** Normalizza la ricerca come da tua logica * → %, spazi → % */
@@ -250,18 +261,28 @@ class VehicleAssigner extends Component
      */
     public function toggleSelectAll(): void
     {
-        $pageIds = $this->currentPageVehicleIds();
+        // ID della pagina corrente (int)
+        $pageIds = array_map('intval', $this->currentPageVehicleIds());
 
-        $allSelected = collect($pageIds)->every(
-            fn($id) => in_array($id, $this->selectedVehicleIds, true)
-        );
+        // Opzionale: limita ai veicoli "selezionabili" (coerente con i checkbox disabilitati)
+        if (!$this->renterOrgId) {
+            // senza renter non facciamo nulla
+            return;
+        }
+        $pageIds = array_values(array_filter($pageIds, fn($id) => $this->isVehicleAvailable($id)));
 
-        if ($allSelected) {
-            // Rimuove quelli della pagina dalla selezione corrente
-            $this->selectedVehicleIds = array_values(array_diff($this->selectedVehicleIds, $pageIds));
+        // Stato corrente normalizzato (int)
+        $current = $this->selectedIds();
+
+        // Se almeno UNO della pagina è già selezionato → deseleziona TUTTI quelli della pagina
+        $hasAnyOnPage = count(array_intersect($pageIds, $current)) > 0;
+
+        if ($hasAnyOnPage) {
+            // Rimuove dalla selezione tutti gli ID della pagina (int vs int → ok)
+            $this->selectedVehicleIds = array_values(array_diff($current, $pageIds));
         } else {
-            // Unisce senza duplicati
-            $this->selectedVehicleIds = array_values(array_unique(array_merge($this->selectedVehicleIds, $pageIds)));
+            // Aggiunge tutti gli ID della pagina, evitando duplicati
+            $this->selectedVehicleIds = array_values(array_unique(array_merge($current, $pageIds)));
         }
     }
 
@@ -391,7 +412,7 @@ class VehicleAssigner extends Component
                 $now = now();
                 $status = $from->isFuture() ? 'scheduled' : 'active';
 
-                VehicleAssignment::create([
+                $va = VehicleAssignment::create([
                     'vehicle_id'   => $vehicleId,
                     'renter_org_id'=> $this->renterOrgId,
                     'start_at'     => $from,
@@ -481,6 +502,126 @@ class VehicleAssigner extends Component
         // refresh tabella
         $this->resetPage('assignmentsPage');
         $this->confirmMessage = 'Assegnazione rimossa.';
+    }
+
+    /**
+     * Chiude l'assegnazione attiva "adesso".
+     * - Aggiorna assignment: status=ended, end_at=now
+     * - Chiude state 'assigned' corrente e apre 'available'
+     */
+    public function closeAssignmentNow(int $assignmentId): void
+    {
+        $va = VehicleAssignment::query()->findOrFail($assignmentId);
+        $this->authorize('update', $va);
+
+        if ($va->status !== 'active') {
+            $this->addError('action', 'Solo le assegnazioni attive possono essere chiuse.');
+            return;
+        }
+
+        DB::transaction(function () use ($va) {
+            $now = now();
+
+            // Chiude eventuale stato "assigned" aperto
+            VehicleState::query()
+                ->where('vehicle_id', $va->vehicle_id)
+                ->where('state', 'assigned')
+                ->whereNull('ended_at')
+                ->lockForUpdate()
+                ->update(['ended_at' => $now, 'reason' => DB::raw("CONCAT(COALESCE(reason,''),' | ended#{$va->id}')")]);
+
+            // Apre "available" da ora
+            VehicleState::create([
+                'vehicle_id' => $va->vehicle_id,
+                'state'      => 'available',
+                'started_at' => $now,
+                'ended_at'   => null,
+                'reason'     => 'assignment ended#'.$va->id,
+                'created_by' => Auth::id(),
+            ]);
+
+            // Aggiorna assignment
+            $va->update([
+                'status' => 'ended',
+                'end_at' => $now,
+            ]);
+        });
+
+        $this->confirmMessage = 'Assegnazione chiusa.';
+        $this->resetPage('assignmentsPage');
+    }
+
+    /**
+     * Estende la data di fine di un'assegnazione (active o scheduled).
+     * - Valida che la nuova fine sia >= start_at e > end_at attuale (se presente)
+     * - Impedisce overlap con altre assegnazioni/blocchi dello stesso veicolo
+     * - Aggiorna il relativo VehicleState (aperto o programmato)
+     */
+    public function extendAssignment(int $assignmentId): void
+    {
+        $va = VehicleAssignment::query()->findOrFail($assignmentId);
+        $this->authorize('update', $va);
+
+        $newEnd = $this->extend[$assignmentId] ?? null;
+        if (!$newEnd) {
+            $this->addError('extend.'.$assignmentId, 'Inserisci una nuova data fine.');
+            return;
+        }
+
+        $newEndAt = \Illuminate\Support\Carbon::parse($newEnd);
+
+        // Validazioni temporali di base
+        if ($newEndAt->lt($va->start_at)) {
+            $this->addError('extend.'.$assignmentId, 'La data fine deve essere ≥ della data inizio.');
+            return;
+        }
+        if ($va->end_at && $newEndAt->lte($va->end_at)) {
+            $this->addError('extend.'.$assignmentId, 'La nuova fine deve essere successiva a quella attuale.');
+            return;
+        }
+
+        // Conflitti con altre assegnazioni o blocchi
+        $from = $va->start_at;
+        $to   = $newEndAt;
+
+        $overlapAssignments = VehicleAssignment::query()
+            ->where('vehicle_id', $va->vehicle_id)
+            ->where('id', '!=', $va->id)
+            ->whereIn('status', ['scheduled','active'])
+            ->where(fn($q) => $this->overlapWhere($q, $from, $to))
+            ->exists();
+
+        $overlapBlocks = VehicleBlock::query()
+            ->where('vehicle_id', $va->vehicle_id)
+            ->whereIn('status', ['scheduled','active'])
+            ->where(fn($q) => $this->overlapWhere($q, $from, $to))
+            ->exists();
+
+        if ($overlapAssignments || $overlapBlocks) {
+            $this->addError('extend.'.$assignmentId, 'Estensione non disponibile: conflitto con altre assegnazioni o blocchi.');
+            return;
+        }
+
+        DB::transaction(function () use ($va, $newEndAt) {
+            // Aggiorna assignment
+            $va->update(['end_at' => $newEndAt]);
+
+            // Aggiorna il relativo VehicleState:
+            // - se active: record assigned aperto → ended_at = newEndAt
+            // - se scheduled: record assigned programmato con stessi estremi → ended_at = newEndAt
+            VehicleState::query()
+                ->where('vehicle_id', $va->vehicle_id)
+                ->where('state', 'assigned')
+                ->where(function ($q) use ($va) {
+                    $q->whereNull('ended_at')
+                    ->orWhere('started_at', $va->start_at); // programmato con start uguale
+                })
+                ->lockForUpdate()
+                ->update(['ended_at' => $newEndAt]);
+        });
+
+        $this->confirmMessage = 'Assegnazione estesa correttamente.';
+        $this->resetPage('assignmentsPage');
     }
     
     /**

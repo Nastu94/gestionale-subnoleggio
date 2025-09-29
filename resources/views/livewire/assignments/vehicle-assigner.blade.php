@@ -93,11 +93,14 @@
                     @endphp
                     <label class="flex items-center justify-between p-3">
                         <div class="flex items-center space-x-3">
-                            <input type="checkbox"
-                                   class="border rounded"
-                                   wire:model="selectedVehicleIds"
-                                   value="{{ $v->id }}"
-                                   @disabled(!$available || !$renterOrgId) >
+                            <input
+                                type="checkbox"
+                                class="border rounded"
+                                {{-- Usa .live per sincronizzare SUBITO la proprietà --}}
+                                wire:model.live="selectedVehicleIds"
+                                value="{{ $v->id }}"
+                                @disabled(!$available || !$renterOrgId)
+                            >
                             <div>
                                 <div class="font-medium">
                                     {{ $v->make }} {{ $v->model }}
@@ -173,7 +176,7 @@
                 @if(!$renterOrgId)
                     <p class="text-sm text-gray-500">Seleziona un'organizzazione per vedere le assegnazioni.</p>
                 @else
-                    <div class="overflow-x-auto border rounded">
+                    <div class="overflow-x-auto overflow-y-visible border rounded">
                         <table class="min-w-full text-sm">
                             <thead class="bg-gray-50 dark:bg-gray-700">
                                 <tr class="text-left">
@@ -210,14 +213,60 @@
                                             <span class="text-xs px-2 py-1 rounded {{ $badge }}">{{ $a->status }}</span>
                                         </td>
                                         <td class="px-3 py-2">
-                                            {{-- Mostra "Rimuovi" se l'utente ha permesso delete e lo stato è gestibile --}}
-                                            @if(in_array($a->status, ['scheduled','active','revoked','ended']))
-                                                <button type="button"
-                                                        class="text-red-700 hover:underline"
-                                                        x-on:click.prevent="confirm('Confermi la rimozione di questa assegnazione?') && $wire.deleteAssignment({{ $a->id }})">
-                                                    Rimuovi
+                                            <div x-data="{ open:false, rect:null }" class="relative inline-block" x-id="['menu']">
+                                                <button x-ref="btn"
+                                                        @click="open=!open; rect=$refs.btn.getBoundingClientRect()"
+                                                        class="px-2 py-1 text-xs rounded border border-gray-300 hover:bg-gray-50 dark:border-gray-700">
+                                                    Azioni ▾
                                                 </button>
-                                            @endif
+                                                <template x-teleport="body">
+                                                    <div x-cloak x-show="open" @click.outside="open=false" x-transition
+                                                        class="fixed z-50"
+                                                        :style="rect ? `top:${rect.bottom + window.scrollY}px; left:${rect.right - 224 + window.scrollX}px; width:224px` : ''">
+                                                        <div class="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded shadow-lg">
+                                                            @if($a->status === 'active')
+                                                                <button class="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-700"
+                                                                        @click.prevent="$wire.closeAssignmentNow({{ $a->id }}); open=false">
+                                                                    Chiudi ora
+                                                                </button>
+                                                                <div class="px-3 py-2 border-t dark:border-gray-700">
+                                                                    <label class="sr-only">Nuova data fine</label>
+                                                                    <input type="datetime-local"
+                                                                        class="w-full border rounded px-2 py-1 text-xs dark:bg-gray-800 dark:border-gray-700"
+                                                                        wire:model.live="extend.{{ $a->id }}">
+                                                                    <button class="mt-2 w-full px-2 py-1 text-xs rounded border border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-400/40 dark:text-blue-300"
+                                                                            @click.prevent="$wire.extendAssignment({{ $a->id }}); open=false">
+                                                                        Estendi
+                                                                    </button>
+                                                                </div>
+                                                                <button class="w-full text-left px-3 py-2 text-xs text-red-700 hover:bg-red-50 dark:hover:bg-gray-700"
+                                                                        @click.prevent="confirm('Revocare questa assegnazione?') && ($wire.deleteAssignment({{ $a->id }}), open=false)">
+                                                                    Revoca
+                                                                </button>
+                                                            @elseif($a->status === 'scheduled')
+                                                                <button class="w-full text-left px-3 py-2 text-xs text-red-700 hover:bg-red-50 dark:hover:bg-gray-700"
+                                                                        @click.prevent="confirm('Annullare questa assegnazione programmata?') && ($wire.deleteAssignment({{ $a->id }}), open=false)">
+                                                                    Annulla
+                                                                </button>
+                                                                <div class="px-3 py-2 border-t dark:border-gray-700">
+                                                                    <input type="datetime-local"
+                                                                        class="w-full border rounded px-2 py-1 text-xs dark:bg-gray-800 dark:border-gray-700"
+                                                                        wire:model.live="extend.{{ $a->id }}">
+                                                                    <button class="mt-2 w-full px-2 py-1 text-xs rounded border border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-400/40 dark:text-blue-300"
+                                                                            @click.prevent="$wire.extendAssignment({{ $a->id }}); open=false">
+                                                                        Estendi
+                                                                    </button>
+                                                                </div>
+                                                            @else
+                                                                <button class="w-full text-left px-3 py-2 text-xs text-red-700 hover:bg-red-50 dark:hover:bg-gray-700"
+                                                                        @click.prevent="confirm('Eliminare definitivamente questa riga?') && ($wire.deleteAssignment({{ $a->id }}), open=false)">
+                                                                    Elimina
+                                                                </button>
+                                                            @endif
+                                                        </div>
+                                                    </div>
+                                                </template>
+                                            </div>
                                         </td>
                                     </tr>
                                 @empty

@@ -5,7 +5,7 @@
                 {{ __('Dashboard') }}
             </h2>
             <!-- Component per le dashboard tiles -->
-            <x-dashboard-tiles />
+            <!--<x-dashboard-tiles />-->
         </div>
     </x-slot>
 
