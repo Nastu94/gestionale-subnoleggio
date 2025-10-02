@@ -28,6 +28,10 @@ class VehiclePolicy
         return $user->can('vehicles.create');
     }
 
+    /**
+     * Update "anagrafica" (colore, VIN, posti, carburante, ecc.).
+     * I renter NON passano di qui: per loro usiamo i permessi granulari sotto.
+     */
     public function update(User $user, Vehicle $vehicle): bool
     {
         return $user->can('vehicles.update');
@@ -38,6 +42,48 @@ class VehiclePolicy
         return $user->can('vehicles.delete');
     }
 
+    /**
+     * Permesso GRANULARE: aggiornare i KM.
+     * - Admin: basta il permesso.
+     * - Renter: serve permesso + veicolo assegnato "ora".
+     */
+    public function updateMileage(User $user, Vehicle $vehicle): bool
+    {
+        if ($user->can('vehicles.update_mileage')) {
+            if ($user->organization->isRenter()) {
+                return $this->vehicleAssignedToRenterNow($vehicle->id, $user->organization_id);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Permesso GRANULARE: aprire/chiudere manutenzione.
+     * - Admin: basta il permesso.
+     * - Renter: permesso + veicolo assegnato "ora".
+     */
+    public function manageMaintenance(User $user, Vehicle $vehicle): bool
+    {
+        if ($user->can('vehicles.manage_maintenance')) {
+            if ($user->organization->isRenter()) {
+                return $this->vehicleAssignedToRenterNow($vehicle->id, $user->organization_id);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Ripristino di veicolo archiviato (soft delete).
+     * Tipicamente solo admin.
+     */
+    public function restore(User $user, Vehicle $vehicle): bool
+    {
+        return $user->can('vehicles.restore');
+    }
+
+    /** Utility: verifica assegnazione attiva "ora" a quell'organizzazione renter */
     private function vehicleAssignedToRenterNow(int $vehicleId, int $renterOrgId): bool
     {
         return DB::table('vehicle_assignments as va')

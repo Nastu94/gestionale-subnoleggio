@@ -19,6 +19,7 @@ class RolesAndPermissionsSeeder extends Seeder
         $perms = [
             // Vehicles & documents
             'vehicles.viewAny', 'vehicles.view', 'vehicles.create', 'vehicles.update', 'vehicles.delete',
+            'vehicles.update_mileage', 'vehicles.manage_maintenance', 'vehicles.restore',
             'vehicle_documents.viewAny', 'vehicle_documents.view', 'vehicle_documents.manage',
 
             // Assignments
@@ -49,13 +50,14 @@ class RolesAndPermissionsSeeder extends Seeder
         $renter = Role::findOrCreate('renter', $guard);
 
         // 4) Assegna permessi ai ruoli
-
-        // Admin: tutto (teniamo blocks.override incluso)
+        // Admin: tutto
         $admin->syncPermissions(Permission::all());
 
-        // Renter: set mirato
+        // Renter: set mirato + i due granulari su veicoli
         $renterPerms = [
             'vehicles.viewAny','vehicles.view',
+            'vehicles.update_mileage','vehicles.manage_maintenance',
+
             'vehicle_documents.viewAny','vehicle_documents.view',
 
             'assignments.viewAny','assignments.view',
@@ -66,22 +68,20 @@ class RolesAndPermissionsSeeder extends Seeder
 
             'rentals.viewAny','rentals.view','rentals.create','rentals.update','rentals.delete',
 
-            'locations.viewAny','locations.view', // (+ create/update/delete se gestisce sedi proprie)
-            // 'locations.create','locations.update','locations.delete',
-            // 'audit.view','reports.view', // opzionali in sola lettura
+            'locations.viewAny','locations.view',
+            // opzionali:
+            // 'audit.view','reports.view',
         ];
         $renter->syncPermissions($renterPerms);
 
-        // 5) Assegna i ruoli agli utenti esistenti, se ci sono
-        // - utenti dell'org admin -> ruolo admin
-        // - utenti di org renter -> ruolo renter
+        // 5) Assegna ruoli in base al tipo di organizzazione
         $admins  = User::whereHas('organization', fn($q) => $q->where('type','admin'))->get();
         $renters = User::whereHas('organization', fn($q) => $q->where('type','renter'))->get();
 
         foreach ($admins as $u)  { $u->syncRoles(['admin']); }
         foreach ($renters as $u) { $u->syncRoles(['renter']); }
 
-        // 6) Ricostruisci la cache permessi
+        // 6) Ricostruisci cache
         app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
     }
 }

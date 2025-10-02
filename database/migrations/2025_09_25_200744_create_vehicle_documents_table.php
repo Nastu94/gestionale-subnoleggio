@@ -11,7 +11,7 @@ return new class extends Migration {
         Schema::create('vehicle_documents', function (Blueprint $table) {
             $table->id();
             $table->foreignId('vehicle_id')->constrained('vehicles')->cascadeOnUpdate()->cascadeOnDelete();
-            $table->enum('type', ['insurance','registration','inspection','green_card','ztl_permit','other']);
+            $table->enum('type', ['insurance','registration','inspection','green_card','ztl_permit', 'road_tax', 'other']);
             $table->string('number', 64)->nullable();
             $table->date('issue_date')->nullable();
             $table->date('expiry_date')->nullable();

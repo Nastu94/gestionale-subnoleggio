@@ -94,9 +94,9 @@
         <div class="flex items-center gap-3">
             <label class="inline-flex items-center gap-2">
                 <input type="checkbox"
-                       wire:click="toggleSelectAllOnPage(@js($idsOnPage))"
-                       @checked(count(array_intersect($selected, $idsOnPage)) === count($idsOnPage) && count($idsOnPage) > 0)
-                       class="rounded border-gray-300">
+                    wire:click="toggleSelectAllOnPage(@js($idsSelectableOnPage))"
+                    @checked(count(array_intersect($selected, $idsSelectableOnPage)) === count($idsSelectableOnPage) && count($idsSelectableOnPage) > 0)
+                    class="rounded border-gray-300">
                 <span>Seleziona/Deseleziona tutti (pagina)</span>
             </label>
 
@@ -104,7 +104,7 @@
         </div>
 
         <div class="flex items-center gap-2">
-            @can('vehicles.update')
+            @can('vehicles.manage_maintenance')
                 <button type="button"
                         class="rounded bg-amber-600 px-3 py-1.5 text-white hover:bg-amber-700 disabled:opacity-50"
                         wire:click="setMaintenanceSelected"
@@ -171,10 +171,14 @@
 
                 <tr class="hover:bg-gray-50 {{ $isArchived ? 'opacity-60' : '' }}">
                     <td class="px-3 py-2">
+                        @php $isArchived = method_exists($v, 'trashed') ? $v->trashed() : false; @endphp
+
                         <input type="checkbox"
-                               value="{{ $v->id }}"
-                               wire:model.live="selected"
-                               @checked(in_array($v->id, $selected, true)) />
+                            value="{{ $v->id }}"
+                            wire:model.live="selected"
+                            @checked(in_array($v->id, $selected, true))
+                            @disabled($isArchived)
+                            class="rounded border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed" />
                     </td>
 
                     {{-- Targa: apre SEMPRE il drawer --}}
@@ -212,19 +216,21 @@
                     {{-- Azioni riga --}}
                     <td class="px-3 py-2">
                         @if($isArchived)
-                            @can('vehicles.restore', $v)
+                            @can('restore', $v)
                                 <button type="button" class="rounded bg-emerald-600 px-2 py-1 text-white" wire:click="restore({{ $v->id }})">
                                     Ripristina
                                 </button>
                             @endcan
                         @else
-                            @can('vehicles.update', $v)
+                            @can('updateMileage', $v)
                                 <button type="button" class="rounded bg-slate-100 px-2 py-1"
                                         x-data
                                         x-on:click="$dispatch('open-mileage-modal', { id: {{ $v->id }}, current: {{ (int)$v->mileage_current }} })">
                                     Agg. km
                                 </button>
+                            @endcan
 
+                            @can('manageMaintenance', $v)
                                 @if(!$v->is_maintenance)
                                     <button type="button" class="rounded bg-amber-600 px-2 py-1 text-white" wire:click="setMaintenance({{ $v->id }})">
                                         Manutenzione
@@ -251,6 +257,11 @@
                     </td>
                 </tr>
             @endforeach
+            @if($vehicles->isEmpty())
+                <tr>
+                    <td class="px-3 py-6 text-center text-gray-500" colspan="100%">Nessun veicolo trovato.</td>
+                </tr>
+            @endif
             </tbody>
         </table>
 

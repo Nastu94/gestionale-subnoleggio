@@ -288,8 +288,13 @@ class Table extends Component
      */
     public function updateMileage(int $vehicleId, int $mileage): void
     {
-        $vehicle = Vehicle::findOrFail($vehicleId);
-        $this->authorize('update', $vehicle);
+        $vehicle = Vehicle::withTrashed()->findOrFail($vehicleId);
+        $this->authorize('updateMileage', $vehicle); // <— nuovo check
+
+        if ($vehicle->trashed()) {
+            $this->addError('mileage', 'Veicolo archiviato: ripristina prima di aggiornare i km.');
+            return;
+        }
 
         if ($mileage < (int) $vehicle->mileage_current) {
             $this->addError('mileage', 'Il chilometraggio non può diminuire.');
@@ -305,8 +310,13 @@ class Table extends Component
     /** Apre stato tecnico "manutenzione" se non è già aperto (singolo) */
     public function setMaintenance(int $vehicleId): void
     {
-        $vehicle = Vehicle::findOrFail($vehicleId);
-        $this->authorize('update', $vehicle);
+        $vehicle = Vehicle::withTrashed()->findOrFail($vehicleId);
+        $this->authorize('manageMaintenance', $vehicle); // <— nuovo check
+
+        if ($vehicle->trashed()) {
+            $this->dispatch('toast', type: 'warning', message: 'Veicolo archiviato: ripristina prima di modificare lo stato.');
+            return;
+        }
 
         $exists = VehicleState::query()
             ->where('vehicle_id', $vehicle->id)
@@ -318,10 +328,10 @@ class Table extends Component
             VehicleState::create([
                 'vehicle_id' => $vehicle->id,
                 'state'      => 'maintenance',
-                'started_at' => Carbon::now(),
+                'started_at' => now(),
                 'ended_at'   => null,
                 'reason'     => 'Impostato dalla gestione veicoli',
-                'created_by' => Auth::id(),
+                'created_by' => auth()->id(),
             ]);
         }
 
@@ -331,13 +341,18 @@ class Table extends Component
     /** Chiude eventuale stato tecnico aperto (singolo) */
     public function clearTechnicalState(int $vehicleId): void
     {
-        $vehicle = Vehicle::findOrFail($vehicleId);
-        $this->authorize('update', $vehicle);
+        $vehicle = Vehicle::withTrashed()->findOrFail($vehicleId);
+        $this->authorize('manageMaintenance', $vehicle); // <— nuovo check
+
+        if ($vehicle->trashed()) {
+            $this->dispatch('toast', type: 'warning', message: 'Veicolo archiviato: ripristina prima di modificare lo stato.');
+            return;
+        }
 
         VehicleState::query()
             ->where('vehicle_id', $vehicle->id)
             ->whereNull('ended_at')
-            ->update(['ended_at' => Carbon::now()]);
+            ->update(['ended_at' => now()]);
 
         $this->dispatch('toast', type: 'success', message: 'Stato tecnico chiuso.');
     }
@@ -358,11 +373,13 @@ class Table extends Component
     /** Ripristina veicolo archiviato */
     public function restore(int $vehicleId): void
     {
-        $vehicle = Vehicle::onlyTrashed()->findOrFail($vehicleId);
-        $this->authorize('restore', $vehicle); // usa la policy restore
-        $vehicle->restore();
+        $vehicle = Vehicle::withTrashed()->findOrFail($vehicleId);
+        $this->authorize('restore', $vehicle); // <— usa policy restore
 
-        $this->dispatch('toast', type: 'success', message: 'Veicolo ripristinato.');
+        if ($vehicle->trashed()) {
+            $vehicle->restore();
+            $this->dispatch('toast', type: 'success', message: 'Veicolo ripristinato.');
+        }
     }
 
     /** BULK: segna in manutenzione tutti i selezionati */
@@ -370,9 +387,10 @@ class Table extends Component
     {
         if (empty($this->selected)) return;
 
-        $now = Carbon::now();
-        foreach (Vehicle::whereIn('id', $this->selected)->get() as $v) {
-            $this->authorize('update', $v);
+        $now = now();
+        foreach (Vehicle::withTrashed()->whereIn('id', $this->selected)->get() as $v) {
+            $this->authorize('manageMaintenance', $v); // <— nuovo check
+            if ($v->trashed()) continue;
 
             $exists = VehicleState::where('vehicle_id', $v->id)
                 ->whereIn('state', ['maintenance','out_of_service'])
@@ -386,7 +404,7 @@ class Table extends Component
                     'started_at' => $now,
                     'ended_at'   => null,
                     'reason'     => 'Bulk manutenzione (selezionati)',
-                    'created_by' => Auth::id(),
+                    'created_by' => auth()->id(),
                 ]);
             }
         }
@@ -452,6 +470,26 @@ class Table extends Component
         return compact('v','currentState','expiring','expired','assignedNow');
     }
 
+    // Sanifica l'array $selected escludendo i trashed
+    protected function sanitizeSelection(): void
+    {
+        if (empty($this->selected)) {
+            return;
+        }
+
+        // Vehicle senza withTrashed() esclude già gli archiviati → li rimuove da $selected
+        $this->selected = array_values(
+            Vehicle::query()->whereIn('id', $this->selected)->pluck('id')->all()
+        );
+    }
+
+    /** Quando mostri/nascondi gli archiviati, azzera la selezione di sicurezza */
+    public function updatedShowArchived(): void
+    {
+        $this->selectPage = false;
+        $this->selected   = [];
+    }
+
     /** Render: dataset + ids pagina + drawer + KPI */
     public function render()
     {
@@ -460,12 +498,23 @@ class Table extends Component
         $query    = $this->applyFilters($this->baseQuery());
         $vehicles = $query->paginate($this->perPage);
 
+        // pulizia selezione (server-side guard)
+        $this->sanitizeSelection();
+
+        // ID in pagina
         $idsOnPage = $vehicles->getCollection()->pluck('id')->all();
+
+        // Solo gli ID NON archiviati della pagina (per il "seleziona tutti")
+        $idsSelectableOnPage = $vehicles->getCollection()
+            ->filter(fn ($v) => !(method_exists($v, 'trashed') && $v->trashed()))
+            ->pluck('id')
+            ->all();
         $drawer    = $this->drawerData($this->drawerVehicleId);
 
         return view('livewire.vehicles.table', [
             'vehicles'  => $vehicles,
             'idsOnPage' => $idsOnPage,
+            'idsSelectableOnPage' => $idsSelectableOnPage,
             'drawer'    => $drawer,
             'kpi'       => $this->kpi,
         ]);

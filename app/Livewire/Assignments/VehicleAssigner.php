@@ -347,7 +347,7 @@ class VehicleAssigner extends Component
                 'state'      => 'assigned',
                 'started_at' => $va->start_at,
                 'ended_at'   => $va->end_at, // può essere null (assegnazione aperta futura)
-                'reason'     => 'assignment#'.$va->id.' scheduled to org '.$va->renter_org_id,
+                'reason'     => 'Assegnazione #'.$va->id.' programmata per l\'org '.$va->renter_org_id,
                 'created_by' => Auth::id(),
             ]);
             return;
@@ -366,7 +366,7 @@ class VehicleAssigner extends Component
             'state'      => 'assigned',
             'started_at' => $va->start_at,
             'ended_at'   => $va->end_at, // se null, diventa lo stato corrente
-            'reason'     => 'assignment#'.$va->id.' to org '.$va->renter_org_id,
+            'reason'     => 'Assegnazione #'.$va->id.' per l\'org '.$va->renter_org_id,
             'created_by' => Auth::id(),
         ]);
     }
@@ -474,7 +474,7 @@ class VehicleAssigner extends Component
                     ->where('state', 'assigned')
                     ->whereNull('ended_at')
                     ->lockForUpdate()
-                    ->update(['ended_at' => $now, 'reason' => DB::raw("CONCAT(COALESCE(reason,''),' | revoked#{$va->id}')")]);
+                    ->update(['ended_at' => $now, 'reason' => DB::raw("CONCAT(COALESCE(reason,''),' | revocata #{$va->id}')")]);
 
                 // Apre lo stato 'available' da ora
                 VehicleState::create([
@@ -482,7 +482,7 @@ class VehicleAssigner extends Component
                     'state'      => 'available',
                     'started_at' => $now,
                     'ended_at'   => null,
-                    'reason'     => 'assignment revoked#'.$va->id,
+                    'reason'     => 'Assegnazione #'.$va->id.' revocata',
                     'created_by' => Auth::id(),
                 ]);
 
@@ -528,7 +528,7 @@ class VehicleAssigner extends Component
                 ->where('state', 'assigned')
                 ->whereNull('ended_at')
                 ->lockForUpdate()
-                ->update(['ended_at' => $now, 'reason' => DB::raw("CONCAT(COALESCE(reason,''),' | ended#{$va->id}')")]);
+                ->update(['ended_at' => $now, 'reason' => DB::raw("CONCAT(COALESCE(reason,''),' | terminata #{$va->id}')")]);
 
             // Apre "available" da ora
             VehicleState::create([
@@ -536,7 +536,7 @@ class VehicleAssigner extends Component
                 'state'      => 'available',
                 'started_at' => $now,
                 'ended_at'   => null,
-                'reason'     => 'assignment ended#'.$va->id,
+                'reason'     => 'Assegnazione #'.$va->id.' terminata',
                 'created_by' => Auth::id(),
             ]);
 
