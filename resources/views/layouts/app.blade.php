@@ -22,6 +22,9 @@
         x-data="{ isOpen: false, openSection: null }"
         class="font-sans antialiased flex h-screen overflow-hidden"
     >
+        {{-- Toast globali (Livewire + Alpine) --}}
+        <x-ui.toast />
+
         {{-- Portal target per dropdown filtri/ordinamento tabelle --}}
         <div id="portal-target"></div>
 

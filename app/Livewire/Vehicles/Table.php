@@ -4,6 +4,7 @@ namespace App\Livewire\Vehicles;
 
 use App\Models\Vehicle;
 use App\Models\VehicleState;
+use App\Models\VehicleMileageLog;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -289,14 +290,17 @@ class Table extends Component
     public function updateMileage(int $vehicleId, int $mileage): void
     {
         $vehicle = Vehicle::withTrashed()->findOrFail($vehicleId);
-        $this->authorize('updateMileage', $vehicle); // <— nuovo check
+        $this->authorize('updateMileage', $vehicle);
 
         if ($vehicle->trashed()) {
             $this->addError('mileage', 'Veicolo archiviato: ripristina prima di aggiornare i km.');
             return;
         }
 
-        if ($mileage < (int) $vehicle->mileage_current) {
+        // CATTURA L'OLD PRIMA DI MODIFICARE
+        $old = (int) $vehicle->mileage_current;
+
+        if ($mileage < $old) {
             $this->addError('mileage', 'Il chilometraggio non può diminuire.');
             return;
         }
@@ -304,7 +308,22 @@ class Table extends Component
         $vehicle->mileage_current = $mileage;
         $vehicle->save();
 
-        $this->dispatch('toast', type: 'success', message: 'Chilometraggio aggiornato.');
+        // LOG con old corretto
+        VehicleMileageLog::create([
+            'vehicle_id'  => $vehicle->id,
+            'mileage_old' => $old,
+            'mileage_new' => (int) $mileage,
+            'changed_by'  => auth()->id(),
+            'source'      => 'manual',
+            'notes'       => 'Aggiornamento da tabella veicoli',
+            'changed_at'  => now(),
+        ]);
+
+        // ✅ Evento toast con payload compatibile Livewire v3
+        $this->dispatch('toast', [
+            'type'    => 'success',
+            'message' => 'Chilometraggio aggiornato.',
+        ]);
     }
 
     /** Apre stato tecnico "manutenzione" se non è già aperto (singolo) */

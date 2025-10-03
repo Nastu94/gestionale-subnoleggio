@@ -25,8 +25,9 @@
             {{-- Al (facoltativo) --}}
             <div>
                 <label class="block text-sm font-medium mb-1">Al (facoltativo)</label>
-                <input type="datetime-local" class="w-full border rounded p-2">
-                @error('dateTo') <p class="text-red-600 text-sm mt-1">{{ $message }}</p> @enderror  
+                {{-- FIX: binding mancante su dateTo --}}
+                <input type="datetime-local" class="w-full border rounded p-2" wire:model.live="dateTo">
+                @error('dateTo') <p class="text-red-600 text-sm mt-1">{{ $message }}</p> @enderror
             </div>
 
             {{-- Ricerca libera --}}
@@ -65,7 +66,7 @@
             <div class="flex items-center justify-between p-4 border-b">
                 <h3 class="font-semibold">Veicoli</h3>
                 <div class="flex items-center gap-2">
-                    {{-- Seleziona/Deseleziona tutti i veicoli della PAGINA CORRENTE --}}
+                    {{-- Seleziona/Deseleziona TUTTI della pagina corrente --}}
                     <div x-data>
                         <button class="px-3 py-2 border rounded hover:bg-gray-50 dark:hover:bg-gray-700"
                                 type="button"
@@ -88,15 +89,14 @@
 
             <div class="divide-y">
                 @forelse($vehicles as $v)
-                    @php
-                        $available = $this->isVehicleAvailable($v->id);
-                    @endphp
-                    <label class="flex items-center justify-between p-3">
+                    @php $available = $this->isVehicleAvailable($v->id); @endphp
+                    {{-- Chiave stabile per diff corretto e conteggio selezionati in tempo reale --}}
+                    <label class="flex items-center justify-between p-3" wire:key="vehicle-row-{{ $v->id }}">
                         <div class="flex items-center space-x-3">
                             <input
                                 type="checkbox"
                                 class="border rounded"
-                                {{-- Usa .live per sincronizzare SUBITO la proprietà --}}
+                                {{-- Sync immediato col server --}}
                                 wire:model.live="selectedVehicleIds"
                                 value="{{ $v->id }}"
                                 @disabled(!$available || !$renterOrgId)
@@ -125,11 +125,11 @@
             </div>
         </div>
 
-        {{-- DESTRA: Riepilogo azione / Messaggi --}}
+        {{-- DESTRA: Riepilogo azione / Messaggi + Tabella assegnazioni --}}
         <div class="bg-white shadow rounded p-4 space-y-3">
             <h3 class="font-semibold">Riepilogo</h3>
             <ul class="text-sm text-gray-700">
-                <li><strong>Renter:</strong> 
+                <li><strong>Renter:</strong>
                     @php $r = $renterOptions->firstWhere('id', $renterOrgId); @endphp
                     {{ $r?->name ?? '—' }}
                 </li>
@@ -138,9 +138,9 @@
             </ul>
 
             @if($confirmMessage)
-                <div class="p-3 bg-gray-50 border rounded text-sm" 
-                    x-data="{ show: true }" x-init="setTimeout(() => show = false, 8000)" x-show="show"
-                    x-transition.opacity.duration.400ms>
+                <div class="p-3 bg-gray-50 border rounded text-sm"
+                     x-data="{ show: true }" x-init="setTimeout(() => show = false, 8000)" x-show="show"
+                     x-transition.opacity.duration.400ms>
                     {{ $confirmMessage }}
                 </div>
             @endif
@@ -149,7 +149,7 @@
                 Le assegnazioni create avranno stato <em>scheduled</em> se future,
                 altrimenti <em>active</em>. Gli overlap con altre assegnazioni o blocchi vengono bloccati.
             </p>
-                
+
             {{-- Tabella assegnazioni del renter selezionato --}}
             <div class="bg-white dark:bg-gray-800 shadow rounded p-4 space-y-3">
                 <div class="flex items-center justify-between">
@@ -198,7 +198,11 @@
                                             @endif
                                         </td>
                                         <td class="px-3 py-2">
-                                            <div>{{ \Illuminate\Support\Carbon::parse($a->start_at)->format('Y-m-d H:i') }} → {{ $a->end_at ? \Illuminate\Support\Carbon::parse($a->end_at)->format('Y-m-d H:i') : 'aperto' }}</div>
+                                            <div>
+                                                {{ \Illuminate\Support\Carbon::parse($a->start_at)->format('Y-m-d H:i') }}
+                                                →
+                                                {{ $a->end_at ? \Illuminate\Support\Carbon::parse($a->end_at)->format('Y-m-d H:i') : 'aperto' }}
+                                            </div>
                                         </td>
                                         <td class="px-3 py-2">
                                             @php
@@ -213,16 +217,18 @@
                                             <span class="text-xs px-2 py-1 rounded {{ $badge }}">{{ $a->status }}</span>
                                         </td>
                                         <td class="px-3 py-2">
+                                            {{-- Menu azioni teletrasportato nel body per non "rompere" la tabella --}}
                                             <div x-data="{ open:false, rect:null }" class="relative inline-block" x-id="['menu']">
                                                 <button x-ref="btn"
                                                         @click="open=!open; rect=$refs.btn.getBoundingClientRect()"
                                                         class="px-2 py-1 text-xs rounded border border-gray-300 hover:bg-gray-50 dark:border-gray-700">
                                                     Azioni ▾
                                                 </button>
+
                                                 <template x-teleport="body">
                                                     <div x-cloak x-show="open" @click.outside="open=false" x-transition
-                                                        class="fixed z-50"
-                                                        :style="rect ? `top:${rect.bottom + window.scrollY}px; left:${rect.right - 224 + window.scrollX}px; width:224px` : ''">
+                                                         class="fixed z-50"
+                                                         :style="rect ? `top:${rect.bottom + window.scrollY}px; left:${rect.right - 224 + window.scrollX}px; width:224px` : ''">
                                                         <div class="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded shadow-lg">
                                                             @if($a->status === 'active')
                                                                 <button class="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -232,8 +238,8 @@
                                                                 <div class="px-3 py-2 border-t dark:border-gray-700">
                                                                     <label class="sr-only">Nuova data fine</label>
                                                                     <input type="datetime-local"
-                                                                        class="w-full border rounded px-2 py-1 text-xs dark:bg-gray-800 dark:border-gray-700"
-                                                                        wire:model.live="extend.{{ $a->id }}">
+                                                                           class="w-full border rounded px-2 py-1 text-xs dark:bg-gray-800 dark:border-gray-700"
+                                                                           wire:model.live="extend.{{ $a->id }}">
                                                                     <button class="mt-2 w-full px-2 py-1 text-xs rounded border border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-400/40 dark:text-blue-300"
                                                                             @click.prevent="$wire.extendAssignment({{ $a->id }}); open=false">
                                                                         Estendi
@@ -250,8 +256,8 @@
                                                                 </button>
                                                                 <div class="px-3 py-2 border-t dark:border-gray-700">
                                                                     <input type="datetime-local"
-                                                                        class="w-full border rounded px-2 py-1 text-xs dark:bg-gray-800 dark:border-gray-700"
-                                                                        wire:model.live="extend.{{ $a->id }}">
+                                                                           class="w-full border rounded px-2 py-1 text-xs dark:bg-gray-800 dark:border-gray-700"
+                                                                           wire:model.live="extend.{{ $a->id }}">
                                                                     <button class="mt-2 w-full px-2 py-1 text-xs rounded border border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-400/40 dark:text-blue-300"
                                                                             @click.prevent="$wire.extendAssignment({{ $a->id }}); open=false">
                                                                         Estendi
@@ -259,7 +265,7 @@
                                                                 </div>
                                                             @else
                                                                 <button class="w-full text-left px-3 py-2 text-xs text-red-700 hover:bg-red-50 dark:hover:bg-gray-700"
-                                                                        @click.prevent="confirm('Eliminare definitivamente questa riga?') && ($wire.deleteAssignment({{ $a->id }}), open=false)">
+                                                                        @click.prevent="confirm('Eliminare definitivamente questa riga? (lo storico degli stati resta)') && ($wire.deleteAssignment({{ $a->id }}), open=false)">
                                                                     Elimina
                                                                 </button>
                                                             @endif
@@ -271,7 +277,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="3" class="px-3 py-4 text-sm text-gray-500">
+                                        <td colspan="4" class="px-3 py-4 text-sm text-gray-500">
                                             Nessuna assegnazione trovata per questa tab.
                                         </td>
                                     </tr>

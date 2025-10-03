@@ -223,7 +223,7 @@
                             @endcan
                         @else
                             @can('updateMileage', $v)
-                                <button type="button" class="rounded bg-slate-100 px-2 py-1"
+                                <button type="button" class="rounded bg-slate-100 px-2 py-1 mt-1"
                                         x-data
                                         x-on:click="$dispatch('open-mileage-modal', { id: {{ $v->id }}, current: {{ (int)$v->mileage_current }} })">
                                     Agg. km
@@ -232,24 +232,24 @@
 
                             @can('manageMaintenance', $v)
                                 @if(!$v->is_maintenance)
-                                    <button type="button" class="rounded bg-amber-600 px-2 py-1 text-white" wire:click="setMaintenance({{ $v->id }})">
+                                    <button type="button" class="rounded bg-amber-600 px-2 py-1 mt-1 text-white" wire:click="setMaintenance({{ $v->id }})">
                                         Manutenzione
                                     </button>
                                 @else
-                                    <button type="button" class="rounded bg-emerald-700 px-2 py-1 text-white" wire:click="clearTechnicalState({{ $v->id }})">
+                                    <button type="button" class="rounded bg-emerald-700 px-2 py-1 mt-1 text-white" wire:click="clearTechnicalState({{ $v->id }})">
                                         Ripristina stato
                                     </button>
                                 @endif
                             @endcan
 
                             @can('vehicles.view', $v)
-                                <a href="{{ route('vehicles.show', $v) }}" class="rounded bg-white px-2 py-1 ring-1 ring-gray-300">
+                                <a href="{{ route('vehicles.show', $v) }}" class="rounded bg-white px-2 py-1 mt-1 mr-1 ring-1 ring-gray-300">
                                     Apri
                                 </a>
                             @endcan
 
                             @can('vehicles.delete', $v)
-                                <button type="button" class="rounded bg-gray-800 px-2 py-1 text-white" wire:click="archive({{ $v->id }})">
+                                <button type="button" class="rounded bg-gray-800 px-2 py-1 mt-1 text-white" wire:click="archive({{ $v->id }})">
                                     Archivia
                                 </button>
                             @endcan

@@ -35,7 +35,7 @@ return [
                 ['label' => 'Blocchi',       'route' => 'blocks.index',       'permission' => 'blocks.viewAny'],
             ],
         ],
-        [
+        /*[
             'section' => 'Flotta',
             'items'   => [
                 // Lista documenti: viewAny; sezione gestione/upload: manage (se hai una vista separata)
@@ -43,7 +43,7 @@ return [
                 // Se prevedi una pagina “Gestione Documenti” separata:
                 // ['label' => 'Gestione Documenti', 'route' => 'vehicle-documents.manage', 'permission' => 'vehicle_documents.manage'],
             ],
-        ],
+        ],*/
         [
             'section' => 'Report & Audit',
             'items'   => [
@@ -83,14 +83,14 @@ return [
                 ['label' => 'Blocchi',       'route' => 'blocks.index',      'icon' => 'fa-ban',               'permission' => 'blocks.viewAny'],
             ],
         ],
-        [
+        /*[
             'section' => 'Flotta',
             'icon'    => 'fa-warehouse',
             'items'   => [
                 ['label' => 'Documenti Veicolo', 'route' => 'vehicle-documents.index', 'icon' => 'fa-file-shield', 'permission' => 'vehicle_documents.viewAny'],
                 // ['label' => 'Gestione Documenti', 'route' => 'vehicle-documents.manage', 'icon' => 'fa-upload', 'permission' => 'vehicle_documents.manage'],
             ],
-        ],
+        ],*/
         [
             'section' => 'Report & Audit',
             'icon'    => 'fa-chart-line',

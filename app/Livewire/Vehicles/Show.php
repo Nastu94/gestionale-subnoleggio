@@ -4,6 +4,7 @@ namespace App\Livewire\Vehicles;
 
 use App\Models\Vehicle;
 use App\Models\VehicleState;
+use App\Models\VehicleMileageLog;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -140,7 +141,10 @@ class Show extends Component
             return;
         }
 
-        if ($mileage < (int) $v->mileage_current) {
+        // ✅ CATTURA L'OLD PRIMA DI MODIFICARE
+        $old = (int) $v->mileage_current;
+
+        if ($mileage < $old) {
             $this->addError('mileage', 'Il chilometraggio non può diminuire.');
             return;
         }
@@ -148,7 +152,22 @@ class Show extends Component
         $v->mileage_current = $mileage;
         $v->save();
 
-        $this->dispatch('toast', type: 'success', message: 'Chilometraggio aggiornato.');
+        // ✅ LOG con old corretto
+        VehicleMileageLog::create([
+            'vehicle_id'  => $v->id,
+            'mileage_old' => $old,
+            'mileage_new' => (int) $mileage,
+            'changed_by'  => auth()->id(),
+            'source'      => 'manual',
+            'notes'       => 'Aggiornamento dalla pagina veicolo',
+            'changed_at'  => now(),
+        ]);
+
+        // ✅ Evento toast con payload compatibile Livewire v3
+        $this->dispatch('toast', [
+            'type'    => 'success',
+            'message' => 'Chilometraggio aggiornato.',
+        ]);
     }
 
     /**

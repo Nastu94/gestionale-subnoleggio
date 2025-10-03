@@ -35,8 +35,10 @@ class Vehicle extends Model
     public function assignments()       { return $this->hasMany(VehicleAssignment::class); }
     public function rentals()           { return $this->hasMany(Rental::class); }
     public function blocks()            { return $this->hasMany(VehicleBlock::class); }
+    public function mileageLogs()       { return $this->hasMany(VehicleMileageLog::class); }
 
     // --- Scope utili ---
     /** Veicoli attivi (non dismessi) */
     public function scopeActive($q) { return $q->where('is_active', true); }
+
 }

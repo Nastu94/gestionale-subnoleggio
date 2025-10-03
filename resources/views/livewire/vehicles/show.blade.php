@@ -139,6 +139,42 @@
                     <dt class="text-gray-500">Aggiornato il</dt><dd>{{ optional($v->updated_at)->format('d/m/Y H:i') }}</dd>
                 </dl>
             </div>
+
+            {{-- Ultimi aggiornamenti km (audit) --}}
+            <div class="mt-4 rounded-lg border bg-white p-4">
+                <h3 class="mb-2 text-sm font-semibold">Ultimi aggiornamenti km</h3>
+                <div class="text-xs text-gray-500 mb-2">Mostro gli ultimi 5.</div>
+                <div class="overflow-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-3 py-2 text-left">Quando</th>
+                                <th class="px-3 py-2 text-left">Da → A</th>
+                                <th class="px-3 py-2 text-left">Utente</th>
+                                <th class="px-3 py-2 text-left">Sorgente</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y">
+                            @forelse($v->mileageLogs->take(5) as $log)
+                                <tr>
+                                    <td class="px-3 py-2">{{ $log->changed_at?->format('d/m/Y H:i') }}</td>
+                                    <td class="px-3 py-2">
+                                        {{ number_format((int)($log->mileage_old ?? 0), 0, ',', '.') }}
+                                        →
+                                        <strong>{{ number_format((int)$log->mileage_new, 0, ',', '.') }}</strong>
+                                    </td>
+                                    <td class="px-3 py-2">{{ $log->user?->name ?? '—' }}</td>
+                                    <td class="px-3 py-2">{{ strtoupper($log->source) }}</td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="4" class="px-3 py-6 text-center text-gray-500">Nessun aggiornamento registrato.</td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         @endif
 
         {{-- DOCUMENTI --}}
