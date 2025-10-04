@@ -31,7 +31,6 @@ return [
             'section' => 'Noleggi',
             'items'   => [
                 ['label' => 'Contratti',     'route' => 'rentals.index',      'permission' => 'rentals.viewAny'],
-                ['label' => 'Assegnazioni',  'route' => 'assignments.index',  'permission' => 'assignments.viewAny'],
                 ['label' => 'Blocchi',       'route' => 'blocks.index',       'permission' => 'blocks.viewAny'],
             ],
         ],
@@ -79,7 +78,6 @@ return [
             'icon'    => 'fa-key',
             'items'   => [
                 ['label' => 'Contratti',     'route' => 'rentals.index',     'icon' => 'fa-file-contract',     'permission' => 'rentals.viewAny'],
-                ['label' => 'Assegnazioni',  'route' => 'assignments.index', 'icon' => 'fa-people-arrows',     'permission' => 'assignments.viewAny'],
                 ['label' => 'Blocchi',       'route' => 'blocks.index',      'icon' => 'fa-ban',               'permission' => 'blocks.viewAny'],
             ],
         ],

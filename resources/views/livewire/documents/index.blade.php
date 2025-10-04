@@ -113,11 +113,11 @@
 
             <div class="col-span-2 flex items-end gap-3">
                 <label class="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox" class="rounded border-gray-300" wire:model.live="showArchived">
+                    <input type="checkbox" class="rounded border-gray-300" wire:model.live="showArchived" @if($canManage === false && $canUpdate === true) disabled @endif>
                     <span>Mostra archiviati</span>
                 </label>
 
-                @if($canManage)
+                @if($canCreate)
                     <button type="button"
                             class="ml-auto inline-flex h-10 items-center rounded-md bg-slate-800 px-3 text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
                             wire:click="openCreate"
@@ -132,7 +132,7 @@
     {{-- Azioni bulk --}}
     <div class="flex items-center gap-2">
         <span class="text-sm text-gray-600">Selezionati: {{ count($selected) }}</span>
-        @if($canManage)
+            @if($canUpdate)
             <div class="flex items-center gap-2">
                 <input type="date" class="rounded border-gray-300" wire:model.live="bulkRenewDate">
                 <button type="button" class="rounded bg-amber-600 px-3 py-1.5 text-white hover:bg-amber-700"
@@ -140,7 +140,7 @@
                     Rinnova selezionati
                 </button>
             </div>
-        @endif
+            @endif
     </div>
 
     {{-- Tabella --}}
@@ -203,11 +203,15 @@
                             <button type="button" class="rounded border px-2 py-1" wire:click="openEdit({{ $doc->id }})">
                                 Apri
                             </button>
-                            @if($canManage)
+
+                            @if($canUpdate)
                                 <button type="button" class="rounded bg-slate-800 px-2 py-1 text-white hover:bg-slate-900"
                                         wire:click="openEdit({{ $doc->id }})" @if($isArchived) disabled @endif>
                                     Modifica
                                 </button>
+                            @endif
+
+                            @if($canDelete)
                                 <button type="button" class="rounded bg-rose-600 px-2 py-1 text-white hover:bg-rose-700"
                                         wire:click="delete({{ $doc->id }})" @if($isArchived) disabled @endif>
                                     Elimina

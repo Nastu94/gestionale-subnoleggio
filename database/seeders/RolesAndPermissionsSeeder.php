@@ -20,7 +20,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Vehicles & documents
             'vehicles.viewAny', 'vehicles.view', 'vehicles.create', 'vehicles.update', 'vehicles.delete',
             'vehicles.update_mileage', 'vehicles.manage_maintenance', 'vehicles.restore',
-            'vehicle_documents.viewAny', 'vehicle_documents.view', 'vehicle_documents.manage',
+            'vehicle_documents.viewAny', 'vehicle_documents.view', 'vehicle_documents.create', 'vehicle_documents.update', 'vehicle_documents.delete', 'vehicle_documents.manage',
 
             // Assignments
             'assignments.viewAny', 'assignments.view', 'assignments.create', 'assignments.update', 'assignments.delete',
@@ -58,7 +58,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'vehicles.viewAny','vehicles.view',
             'vehicles.update_mileage','vehicles.manage_maintenance',
 
-            'vehicle_documents.viewAny','vehicle_documents.view',
+            'vehicle_documents.viewAny','vehicle_documents.view', 'vehicle_documents.update',
 
             'assignments.viewAny','assignments.view',
 

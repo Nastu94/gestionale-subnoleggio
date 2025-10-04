@@ -15,65 +15,31 @@ use Livewire\Component;
 use Livewire\WithPagination;
 
 /**
- * Livewire: Documents\Index
- *
  * Gestione documenti veicoli (lista + filtri + editor in drawer, senza allegati).
  * - Filtri persistiti via query string.
- * - Operazioni bulk con data di rinnovo gestita come proprietà Livewire.
- * - Seleziona/deseleziona tutti con metodo server (no Alpine), per aggiornare sempre il contatore.
+ * - Renter: vede solo i veicoli a lui assegnati *ora* (join vehicle_assignments).
+ * - Permessi granulari: create/update/delete (admin) ; update (renter).
  */
 class Index extends Component
 {
     use AuthorizesRequests;
-    use WithPagination; // necessario per accedere a $this->page e gestire la paginazione
+    use WithPagination;
 
-    /** Tema pagination (opzionale, tailwind di default) */
-    // protected string $paginationTheme = 'tailwind';
+    // ---------------- Filtri (persistiti in URL) ----------------
+    #[Url(as: 'q')]         public ?string $search = null;
+    #[Url(as: 'type')]      public ?string $type = null;     // insurance|road_tax|inspection|registration|green_card|ztl_permit|other
+    #[Url(as: 'state')]     public ?string $state = null;    // expired|soon30|soon60|ok|no_date
+    #[Url(as: 'vehicle_id')]public ?int $vehicleId = null;
+    #[Url(as: 'org')]       public ?int $orgId = null;
+    #[Url(as: 'loc')]       public ?int $locId = null;
+    #[Url(as: 'from')]      public ?string $from = null;     // YYYY-MM-DD
+    #[Url(as: 'to')]        public ?string $to = null;       // YYYY-MM-DD
+    #[Url(as: 'sort')]      public string $sort = 'expiry_date';
+    #[Url(as: 'dir')]       public string $dir = 'asc';
+    #[Url(as: 'per_page')]  public int $perPage = 25;
+    #[Url(as: 'archived')]  public bool $showArchived = false;
 
-    /* -----------------------------
-     |  Filtri (persistiti in URL)
-     * ----------------------------- */
-
-    #[Url(as: 'q')]
-    public ?string $search = null;
-
-    #[Url(as: 'type')]
-    public ?string $type = null;   // insurance|road_tax|inspection|registration|green_card|ztl_permit|other
-
-    #[Url(as: 'state')]
-    public ?string $state = null;  // expired|soon30|soon60|ok|no_date
-
-    #[Url(as: 'vehicle_id')]
-    public ?int $vehicleId = null;
-
-    #[Url(as: 'org')]
-    public ?int $orgId = null;
-
-    #[Url(as: 'loc')]
-    public ?int $locId = null;
-
-    #[Url(as: 'from')]
-    public ?string $from = null;   // YYYY-MM-DD
-
-    #[Url(as: 'to')]
-    public ?string $to = null;     // YYYY-MM-DD
-
-    #[Url(as: 'sort')]
-    public string $sort = 'expiry_date';
-
-    #[Url(as: 'dir')]
-    public string $dir = 'asc';
-
-    #[Url(as: 'per_page')]
-    public int $perPage = 25;
-
-    #[Url(as: 'archived')]
-    public bool $showArchived = false;
-
-    /* -----------------------------
-     |  Selezione e UI
-     * ----------------------------- */
-
+    // ---------------- Selezione / UI ----------------
     /** ID documenti selezionati (tutte le pagine) */
     public array $selected = [];
 
@@ -82,15 +48,15 @@ class Index extends Component
 
     /** Drawer editor */
     public bool $drawerOpen = false;
-    public ?int $editingId = null;                // null = create
-    public ?bool $editingVehicleArchived = null;  // per bloccare azioni se veicolo archiviato
+    public ?int $editingId = null;
+    public ?bool $editingVehicleArchived = null;
 
     /** Form editor (no allegati) */
     public array $form = [
         'vehicle_id'  => null,
         'type'        => null,
         'number'      => null,
-        'expiry_date' => null, // YYYY-MM-DD o null
+        'expiry_date' => null,
     ];
 
     /** Etichette italiane per enum documenti */
@@ -104,11 +70,9 @@ class Index extends Component
         'other'        => 'Altro',
     ];
 
-    /** Whitelist per sort e enum type */
     protected array $allowedSort  = ['expiry_date','type','number','vehicle.plate'];
     protected array $allowedTypes = ['insurance','road_tax','inspection','registration','green_card','ztl_permit','other'];
 
-    /** Regole form (minime, coerenti con lo schema) */
     protected function rules(): array
     {
         return [
@@ -119,48 +83,35 @@ class Index extends Component
         ];
     }
 
-    /* -----------------------------
-     |  Normalizzazioni / reset pagina
-     * ----------------------------- */
-
+    // Reset pagina quando cambiano i filtri
     public function updated($name, $value): void
     {
-        // Quando cambiano filtri/paginazione, torniamo a pagina 1 per evitare "pagine vuote"
         $filters = ['search','type','state','vehicleId','orgId','locId','from','to','perPage','showArchived','sort','dir'];
         if (in_array($name, $filters, true)) {
             $this->resetPage();
         }
     }
-
     public function updatedType($value): void
     {
-        if ($value !== null && !in_array($value, $this->allowedTypes, true)) {
-            $this->type = null;
-        }
+        if ($value !== null && !in_array($value, $this->allowedTypes, true)) $this->type = null;
     }
     public function updatedDir($value): void
     {
-        if (!in_array($value, ['asc','desc'], true)) {
-            $this->dir = 'asc';
-        }
+        if (!in_array($value, ['asc','desc'], true)) $this->dir = 'asc';
     }
     public function updatedSort($value): void
     {
-        if (!in_array($value, $this->allowedSort, true)) {
-            $this->sort = 'expiry_date';
-        }
+        if (!in_array($value, $this->allowedSort, true)) $this->sort = 'expiry_date';
     }
 
-    /* -----------------------------
-     |  Toolbar / editor actions
-     * ----------------------------- */
+    // ---------------- Azioni toolbar/editor ----------------
 
-    /** Apre drawer in modalità CREATE (richiede filtro vehicleId) */
+    /** Apre drawer in modalità CREATE (solo chi può creare) */
     public function openCreate(): void
     {
         $this->authorizeView();
 
-        if (!Auth::user()->can('vehicle_documents.manage')) {
+        if (!Auth::user()->can('vehicle_documents.create') && !Auth::user()->can('vehicle_documents.manage')) {
             $this->dispatch('toast', ['type' => 'warning', 'message' => 'Non hai i permessi per creare documenti.']);
             return;
         }
@@ -183,7 +134,7 @@ class Index extends Component
         $this->drawerOpen = true;
     }
 
-    /** Apre drawer in modalità EDIT su documento esistente */
+    /** Apre drawer in modalità EDIT (view per tutti, write se permesso) */
     public function openEdit(int $id): void
     {
         $this->authorizeView();
@@ -203,12 +154,11 @@ class Index extends Component
         ];
         $this->drawerOpen = true;
 
-        if (!Auth::user()->can('vehicle_documents.manage')) {
+        if (!$this->userCanUpdate()) {
             $this->dispatch('toast', ['type' => 'info', 'message' => 'Modalità sola lettura.']);
         }
     }
 
-    /** Chiude il drawer editor */
     public function closeDrawer(): void
     {
         $this->drawerOpen = false;
@@ -217,25 +167,30 @@ class Index extends Component
         $this->resetValidation();
     }
 
-    /** Salva (create/update) documento. Richiede manage + veicolo non archiviato */
+    /** Crea/Aggiorna (admin crea; renter può aggiornare) */
     public function save(): void
     {
         $this->authorizeView();
+        $this->validate();
 
-        if (!Auth::user()->can('vehicle_documents.manage')) {
-            $this->dispatch('toast', ['type' => 'warning', 'message' => 'Non hai i permessi per modificare documenti.']);
-            return;
-        }
-
+        // Veicolo non deve essere archiviato
         $vehicle = Vehicle::withTrashed()->findOrFail($this->form['vehicle_id']);
         if (method_exists($vehicle, 'trashed') && $vehicle->trashed()) {
             $this->dispatch('toast', ['type' => 'warning', 'message' => 'Veicolo archiviato: non puoi modificare i documenti.']);
             return;
         }
 
-        $this->validate();
-
+        // Se renter → può solo UPDATE e solo per veicoli assegnati *ora*
         if ($this->editingId) {
+            if (!$this->userCanUpdate()) {
+                $this->dispatch('toast', ['type' => 'warning', 'message' => 'Non hai i permessi per aggiornare.']);
+                return;
+            }
+            if ($this->isRenter() && !$this->vehicleAssignedToRenterNow($vehicle->id)) {
+                $this->dispatch('toast', ['type' => 'warning', 'message' => 'Documento non appartenente alla tua flotta attuale.']);
+                return;
+            }
+
             $doc = VehicleDocument::findOrFail($this->editingId);
             $doc->update([
                 'type'        => $this->form['type'],
@@ -244,6 +199,11 @@ class Index extends Component
             ]);
             $msg = 'Documento aggiornato.';
         } else {
+            // CREATE: solo admin (o chi ha create/manage)
+            if (!Auth::user()->can('vehicle_documents.create') && !Auth::user()->can('vehicle_documents.manage')) {
+                $this->dispatch('toast', ['type' => 'warning', 'message' => 'Non hai i permessi per creare documenti.']);
+                return;
+            }
             VehicleDocument::create($this->form);
             $msg = 'Documento creato.';
         }
@@ -252,12 +212,12 @@ class Index extends Component
         $this->closeDrawer();
     }
 
-    /** Elimina singolo documento (se permesso e veicolo non archiviato) */
+    /** Elimina: solo chi ha delete/manage e non su veicoli archiviati */
     public function delete(int $id): void
     {
         $this->authorizeView();
 
-        if (!Auth::user()->can('vehicle_documents.manage')) {
+        if (!Auth::user()->can('vehicle_documents.delete') && !Auth::user()->can('vehicle_documents.manage')) {
             $this->dispatch('toast', ['type' => 'warning', 'message' => 'Non hai i permessi per eliminare documenti.']);
             return;
         }
@@ -276,16 +236,12 @@ class Index extends Component
         $this->selected = array_values(array_diff($this->selected, [$id]));
     }
 
-    /**
-     * Rinnovo bulk: usa la proprietà $bulkRenewDate (niente Alpine).
-     * - Permessi: manage
-     * - Evita documenti di veicoli archiviati
-     */
+    /** Rinnovo bulk: richiede permesso update (renter OK), esclude veicoli non assegnati/archiviati */
     public function bulkRenew(): void
     {
         $this->authorizeView();
 
-        if (!Auth::user()->can('vehicle_documents.manage')) {
+        if (!$this->userCanUpdate()) {
             $this->dispatch('toast', ['type' => 'warning', 'message' => 'Non hai i permessi per modificare documenti.']);
             return;
         }
@@ -298,16 +254,30 @@ class Index extends Component
             return;
         }
 
-        $ids = VehicleDocument::query()
+        // Limita alle righe realmente modificabili nel contesto attuale
+        $idsQuery = VehicleDocument::query()
             ->select('vehicle_documents.id')
             ->join('vehicles', 'vehicles.id', '=', 'vehicle_documents.vehicle_id')
             ->when(!$this->showArchived, fn($q) => $q->whereNull('vehicles.deleted_at'))
-            ->whereIn('vehicle_documents.id', $this->selected)
-            ->pluck('vehicle_documents.id')
-            ->all();
+            ->whereIn('vehicle_documents.id', $this->selected);
+
+        // Se renter → solo veicoli assegnati ora
+        if ($this->isRenter()) {
+            $idsQuery->whereExists(function ($sub) {
+                $sub->selectRaw('1')
+                    ->from('vehicle_assignments as va')
+                    ->whereColumn('va.vehicle_id', 'vehicles.id')
+                    ->where('va.renter_org_id', Auth::user()->organization_id)
+                    ->where('va.status', 'active')
+                    ->where('va.start_at', '<=', now())
+                    ->where(function ($q) { $q->whereNull('va.end_at')->orWhere('va.end_at', '>', now()); });
+            });
+        }
+
+        $ids = $idsQuery->pluck('vehicle_documents.id')->all();
 
         if (empty($ids)) {
-            $this->dispatch('toast', ['type' => 'warning', 'message' => 'Le righe selezionate non sono modificabili.']);
+            $this->dispatch('toast', ['type' => 'warning', 'message' => 'Nessuna riga modificabile con il tuo profilo.']);
             return;
         }
 
@@ -318,43 +288,56 @@ class Index extends Component
         $this->bulkRenewDate = null;
     }
 
-    /**
-     * Seleziona o deseleziona tutti i documenti della PAGINA CORRENTE.
-     * Riceve lo stato della checkbox master.
-     */
+    /** Master checkbox: seleziona/deseleziona tutti gli ID della pagina corrente */
     public function toggleSelectPage(bool $checked): void
     {
-        // Ricava gli ID della pagina corrente usando forPage (coerente con ordinamento/filtri)
         $ids = (clone $this->query())
             ->forPage($this->page ?? 1, $this->perPage)
             ->pluck('vehicle_documents.id')
             ->all();
 
-        if (empty($ids)) {
-            return;
-        }
+        if (empty($ids)) return;
 
         if ($checked) {
-            // Unione (senza duplicati)
             $this->selected = array_values(array_unique(array_merge($this->selected, $ids)));
         } else {
-            // Rimuovi solo quelli della pagina
             $this->selected = array_values(array_diff($this->selected, $ids));
         }
     }
 
-    /* -----------------------------
-     |  Query / autorizzazioni / render
-     * ----------------------------- */
+    // ---------------- Query / auth helpers ----------------
 
     protected function authorizeView(): void
     {
-        if (!Auth::user()->can('vehicle_documents.viewAny')) {
-            abort(403);
-        }
+        if (!Auth::user()->can('vehicle_documents.viewAny')) abort(403);
     }
 
-    /** Costruisce la query principale secondo i filtri correnti */
+    /** Utente appartiene a un'organizzazione di tipo renter? */
+    protected function isRenter(): bool
+    {
+        $org = Auth::user()->organization;
+        return $org && method_exists($org, 'isRenter') ? $org->isRenter() : ($org?->type === 'renter');
+    }
+
+    /** Verifica se il veicolo è assegnato *ora* al renter corrente */
+    protected function vehicleAssignedToRenterNow(int $vehicleId): bool
+    {
+        return \DB::table('vehicle_assignments as va')
+            ->where('va.vehicle_id', $vehicleId)
+            ->where('va.renter_org_id', Auth::user()->organization_id)
+            ->where('va.status', 'active')
+            ->where('va.start_at', '<=', now())
+            ->where(function ($q) { $q->whereNull('va.end_at')->orWhere('va.end_at', '>', now()); })
+            ->exists();
+    }
+
+    /** L'utente può aggiornare documenti? (update o manage) */
+    protected function userCanUpdate(): bool
+    {
+        return Auth::user()->can('vehicle_documents.update') || Auth::user()->can('vehicle_documents.manage');
+    }
+
+    /** Costruisce la query con scoping renter (se applicabile) */
     protected function query(): \Illuminate\Database\Eloquent\Builder
     {
         $today = Carbon::now()->startOfDay();
@@ -368,10 +351,24 @@ class Index extends Component
                     ->with(['adminOrganization:id,name', 'defaultPickupLocation:id,name']),
             ]);
 
-        if (!$this->showArchived) {
-            $q->whereNull('vehicles.deleted_at');
+        // Admin: può vedere anche archiviati (se flag); Renter: sempre scoping per assegnazioni attive
+        if ($this->isRenter()) {
+            $q->whereExists(function ($sub) {
+                $sub->selectRaw('1')
+                    ->from('vehicle_assignments as va')
+                    ->whereColumn('va.vehicle_id', 'vehicles.id')
+                    ->where('va.renter_org_id', Auth::user()->organization_id)
+                    ->where('va.status', 'active')
+                    ->where('va.start_at', '<=', now())
+                    ->where(function ($q) { $q->whereNull('va.end_at')->orWhere('va.end_at', '>', now()); });
+            });
+            // per i renter, ignoriamo 'Mostra archiviati': possono vedere i doc dei veicoli assegnati a prescindere, ma
+            // se il veicolo è archiviato non consentiamo modifiche (gestito altrove).
+        } else {
+            if (!$this->showArchived) $q->whereNull('vehicles.deleted_at');
         }
 
+        // Ricerca libera
         if ($this->search) {
             $s = trim($this->search);
             $q->where(function ($w) use ($s) {
@@ -381,46 +378,30 @@ class Index extends Component
             });
         }
 
-        if ($this->type && in_array($this->type, $this->allowedTypes, true)) {
-            $q->where('vehicle_documents.type', $this->type);
-        }
+        // Filtri
+        if ($this->type && in_array($this->type, $this->allowedTypes, true)) $q->where('vehicle_documents.type', $this->type);
+        if ($this->vehicleId)    $q->where('vehicles.id', $this->vehicleId);
+        if ($this->orgId)        $q->where('vehicles.admin_organization_id', $this->orgId);
+        if ($this->locId)        $q->where('vehicles.default_pickup_location_id', $this->locId);
+        if ($this->from)         $q->whereDate('vehicle_documents.expiry_date', '>=', $this->from);
+        if ($this->to)           $q->whereDate('vehicle_documents.expiry_date', '<=', $this->to);
 
-        if ($this->vehicleId) {
-            $q->where('vehicles.id', $this->vehicleId);
-        }
-        if ($this->orgId) {
-            $q->where('vehicles.admin_organization_id', $this->orgId);
-        }
-        if ($this->locId) {
-            $q->where('vehicles.default_pickup_location_id', $this->locId);
-        }
-
-        if ($this->from) {
-            $q->whereDate('vehicle_documents.expiry_date', '>=', $this->from);
-        }
-        if ($this->to) {
-            $q->whereDate('vehicle_documents.expiry_date', '<=', $this->to);
-        }
-
+        // Stato scadenza
         if ($this->state === 'expired') {
-            $q->whereNotNull('vehicle_documents.expiry_date')
-              ->whereDate('vehicle_documents.expiry_date', '<', $today->toDateString());
+            $q->whereNotNull('vehicle_documents.expiry_date')->whereDate('vehicle_documents.expiry_date', '<', $today->toDateString());
         } elseif ($this->state === 'soon30') {
-            $q->whereNotNull('vehicle_documents.expiry_date')
-              ->whereBetween('vehicle_documents.expiry_date', [$today->toDateString(), $today->copy()->addDays(30)->toDateString()]);
+            $q->whereNotNull('vehicle_documents.expiry_date')->whereBetween('vehicle_documents.expiry_date', [$today->toDateString(), $today->copy()->addDays(30)->toDateString()]);
         } elseif ($this->state === 'soon60') {
-            $q->whereNotNull('vehicle_documents.expiry_date')
-              ->whereBetween('vehicle_documents.expiry_date', [$today->toDateString(), $today->copy()->addDays(60)->toDateString()]);
+            $q->whereNotNull('vehicle_documents.expiry_date')->whereBetween('vehicle_documents.expiry_date', [$today->toDateString(), $today->copy()->addDays(60)->toDateString()]);
         } elseif ($this->state === 'ok') {
-            $q->whereNotNull('vehicle_documents.expiry_date')
-              ->whereDate('vehicle_documents.expiry_date', '>', $today->copy()->addDays(60)->toDateString());
+            $q->whereNotNull('vehicle_documents.expiry_date')->whereDate('vehicle_documents.expiry_date', '>', $today->copy()->addDays(60)->toDateString());
         } elseif ($this->state === 'no_date') {
             $q->whereNull('vehicle_documents.expiry_date');
         }
 
+        // Ordinamento
         $sort = in_array($this->sort, $this->allowedSort, true) ? $this->sort : 'expiry_date';
         $dir  = in_array($this->dir, ['asc','desc'], true) ? $this->dir : 'asc';
-
         if ($sort === 'vehicle.plate') {
             $q->orderBy('vehicles.plate', $dir)->orderBy('vehicle_documents.id', 'asc');
         } else {
@@ -430,7 +411,7 @@ class Index extends Component
         return $q;
     }
 
-    /** KPI per pill (scaduti/≤30/≤60/senza data) con filtri correnti (eccetto 'state') */
+    /** KPI (come prima, ma sulla query scoped) */
     protected function kpi(): array
     {
         $state = $this->state;
@@ -439,12 +420,9 @@ class Index extends Component
         $this->state = $state;
 
         $today = Carbon::now()->startOfDay();
-        $expired = (clone $q)->whereNotNull('vehicle_documents.expiry_date')
-            ->whereDate('vehicle_documents.expiry_date', '<', $today->toDateString())->count();
-        $soon30  = (clone $q)->whereNotNull('vehicle_documents.expiry_date')
-            ->whereBetween('vehicle_documents.expiry_date', [$today->toDateString(), $today->copy()->addDays(30)->toDateString()])->count();
-        $soon60  = (clone $q)->whereNotNull('vehicle_documents.expiry_date')
-            ->whereBetween('vehicle_documents.expiry_date', [$today->toDateString(), $today->copy()->addDays(60)->toDateString()])->count();
+        $expired = (clone $q)->whereNotNull('vehicle_documents.expiry_date')->whereDate('vehicle_documents.expiry_date', '<', $today->toDateString())->count();
+        $soon30  = (clone $q)->whereNotNull('vehicle_documents.expiry_date')->whereBetween('vehicle_documents.expiry_date', [$today->toDateString(), $today->copy()->addDays(30)->toDateString()])->count();
+        $soon60  = (clone $q)->whereNotNull('vehicle_documents.expiry_date')->whereBetween('vehicle_documents.expiry_date', [$today->toDateString(), $today->copy()->addDays(60)->toDateString()])->count();
         $noDate  = (clone $q)->whereNull('vehicle_documents.expiry_date')->count();
         $total   = (clone $q)->count();
 
@@ -461,15 +439,15 @@ class Index extends Component
         $kpi   = $this->kpi();
         $orgs  = Organization::query()->select('id','name')->orderBy('name')->get();
         $locs  = Location::query()->select('id','name')->orderBy('name')->get();
-        $canManage = Auth::user()->can('vehicle_documents.manage');
 
-        return view('livewire.documents.index', [
-            'docs'       => $docs,
-            'kpi'        => $kpi,
-            'orgs'       => $orgs,
-            'locs'       => $locs,
-            'canManage'  => $canManage,
-            'docLabels'  => $this->docLabels,
-        ]);
+        // Flag permessi per la view (no rinomina variabili già esistenti)
+        $canManage = Auth::user()->can('vehicle_documents.manage');
+        $canCreate = $canManage || Auth::user()->can('vehicle_documents.create');
+        $canUpdate = $canManage || Auth::user()->can('vehicle_documents.update');
+        $canDelete = $canManage || Auth::user()->can('vehicle_documents.delete');
+
+        return view('livewire.documents.index', compact(
+            'docs','kpi','orgs','locs','canManage','canCreate','canUpdate','canDelete'
+        ) + ['docLabels' => $this->docLabels]);
     }
 }
