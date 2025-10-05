@@ -2,7 +2,7 @@
 
 namespace App\Policies;
 
-use App\Models\{User, Vehicle};
+use App\Models\{User, Vehicle, Location};
 use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Support\Facades\DB;
 
@@ -72,6 +72,31 @@ class VehiclePolicy
             return true;
         }
         return false;
+    }
+
+        /**
+     * L'utente può assegnare il veicolo a una delle PROPRIE sedi?
+     * - richiede permesso 'vehicles.assign_location'
+     * - se renter: il veicolo deve risultare assegnato al suo tenant ORA
+     *              e la location deve appartenere allo stesso tenant
+     * - per admin: basta il permesso (che hanno già via seeder)
+     */
+    public function assignBaseLocation(User $user, Vehicle $vehicle, Location $location): bool
+    {
+        if (! $user->can('vehicles.assign_location')) {
+            return false;
+        }
+
+        // Renter: vincoli di tenancy
+        if ($user->organization && method_exists($user->organization, 'isRenter') && $user->organization->isRenter()) {
+            if ((int) $location->organization_id !== (int) $user->organization_id) {
+                return false;
+            }
+            return $this->vehicleAssignedToRenterNow($vehicle->id, (int) $user->organization_id);
+        }
+
+        // Admin: hanno già tutti i permessi; consentiamo
+        return true;
     }
 
     /**

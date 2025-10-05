@@ -9,9 +9,8 @@
             {{-- Nota: la policy è applicata dentro al componente tramite $this->authorize(...) --}}
             <livewire:assignments.vehicle-assigner />
 
-            {{-- Facoltativo: stato di caricamento (progress) per UX migliore
+            {{-- Stato di caricamento (progress) per UX migliore--}}
             <div wire:loading class="mt-4 text-sm text-gray-500">Caricamento…</div>
-            --}}
         </div>
     </div>
 </x-app-layout>

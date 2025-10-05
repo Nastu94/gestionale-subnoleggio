@@ -16,5 +16,8 @@
             {{-- KEY diverso ⇒ Livewire monta una nuova istanza (niente stato “sporco”) --}}
             <livewire:vehicles.form :key="'vehicles-create'" />
         </div>
+        
+        {{-- Stato di caricamento (progress) per UX migliore--}}
+        <div wire:loading class="mt-4 text-sm text-gray-500">Caricamento…</div>
     </div>
 </x-app-layout>

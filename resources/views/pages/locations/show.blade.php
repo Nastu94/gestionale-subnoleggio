@@ -1,29 +1,30 @@
-{{-- resources/views/customers/show.blade.php --}}
+{{-- resources/views/pages/locations/show.blade.php --}}
+
+{{-- Sedi ▸ Dettaglio (toast-only) --}}
 <x-app-layout>
-    <div class="p-6">
-        <x-slot name="header">
-            <div class="flex flex-wrap items-center justify-between">
-                <h2 class="font-semibold text-xl text-gray-800 dark:text-gray-200 leading-tight">
-                    {{ $location->name }}
-                </h2>
-                <p class="text-gray-600">
-                    {{ $location->address_line }},
-                    {{ $location->postal_code }} {{ $location->city }},
-                    {{ $location->province }} ({{ $location->country_code }})
-                </p>
-                <!-- Component per le dashboard tiles -->
-                <!--<x-dashboard-tiles />-->
-            </div>
-        </x-slot>
+    <x-slot name="header">
+        <div class="flex flex-wrap items-center justify-between">
+            <h2 class="font-semibold text-lg text-gray-800 dark:text-gray-200 leading-tight">
+                {{ __('Sede') }}: {{ $location->name }}
+            </h2>
 
-        <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800">
-            {{-- Componente Livewire: scheda sede con form dati, contatti, indirizzo, note --}}
-            {{-- Nota: la policy è applicata dentro al componente tramite $this->authorize(...) --}}
-            <livewire:locations.show :location="$location" />
-
-            {{-- Facoltativo: stato di caricamento (progress) per UX migliore
-            <div wire:loading class="mt-4 text-sm text-gray-500">Caricamento…</div>
-            --}}
+            {{-- Pulsante "Indietro": torna all'indice Sedi --}}
+            <a href="{{ route('locations.index') }}"
+               class="inline-flex items-center px-3 py-1.5 rounded-md border
+                      text-xs font-semibold uppercase
+                      hover:bg-gray-100 dark:hover:bg-gray-700
+                      text-gray-800 dark:text-gray-200">
+                <i class="fas fa-arrow-left mr-1"></i> Torna alle Sedi
+            </a>
         </div>
+    </x-slot>
+
+    <div class="py-6">
+        <div class="bg-white dark:bg-gray-800 shadow sm:rounded-lg max-w-7xl mx-auto sm:px-6 lg:px-8">
+            {{-- Componente Livewire: informazioni + assegnazione veicoli --}}
+            <livewire:locations.show :location="$location" />
+        </div>
+        {{-- Stato di caricamento (progress) per UX migliore--}}
+        <div wire:loading class="mt-4 text-sm text-gray-500">Caricamento…</div>
     </div>
 </x-app-layout>

@@ -19,7 +19,7 @@ class RolesAndPermissionsSeeder extends Seeder
         $perms = [
             // Vehicles & documents
             'vehicles.viewAny', 'vehicles.view', 'vehicles.create', 'vehicles.update', 'vehicles.delete',
-            'vehicles.update_mileage', 'vehicles.manage_maintenance', 'vehicles.restore',
+            'vehicles.update_mileage', 'vehicles.manage_maintenance', 'vehicles.restore', 'vehicles.assign_location',
             'vehicle_documents.viewAny', 'vehicle_documents.view', 'vehicle_documents.create', 'vehicle_documents.update', 'vehicle_documents.delete', 'vehicle_documents.manage',
 
             // Assignments
@@ -56,7 +56,7 @@ class RolesAndPermissionsSeeder extends Seeder
         // Renter: set mirato + i due granulari su veicoli
         $renterPerms = [
             'vehicles.viewAny','vehicles.view',
-            'vehicles.update_mileage','vehicles.manage_maintenance',
+            'vehicles.update_mileage','vehicles.manage_maintenance', 'vehicles.assign_location',
 
             'vehicle_documents.viewAny','vehicle_documents.view', 'vehicle_documents.update',
 

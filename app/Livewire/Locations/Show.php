@@ -5,20 +5,30 @@ namespace App\Livewire\Locations;
 use App\Models\{Location, Vehicle, Rental};
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Livewire\Component;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
+/**
+ * Livewire: Sedi ▸ Dettaglio
+ *
+ * - Tab "Parco veicoli": assegna veicoli come sede base (default_pickup_location_id) in modo ISTANTANEO.
+ * - Vincoli:
+ *   - Nessun noleggio attivo sul veicolo (status 'checked_out'/'in_use' e actual_return_at NULL).
+ *   - Stesso contesto tenant: il veicolo deve essere assegnato al renter corrente (vehicle_assignments attivo).
+ * - Toast per tutti i feedback (success/warning/error).
+ */
 class Show extends Component
 {
     use AuthorizesRequests;
 
-    /** @var Location */
+    /** Sede corrente */
     public Location $location;
 
-    /** @var string|null Ricerca veicoli */
+    /** Ricerca veicoli assegnabili */
     public ?string $vehicleSearch = null;
 
-    /** @var array<int> Selezione bulk veicoli da assegnare a questa sede */
+    /** Selezione multipla per bulk-assign */
     public array $selectedVehicleIds = [];
 
     public function mount(Location $location): void
@@ -27,9 +37,7 @@ class Show extends Component
         $this->location = $location;
     }
 
-    /**
-     * Veicoli attualmente assegnati come "sede base" a questa location.
-     */
+    /** Veicoli attualmente con sede base = questa location */
     public function getAssignedVehiclesProperty()
     {
         return Vehicle::query()
@@ -39,19 +47,19 @@ class Show extends Component
     }
 
     /**
-     * Veicoli assegnabili a questa sede:
-     * - appartengono al contesto del renter (tramite assegnazione attiva)
-     * - non hanno noleggio attivo
-     * - match ricerca se presente
+     * Veicoli assegnabili alla sede:
+     * - devono appartenere al renter corrente (assegnazione attiva),
+     * - NON avere noleggio attivo,
+     * - non essere già su questa sede,
+     * - match ricerca se presente.
      */
     public function getAssignableVehiclesProperty()
     {
         $user  = Auth::user();
         $orgId = (int) $user->organization_id;
 
-        // Preferiamo operare sui veicoli "assegnati attivi" al renter corrente
-        // (tabella vehicle_assignments), così un renter non vede veicoli non suoi.
-        $sqlActiveAssignment = DB::table('vehicle_assignments as va')
+        // Subquery degli ID veicolo assegnati attivamente al tenant (oggi)
+        $activeAssignmentIds = DB::table('vehicle_assignments as va')
             ->select('va.vehicle_id')
             ->where('va.renter_org_id', $orgId)
             ->where('va.status', 'active')
@@ -60,16 +68,17 @@ class Show extends Component
                 $q->whereNull('va.end_at')->orWhere('va.end_at', '>', now());
             });
 
+        $term = $this->normalize($this->vehicleSearch);
+        $like = $term ? "%{$term}%" : null;
+
         $q = Vehicle::query()
-            ->whereIn('id', $sqlActiveAssignment)
-            // escludo quelli già su questa sede per non duplicare
+            ->whereIn('id', $activeAssignmentIds)
             ->where(function ($w) {
                 $w->whereNull('default_pickup_location_id')
                   ->orWhere('default_pickup_location_id', '!=', $this->location->id);
             });
 
-        if ($term = $this->cleanSearch($this->vehicleSearch)) {
-            $like = "%{$term}%";
+        if ($term) {
             $q->where(function ($w) use ($like) {
                 $w->whereRaw('LOWER(plate) LIKE ?', [$like])
                   ->orWhereRaw('LOWER(make) LIKE ?', [$like])
@@ -77,42 +86,50 @@ class Show extends Component
             });
         }
 
-        // Filtra quelli senza noleggio attivo
+        // Recupero e filtro per "noleggio non attivo"
         $vehicles = $q->orderBy('plate')->get();
 
         return $vehicles->filter(fn (Vehicle $v) => !$this->hasActiveRental($v->id))->values();
     }
 
+    /**
+     * Assegna i veicoli selezionati a questa sede come "base".
+     * - Richiede permesso 'vehicles.update'.
+     * - Blocca quelli con noleggio attivo o non assegnati al tenant.
+     * - Update atomico con lock per evitare race.
+     */
     public function assignSelected(): void
     {
-        // Permesso: usiamo vehicles.update (il renter lo ha), non richiediamo locations.update.
-        $user = Auth::user();
-        if (!$user->can('vehicles.update')) {
-            $this->dispatch('toast', type:'error', message:'Permesso mancante: vehicles.update');
+        $user = auth()->user();
+
+        // 1) Permesso generale: vehicles.assign_location (no più vehicles.update)
+        if (! $user->can('vehicles.assign_location')) {
+            $this->dispatch('toast', type:'error', message:'Permesso mancante: vehicles.assign_location');
             return;
         }
 
         if (empty($this->selectedVehicleIds)) {
-            $this->dispatch('toast', type:'warning', message:'Seleziona almeno un veicolo');
+            $this->dispatch('toast', type:'warning', message:'Seleziona almeno un veicolo.');
             return;
         }
 
         $assigned = 0; $skipped = 0;
 
-        DB::transaction(function () use (&$assigned, &$skipped) {
+        \DB::transaction(function () use (&$assigned, &$skipped) {
             foreach (array_unique($this->selectedVehicleIds) as $vid) {
-                // Lock del veicolo per evitare race
-                /** @var Vehicle $vehicle */
-                $vehicle = Vehicle::query()->whereKey($vid)->lockForUpdate()->first();
-                if (!$vehicle) { $skipped++; continue; }
+                /** @var \App\Models\Vehicle|null $vehicle */
+                $vehicle = \App\Models\Vehicle::query()->whereKey($vid)->lockForUpdate()->first();
+                if (! $vehicle) { $skipped++; continue; }
 
-                // Guard-rails: noleggio attivo → salta
+                // 2) Autorizzazione per-veicolo con POLICY (VehiclePolicy@assignBaseLocation)
+                if (! Gate::allows('assignBaseLocation', [$vehicle, $this->location])) {
+                    $skipped++; continue;
+                }
+
+                // 3) Business guard-rails: NO noleggio attivo
                 if ($this->hasActiveRental($vehicle->id)) { $skipped++; continue; }
 
-                // Lo user deve avere un'assegnazione attiva su quel veicolo (multi-tenant safety)
-                if (!$this->vehicleAssignedToCurrentRenter($vehicle->id)) { $skipped++; continue; }
-
-                // Update sede base istantaneo
+                // 4) Aggiorna sede base istantaneamente
                 $vehicle->default_pickup_location_id = $this->location->id;
                 $vehicle->save();
 
@@ -120,11 +137,69 @@ class Show extends Component
             }
         });
 
-        // Reset selezione e feedback UI
         $this->selectedVehicleIds = [];
-        $msg = "{$assigned} assegnati";
-        if ($skipped) { $msg .= " • {$skipped} saltati"; }
+        $msg = "{$assigned} veicolo/i assegnato/i";
+        if ($skipped) { $msg .= " • {$skipped} saltato/i"; }
+
         $this->dispatch('toast', type:'success', message:$msg);
+    }
+
+    /**
+     * Statistiche sintetiche per la sede corrente.
+     * - vehicles_count: veicoli con sede base = location
+     * - active_pickup_here: noleggi attivi con pickup in questa location
+     * - active_return_here: noleggi attivi con drop-off in questa location
+     * - planned_pickups_today: ritiri pianificati OGGI (non ancora ritirati) in questa location
+     * - planned_returns_today: rientri pianificati OGGI (non ancora rientrati) in questa location
+     */
+    public function getStatsProperty(): array
+    {
+        $locId = (int) $this->location->id;
+
+        // Conteggio veicoli con sede base qui
+        $vehiclesCount = Vehicle::query()
+            ->where('default_pickup_location_id', $locId)
+            ->count();
+
+        // Stati “attivi” a sistema
+        $activeStatuses = ['checked_out', 'in_use'];
+
+        $activePickupHere = Rental::query()
+            ->whereIn('status', $activeStatuses)
+            ->where('pickup_location_id', $locId)
+            ->count();
+
+        $activeReturnHere = Rental::query()
+            ->whereIn('status', $activeStatuses)
+            ->where('return_location_id', $locId)
+            ->count();
+
+        // Finestra temporale “oggi” (timezone dell’app)
+        $start = now()->startOfDay();
+        $end   = now()->endOfDay();
+
+        // Escludo cancellati / no_show; conto solo quelli non ancora eseguiti
+        $plannedPickupsToday = Rental::query()
+            ->whereBetween('planned_pickup_at', [$start, $end])
+            ->where('pickup_location_id', $locId)
+            ->whereNull('actual_pickup_at')                 // ancora da ritirare
+            ->whereNotIn('status', ['cancelled', 'no_show'])
+            ->count();
+
+        $plannedReturnsToday = Rental::query()
+            ->whereBetween('planned_return_at', [$start, $end])
+            ->where('return_location_id', $locId)
+            ->whereNull('actual_return_at')                 // ancora da rientrare
+            ->whereNotIn('status', ['cancelled', 'no_show', 'checked_in']) // già chiusi fuori
+            ->count();
+
+        return [
+            'vehicles_count'         => $vehiclesCount,
+            'active_pickup_here'     => $activePickupHere,
+            'active_return_here'     => $activeReturnHere,
+            'planned_pickups_today'  => $plannedPickupsToday,
+            'planned_returns_today'  => $plannedReturnsToday,
+        ];
     }
 
     public function render()
@@ -132,24 +207,25 @@ class Show extends Component
         return view('livewire.locations.show', [
             'assigned'   => $this->assigned_vehicles,
             'assignable' => $this->assignable_vehicles,
+            'stats'      => $this->stats, 
         ]);
     }
 
     // -----------------------------
-    // Helpers (incapsulano regole)
+    // Helpers di dominio/regole
     // -----------------------------
 
-    /** Noleggio attivo = status in ('checked_out','in_use') e non ancora rientrato. */
+    /** True se esiste un noleggio attivo per il veicolo. */
     private function hasActiveRental(int $vehicleId): bool
     {
         return Rental::query()
             ->where('vehicle_id', $vehicleId)
-            ->whereIn('status', ['checked_out','in_use'])
+            ->whereIn('status', ['checked_out', 'in_use'])
             ->whereNull('actual_return_at')
             ->exists();
     }
 
-    /** Veicolo assegnato davvero al renter corrente (vehicle_assignments attivo). */
+    /** True se il veicolo è assegnato al renter corrente (assegnazione attiva). */
     private function vehicleAssignedToCurrentRenter(int $vehicleId): bool
     {
         $orgId = (int) Auth::user()->organization_id;
@@ -165,13 +241,12 @@ class Show extends Component
             ->exists();
     }
 
-    /** Normalizza ricerca veicoli: *→%, spazi→% e lowercase. */
-    private function cleanSearch(?string $s): ?string
+    /** Normalizza la ricerca veicoli: lower, '*'→'%', spazi→'%' */
+    private function normalize(?string $s): ?string
     {
-        if (!$s) return null;
+        if (! $s) return null;
         $s = strtolower(trim($s));
         $s = str_replace('*', '%', $s);
-        $s = preg_replace('/\s+/', '%', $s);
-        return $s;
+        return preg_replace('/\s+/', '%', $s);
     }
 }
