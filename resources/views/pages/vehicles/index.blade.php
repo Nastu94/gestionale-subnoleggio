@@ -6,8 +6,15 @@
                 <h2 class="font-semibold text-xl text-gray-800 dark:text-gray-200 leading-tight">
                     {{ __('Gestione veicoli') }}
                 </h2>
-                <!-- Component per le dashboard tiles -->
-                <!--<x-dashboard-tiles />-->
+
+                @can('vehicles.create')
+                    <a href="{{ route('vehicles.create') }}"
+                    class="inline-flex h-10 items-center rounded-md bg-slate-800 px-3 text-white hover:bg-slate-900">
+                        {{-- icona opzionale: + --}}
+                        <span class="mr-1 text-lg leading-none">+</span>
+                        Nuovo veicolo
+                    </a>
+                @endcan
             </div>
         </x-slot>
 

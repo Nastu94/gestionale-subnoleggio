@@ -81,7 +81,7 @@
             </div>
         </div>
 
-        <div class="col-span-1 flex items-center justify-end">
+        <div class="col-span-1 flex items-center">
             <label class="inline-flex items-center gap-2 mt-6">
                 <input type="checkbox" wire:model.live="showArchived" class="rounded border-gray-300">
                 <span class="text-sm text-gray-700">Mostra archiviati</span>

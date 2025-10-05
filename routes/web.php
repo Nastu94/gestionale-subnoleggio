@@ -99,6 +99,17 @@ Route::middleware([
         ->middleware('permission:vehicles.viewAny');
 
     /*
+    | Crea veicolo
+    | Permesso: vehicles.create
+    */
+    Route::get('/vehicles/create', [VehicleController::class, 'create'])
+        ->name('vehicles.create')
+        ->middleware('permission:vehicles.create');
+    Route::post('/vehicles', [VehicleController::class, 'store'])
+        ->name('vehicles.store')
+        ->middleware('permission:vehicles.create');
+
+    /*
     | Dettaglio veicolo
     | Permesso: vehicles.view
     */
@@ -107,17 +118,12 @@ Route::middleware([
         ->middleware('permission:vehicles.view');
 
     /*
-    | Crea veicolo
-    | Permesso: vehicles.create
-    */
-    Route::post('/vehicles', [VehicleController::class, 'store'])
-        ->name('vehicles.store')
-        ->middleware('permission:vehicles.create');
-
-    /*
     | Aggiorna veicolo
     | Permesso: vehicles.update
     */
+    Route::get('/vehicles/{vehicle}/edit', [VehicleController::class, 'edit'])
+        ->name('vehicles.edit')
+        ->middleware('permission:vehicles.update');
     Route::match(['put','patch'], '/vehicles/{vehicle}', [VehicleController::class, 'update'])
         ->name('vehicles.update')
         ->middleware('permission:vehicles.update');
