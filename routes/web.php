@@ -19,6 +19,7 @@ use App\Http\Controllers\BlockController;
 use App\Http\Controllers\OrganizationController;
 
 use App\Http\Controllers\VehicleDocumentController;
+use App\Http\Controllers\VehiclePhotoController;
 
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\AuditController;
@@ -135,6 +136,16 @@ Route::middleware([
     Route::delete('/vehicles/{vehicle}', [VehicleController::class, 'destroy'])
         ->name('vehicles.destroy')
         ->middleware('permission:vehicles.delete');
+
+    // Upload foto (serve permesso admin: vehicles.update O vehicles.create)
+    Route::post('/vehicles/{vehicle}/photos', [VehiclePhotoController::class, 'store'])
+        ->name('vehicles.photos.store')
+        ->middleware('permission:vehicles.update|vehicles.create');
+
+    // Elimina foto (stessi permessi)
+    Route::delete('/vehicles/{vehicle}/photos/{media}', [VehiclePhotoController::class, 'destroy'])
+        ->name('vehicles.photos.destroy')
+        ->middleware('permission:vehicles.update|vehicles.create');
 
 // ------------------------- Sedi -------------------------
     /*

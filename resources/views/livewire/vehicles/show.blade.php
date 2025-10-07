@@ -97,6 +97,7 @@
                 @php
                     $tabs = [
                         'profile'     => 'Profilo',
+                        'photos'      => 'Foto',
                         'documents'   => "Documenti" . ($docSoon || $docExpired ? " ({$docSoon} ≤60gg / {$docExpired} scad.)" : ''),
                         'maintenance' => 'Stato tecnico',
                         'assignments' => 'Assegnazioni',
@@ -174,6 +175,13 @@
                         </tbody>
                     </table>
                 </div>
+            </div>
+        @endif
+
+        {{-- FOTO --}}
+        @if($tab === 'photos')
+            <div id="tab-foto" class="mt-6">
+                @include('pages.vehicles.partials.photos', ['vehicle' => $vehicle])
             </div>
         @endif
 

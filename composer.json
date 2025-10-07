@@ -18,6 +18,7 @@
         "livewire/livewire": "^3.6.4",
         "power-components/livewire-powergrid": "^6.4",
         "spatie/laravel-activitylog": "^4.10",
+        "spatie/laravel-medialibrary": "^11.12",
         "spatie/laravel-permission": "^6.20",
         "spatie/laravel-webhook-client": "^3.4",
         "spatie/laravel-webhook-server": "^3.8"

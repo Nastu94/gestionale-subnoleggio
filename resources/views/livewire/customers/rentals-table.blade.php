@@ -1,6 +1,6 @@
 {{-- resources/views/livewire/customers/rentals-table.blade.php --}}
 
-<div class="mt-6 border-t pt-4">
+<div>
     <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Contratti del cliente</h3>
 
     {{-- Barra comandi (stile coerente) --}}

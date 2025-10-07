@@ -249,7 +249,7 @@ class Show extends Component
     /** Cambio tab da UI (whitelist) */
     public function switchTab(string $tab): void
     {
-        $allowed = ['profile','documents','maintenance','assignments','notes'];
+        $allowed = ['profile','photos','documents','maintenance','assignments','notes'];
         if (in_array($tab, $allowed, true)) {
             $this->tab = $tab;
         }
