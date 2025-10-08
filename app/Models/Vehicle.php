@@ -42,6 +42,7 @@ class Vehicle extends Model implements SpatieHasMedia
     public function rentals()           { return $this->hasMany(Rental::class); }
     public function blocks()            { return $this->hasMany(VehicleBlock::class); }
     public function mileageLogs()       { return $this->hasMany(VehicleMileageLog::class); }
+    public function pricelists()        { return $this->hasMany(VehiclePricelist::class); }
 
     // --- Scope utili ---
     /** Veicoli attivi (non dismessi) */
@@ -77,6 +78,26 @@ class Vehicle extends Model implements SpatieHasMedia
         $this->addMediaConversion('preview')
             ->fit(Fit::Max, 1200, 800)      // ridimensiona entro, senza taglio
             ->nonQueued();
+
+        // Thumbnail piccolo per liste/icone
+        $this->addMediaConversion('thumb_48')
+            ->fit(Fit::Contain, 48, 48)     // niente crop
+            ->queued();
+        
+        // Thumbnail medio per card/list
+        $this->addMediaConversion('thumb_160')
+            ->fit(Fit::Contain, 160, 160)   // niente crop
+            ->queued();
+
+        // Cover 16:9 per la show (ritaglio centrato)
+        $this->addMediaConversion('cover_1200x675')
+            ->fit(Fit::Crop, 1200, 675)     // crop centrato
+            ->queued();
+        
+        // Card 3:2 per liste veicoli (ritaglio centrato)
+        $this->addMediaConversion('card_branded')
+            ->fit(Fit::Contain, 900, 600)
+            ->queued();
     }
 
     /**

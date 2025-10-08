@@ -11,6 +11,7 @@ use App\Models\VehicleAssignment;
 use App\Models\VehicleBlock;
 use App\Models\Vehicle;
 use App\Models\VehicleDocument;
+use App\Models\VehiclePricelist;
 use App\Policies\CustomerPolicy;
 use App\Policies\LocationPolicy;
 use App\Policies\RentalPolicy;
@@ -18,6 +19,7 @@ use App\Policies\VehicleAssignmentPolicy;
 use App\Policies\VehicleBlockPolicy;
 use App\Policies\VehiclePolicy;
 use App\Policies\VehicleDocumentPolicy;
+use App\Policies\VehiclePricelistPolicy;
 
 /**
  * AuthServiceProvider
@@ -47,6 +49,7 @@ class AuthServiceProvider extends ServiceProvider
         // Flotta
         Vehicle::class             => VehiclePolicy::class,
         VehicleDocument::class     => VehicleDocumentPolicy::class,
+        VehiclePricelist::class    => VehiclePricelistPolicy::class,
     ];
 
     /**

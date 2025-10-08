@@ -99,6 +99,7 @@
                         'profile'     => 'Profilo',
                         'photos'      => 'Foto',
                         'documents'   => "Documenti" . ($docSoon || $docExpired ? " ({$docSoon} ≤60gg / {$docExpired} scad.)" : ''),
+                        'pricing'     => 'Listino',
                         'maintenance' => 'Stato tecnico',
                         'assignments' => 'Assegnazioni',
                         'notes'       => 'Note',
@@ -258,6 +259,17 @@
             </div>
         @endif
 
+        {{-- LISTINO --}}
+        @if($tab === 'pricing')
+            <div class="rounded-lg border bg-white p-4 space-y-3">
+                @can('vehicle_pricing.viewAny')
+                    <livewire:vehicles.pricing :vehicle="$vehicle" />
+                @else
+                    <div class="text-sm text-gray-600">Non hai i permessi per vedere questa sezione.</div>
+                @endcan
+            </div>
+        @endif
+        
         {{-- STATO TECNICO --}}
         @if($tab === 'maintenance')
             <div class="rounded-lg border bg-white p-4 space-y-3">

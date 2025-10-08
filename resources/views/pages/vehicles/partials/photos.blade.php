@@ -39,7 +39,7 @@
             @foreach ($photos as $media)
                 <div class="group relative overflow-hidden rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
                     <a href="{{ $media->getUrl('preview') }}" target="_blank" class="block">
-                        <img src="{{ $media->getUrl('thumb') }}" class="w-full h-full object-contain" alt="">
+                        <img src="{{ $media->getUrl('thumb_160') }}" class="w-full h-full object-contain" alt="">
                     </a>
 
                     <div class="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 p-2 bg-black/50 opacity-0 group-hover:opacity-100 transition">
