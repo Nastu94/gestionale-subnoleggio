@@ -180,6 +180,14 @@ Route::middleware([
         ->name('locations.show')
         ->middleware('permission:locations.view');
 
+    /*
+    | Modifica sede (form)
+    | Permesso: locations.update
+    */
+    Route::get('/locations/{location}/edit', [LocationController::class, 'edit'])
+        ->name('locations.edit')
+        ->whereNumber('location') // o ->whereUuid('location')
+        ->middleware('permission:locations.update');
 
     /*
     | Aggiorna sede

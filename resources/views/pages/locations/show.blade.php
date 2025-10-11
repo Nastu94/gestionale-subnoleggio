@@ -8,14 +8,24 @@
                 {{ __('Sede') }}: {{ $location->name }}
             </h2>
 
-            {{-- Pulsante "Indietro": torna all'indice Sedi --}}
-            <a href="{{ route('locations.index') }}"
-               class="inline-flex items-center px-3 py-1.5 rounded-md border
-                      text-xs font-semibold uppercase
-                      hover:bg-gray-100 dark:hover:bg-gray-700
-                      text-gray-800 dark:text-gray-200">
-                <i class="fas fa-arrow-left mr-1"></i> Torna alle Sedi
-            </a>
+            <div class="flex gap-2">
+                <a href="{{ route('locations.index') }}"
+                class="inline-flex items-center px-3 py-1.5 rounded-md border
+                        text-xs font-semibold uppercase hover:bg-gray-100 dark:hover:bg-gray-700
+                        text-gray-800 dark:text-gray-200">
+                    <i class="fas fa-arrow-left mr-1"></i> Torna alle Sedi
+                </a>
+
+                {{-- Mostra solo se l’utente può aggiornare --}}
+                @can('update', $location)
+                    <a href="{{ route('locations.edit', $location) }}"
+                    class="inline-flex items-center px-3 py-1.5 bg-indigo-600 rounded-md
+                            text-xs font-semibold text-white uppercase hover:bg-indigo-500
+                            focus:outline-none focus:ring-2 focus:ring-indigo-300 transition">
+                        <i class="fas fa-pencil-alt mr-1"></i> Modifica
+                    </a>
+                @endcan
+            </div>
         </div>
     </x-slot>
 
