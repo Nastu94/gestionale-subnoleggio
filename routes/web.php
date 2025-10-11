@@ -157,13 +157,13 @@ Route::middleware([
         ->middleware('permission:locations.viewAny');
 
     /*
-    | Dettaglio sede
-    | Permesso: locations.view
+    | Crea sede
+    | Permesso: locations.create
     */
-    Route::get('/locations/{location}', [LocationController::class, 'show'])
-        ->name('locations.show')
-        ->middleware('permission:locations.view');
-
+    Route::get('/locations/create', [LocationController::class, 'create'])
+        ->name('locations.create')
+        ->middleware('permission:locations.create');
+    
     /*
     | Crea sede
     | Permesso: locations.create
@@ -171,6 +171,15 @@ Route::middleware([
     Route::post('/locations', [LocationController::class, 'store'])
         ->name('locations.store')
         ->middleware('permission:locations.create');
+        
+    /*
+    | Dettaglio sede
+    | Permesso: locations.view
+    */
+    Route::get('/locations/{location}', [LocationController::class, 'show'])
+        ->name('locations.show')
+        ->middleware('permission:locations.view');
+
 
     /*
     | Aggiorna sede

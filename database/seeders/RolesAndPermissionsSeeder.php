@@ -71,7 +71,7 @@ class RolesAndPermissionsSeeder extends Seeder
 
             'rentals.viewAny','rentals.view','rentals.create','rentals.update','rentals.delete',
 
-            'locations.viewAny','locations.view',
+            'locations.viewAny','locations.view', 'locations.create','locations.update', 'locations.delete',
             // opzionali:
             // 'audit.view','reports.view',
         ];

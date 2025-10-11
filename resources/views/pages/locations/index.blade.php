@@ -7,6 +7,14 @@
             <h2 class="font-semibold text-lg text-gray-800 dark:text-gray-200 leading-tight">
                 {{ __('Sedi (Punti operativi)') }}
             </h2>
+
+            {{-- Pulsante: Nuova sede --}}
+            <a href="{{ route('locations.create') }}"
+               class="inline-flex items-center px-3 py-1.5 bg-indigo-600 rounded-md
+                      text-xs font-semibold text-white uppercase hover:bg-indigo-500
+                      focus:outline-none focus:ring-2 focus:ring-indigo-300 transition">
+                <i class="fas fa-plus mr-1"></i> Nuova sede
+            </a>
         </div>
     </x-slot>
 
