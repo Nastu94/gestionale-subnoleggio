@@ -36,35 +36,47 @@ class VehiclePricingService
     }
 
     /**
-     * Calcola il preventivo (in cents) per il noleggio con il listino dato.
-     * - $pickupAt, $dropoffAt: date/ore di ritiro e riconsegna
-     * - $expectedKm: km totali previsti (usati per calcolare gli extra km)
-     * 
-     * Ritorna un array con:
-     * - days: numero di giorni di noleggio (minimo 1)
-     * - daily_total: totale parziale per i giorni (senza extra km e deposito)
-     * - km_extra: totale parziale per gli extra km
-     * - deposit: deposito cauzionale
-     * - total: totale complessivo (daily_total + km_extra + deposit, arrotondato)
-     * - currency: valuta del listino
-     * 
-     * Nota: non fa nessun controllo sul fatto che il listino sia attivo o meno.
+     * Calcola il preventivo basato sul listino, le date di ritiro/riconsegna e i km previsti.
+     * Ritorna un array con i dettagli del preventivo.
+     * - 'days': numero di giorni di noleggio
+     * - 'daily_total': totale giornaliero (prima di tiers e arrotondamenti)
+     * - 'km_extra': costo km extra
+     * - 'tier': dati del tier applicato (se presente)
+     * - 'deposit': cauzione (se presente)
+     * - 'total': totale finale (dopo tiers e arrotondamenti)
+     * - 'currency': valuta del listino
      */
     public function quote(VehiclePricelist $pl, \DateTimeInterface $pickupAt, \DateTimeInterface $dropoffAt, int $expectedKm = 0): array
     {
-        $start = CarbonImmutable::instance($pickupAt);
-        $end   = CarbonImmutable::instance($dropoffAt);
+        $start = CarbonImmutable::instance($pickupAt)->tz('Europe/Rome');
+        $end   = CarbonImmutable::instance($dropoffAt)->tz('Europe/Rome');
 
-        $days = max(1, (int) ceil($end->floatDiffInHours($start) / 24));
+        // giorni arrotondati per eccesso sulle ORE REALI (gestisce DST)
+        $hours = $start->floatDiffInRealHours($end);   // +1h nel weekend di cambio ora
+        $days  = max(1, (int) ceil($hours / 24));
+
+        // Precarico in memoria per evitare query per giorno
+        $seasons = $pl->seasons()->where('is_active', true)->get();
+        $tiers   = $pl->tiers()->where('is_active', true)->get();
+
         $dailyTotals = 0;
 
         for ($i=0; $i<$days; $i++) {
             $d = $start->addDays($i);
             $isWeekend = in_array($d->dayOfWeekIso, [6,7], true);
+
+            $season = $seasons->first(fn($s) => $s->matchesDate($d));
+            $weekendPct = $season?->weekend_pct_override ?? $pl->weekend_pct;
+
             $daily = $pl->base_daily_cents;
-            if ($isWeekend && $pl->weekend_pct > 0) {
-                $daily += (int) round($daily * ($pl->weekend_pct/100));
+            if ($isWeekend && $weekendPct > 0) {
+                $daily += (int) round($daily * ($weekendPct/100));
             }
+
+            if ($season && $season->season_pct) {
+                $daily += (int) round($daily * ($season->season_pct/100));
+            }
+
             $dailyTotals += $daily;
         }
 
@@ -77,12 +89,25 @@ class VehiclePricingService
         }
 
         $subtotal = $dailyTotals + $extra;
+
+        // Applica tier in base ai giorni (il più specifico / priorità più alta)
+        $tier = $tiers->first(fn($t) => $t->matchesDays($days));
+        if ($tier) {
+            if (!is_null($tier->override_daily_cents)) {
+                // Override daily = ignora weekend/season per semplicità (MVP)
+                $subtotal = $tier->override_daily_cents * $days + $extra;
+            } elseif (!is_null($tier->discount_pct) && $tier->discount_pct > 0) {
+                $subtotal = (int) round($subtotal * (1 - $tier->discount_pct/100));
+            }
+        }
+
         $total = $this->applyRounding($subtotal, $pl->rounding);
 
         return [
             'days'        => $days,
-            'daily_total' => $dailyTotals,
+            'daily_total' => $dailyTotals, // prima dei tiers
             'km_extra'    => $extra,
+            'tier'        => $tier?->only(['name','override_daily_cents','discount_pct']),
             'deposit'     => (int) ($pl->deposit_cents ?? 0),
             'total'       => $total,
             'currency'    => $pl->currency,

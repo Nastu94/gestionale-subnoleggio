@@ -27,7 +27,7 @@ class Show extends Component
     public int $vehicleId;
 
     /** Tab attiva (sincronizzata su query string per deep-link) */
-    #[Url(as: 'tab', except: 'profile')]
+    #[Url(as: 'tab', history: true, except: 'profile')]
     public string $tab = 'profile'; // profile|documents|maintenance|assignments|notes
 
     /** Filtri locali della tab Documenti */
