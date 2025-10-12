@@ -23,6 +23,14 @@ class VehiclePricelistPolicy
         return $user->can('vehicle_pricing.update');
     }
 
+    public function publish(User $user, VehiclePricelist $pricelist): bool {
+        return $user->can('vehicle_pricing.publish');
+    }
+
+    public function archive(User $user, VehiclePricelist $pricelist): bool {
+        return $user->can('vehicle_pricing.archive');
+    } 
+
     public function delete(User $user, VehiclePricelist $pricelist): bool {
         return $user->can('vehicle_pricing.delete');
     }

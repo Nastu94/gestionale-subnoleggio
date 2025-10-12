@@ -23,7 +23,7 @@ return new class extends Migration {
             $table->foreignId('pickup_location_id')->nullable()->constrained('locations')->nullOnDelete();
             $table->foreignId('return_location_id')->nullable()->constrained('locations')->nullOnDelete();
 
-            $table->enum('status', ['reserved','checked_out','in_use','checked_in','cancelled','no_show'])->default('reserved');
+            $table->enum('status', ['reserved','checked_out','in_use','checked_in','cancelled','no_show', 'draft', 'closed'])->default('reserved');
 
             // denormalizzazioni utili per report/filtri veloci
             $table->unsignedInteger('mileage_out')->nullable();

@@ -14,6 +14,7 @@ use App\Http\Controllers\VehicleController;
 use App\Http\Controllers\LocationController;
 
 use App\Http\Controllers\RentalController;
+use App\Http\Controllers\RentalMediaController;
 use App\Http\Controllers\AssignmentController;
 use App\Http\Controllers\BlockController;
 use App\Http\Controllers\OrganizationController;
@@ -221,12 +222,12 @@ Route::middleware([
         ->middleware('permission:rentals.viewAny');
 
     /*
-    | Dettaglio contratto
-    | Permesso: rentals.view
+    | Crea contratto
+    | Permesso: rentals.create
     */
-    Route::get('/rentals/{rental}', [RentalController::class, 'show'])
-        ->name('rentals.show')
-        ->middleware('permission:rentals.view');
+    Route::get('/rentals/create', [RentalController::class, 'create'])
+        ->name('rentals.create')
+        ->middleware('permission:rentals.create');
 
     /*
     | Crea contratto
@@ -245,12 +246,141 @@ Route::middleware([
         ->middleware('permission:rentals.update');
 
     /*
+    | Dettaglio contratto
+    | Permesso: rentals.view
+    */
+    Route::get('/rentals/{rental}', [RentalController::class, 'show'])
+        ->name('rentals.show')
+        ->middleware('permission:rentals.view');
+
+    /*
     | Elimina contratto
     | Permesso: rentals.delete
     */
     Route::delete('/rentals/{rental}', [RentalController::class, 'destroy'])
         ->name('rentals.destroy')
         ->middleware('permission:rentals.delete');
+
+// ------------------------- Checklist & Danni -------------------------
+    /**
+     * Vista create checklist (pickup/return)
+     * Permesso: rentals.checklist.update
+     */
+    Route::get('/rentals/{rental}/checklist/create', [RentalController::class, 'createChecklist'])
+        ->name('rental-checklists.create')
+        ->middleware('permission:rentals.checklist.update');
+
+    /*
+    | Salva checklist (pickup/return)
+    | Permesso: rentals.checklist.update
+    */
+    Route::post('/rentals/{rental}/checklist', [RentalController::class, 'storeChecklist'])
+        ->name('rental-checklists.store')
+        ->middleware('permission:rentals.checklist.update');
+
+    /*
+    | Registra danno (pickup/return/during)
+    | Permesso: rentals.damage.create
+    */
+    Route::post('/rentals/{rental}/damage', [RentalController::class, 'storeDamage'])
+        ->name('rentals.damage.store')
+        ->middleware('permission:rentals.damage.create');
+
+// ------------------------- Rentals: azioni stato -------------------------
+    /*
+    | Checkout → checked_out
+    | Permesso: rentals.checkout
+    */
+    Route::post('/rentals/{rental}/checkout', [RentalController::class, 'checkout'])
+        ->name('rentals.checkout')
+        ->middleware('permission:rentals.checkout');
+
+    /*
+    | In use → in_use (se usi lo step intermedio)
+    | Permesso: rentals.inuse
+    */
+    Route::post('/rentals/{rental}/inuse', [RentalController::class, 'inuse'])
+        ->name('rentals.inuse')
+        ->middleware('permission:rentals.inuse');
+
+    /*
+    | Check-in → checked_in
+    | Permesso: rentals.checkin
+    */
+    Route::post('/rentals/{rental}/checkin', [RentalController::class, 'checkin'])
+        ->name('rentals.checkin')
+        ->middleware('permission:rentals.checkin');
+
+    /*
+    | Close → closed
+    | Permesso: rentals.close
+    */
+    Route::post('/rentals/{rental}/close', [RentalController::class, 'close'])
+        ->name('rentals.close')
+        ->middleware('permission:rentals.close');
+
+    /*
+    | Cancel / No-show
+    | Permessi: rentals.cancel / rentals.noshow
+    */
+    Route::post('/rentals/{rental}/cancel', [RentalController::class, 'cancel'])
+        ->name('rentals.cancel')
+        ->middleware('permission:rentals.cancel');
+
+    Route::post('/rentals/{rental}/noshow', [RentalController::class, 'noshow'])
+        ->name('rentals.noshow')
+        ->middleware('permission:rentals.noshow');
+
+
+    // ------------------------- Media (controller dedicato) -------------------------
+
+    /*
+    | Contratto generato (PDF) → Rental->contract
+    | Permesso: media.attach.contract + rentals.contract.generate
+    */
+    Route::post('/rentals/{rental}/media/contract', [RentaMediaController::class, 'storeContract'])
+        ->name('rentals.media.contract.store')
+        ->middleware(['permission:media.attach.contract','permission:rentals.contract.generate']);
+
+    /*
+    | Contratto firmato (PDF) → Rental->signatures + Checklist(pickup)->signatures
+    | Permesso: media.attach.contract_signed + rentals.contract.upload_signed
+    */
+    Route::post('/rentals/{rental}/media/contract-signed', [RentaMediaController::class, 'storeSignedContract'])
+        ->name('rentals.media.contract.signed.store')
+        ->middleware(['permission:media.attach.contract_signed','permission:rentals.contract.upload_signed']);
+
+    /*
+    | Foto checklist (pickup/return) → RentalChecklist->photos
+    | Permesso: media.attach.checklist_photo
+    */
+    Route::post('/rental-checklists/{checklist}/media/photos', [RentaMediaController::class, 'storeChecklistPhoto'])
+        ->name('checklists.media.photos.store')
+        ->middleware('permission:media.attach.checklist_photo');
+
+    /*
+    | Foto danno → RentalDamage->photos
+    | Permesso: media.attach.damage_photo
+    */
+    Route::post('/rental-damages/{damage}/media/photos', [RentaMediaController::class, 'storeDamagePhoto'])
+        ->name('damages.media.photos.store')
+        ->middleware('permission:media.attach.damage_photo');
+
+    /*
+    | Documenti vari → Rental->documents
+    | Permesso: media.attach.rental_document
+    */
+    Route::post('/rentals/{rental}/media/documents', [RentaMediaController::class, 'storeRentalDocument'])
+        ->name('rentals.media.documents.store')
+        ->middleware('permission:media.attach.rental_document');
+
+    /*
+    | Delete media (generico) — valida ownership nel controller
+    | Permesso: media.delete
+    */
+    Route::delete('/media/{media}', [RentaMediaController::class, 'destroy'])
+        ->name('media.destroy')
+        ->middleware('permission:media.delete');
 
 // ------------------------- Assegnazioni -------------------------
     /*

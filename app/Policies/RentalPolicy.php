@@ -42,4 +42,49 @@ class RentalPolicy
         }
         return $user->can('rentals.delete');
     }
+
+    public function checkout(User $user, Rental $rental): bool
+    {
+        return $user->can('rentals.checkout');
+    }
+    public function inuse(User $user, Rental $rental): bool
+    {
+        return $user->can('rentals.inuse');
+    }
+    public function checkin(User $user, Rental $rental): bool
+    {
+        return $user->can('rentals.checkin');
+    }
+    public function close(User $user, Rental $rental): bool
+    {
+        return $user->can('rentals.close');
+    }
+    public function cancel(User $user, Rental $rental): bool
+    {
+        return $user->can('rentals.cancel');
+    }
+    public function noshow(User $user, Rental $rental): bool
+    {
+        return $user->can('rentals.noshow');
+    }
+
+    // Contratti
+    public function contractGenerate(User $user, Rental $rental): bool
+    {
+        return $user->can('rentals.contract.generate');
+    }
+    public function contractUploadSigned(User $user, Rental $rental): bool
+    {
+        return $user->can('rentals.contract.upload_signed');
+    }
+
+    // Media sul Rental
+    public function uploadMedia(User $user, Rental $rental): bool
+    {
+        return $user->can('media.upload');
+    }
+    public function deleteMedia(User $user, Rental $rental): bool
+    {
+        return $user->can('media.delete');
+    }
 }

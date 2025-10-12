@@ -12,6 +12,8 @@ use App\Models\VehicleBlock;
 use App\Models\Vehicle;
 use App\Models\VehicleDocument;
 use App\Models\VehiclePricelist;
+use App\Models\RentalChecklist;
+use App\Models\RentalDamage;
 use App\Policies\CustomerPolicy;
 use App\Policies\LocationPolicy;
 use App\Policies\RentalPolicy;
@@ -20,6 +22,8 @@ use App\Policies\VehicleBlockPolicy;
 use App\Policies\VehiclePolicy;
 use App\Policies\VehicleDocumentPolicy;
 use App\Policies\VehiclePricelistPolicy;
+use App\Policies\RentalChecklistPolicy;
+use App\Policies\RentalDamagePolicy;
 
 /**
  * AuthServiceProvider
@@ -43,6 +47,8 @@ class AuthServiceProvider extends ServiceProvider
 
         // Noleggi
         Rental::class              => RentalPolicy::class,
+        RentalChecklist::class     => RentalChecklistPolicy::class,
+        RentalDamage::class        => RentalDamagePolicy::class,
         VehicleAssignment::class   => VehicleAssignmentPolicy::class,
         VehicleBlock::class        => VehicleBlockPolicy::class,
 

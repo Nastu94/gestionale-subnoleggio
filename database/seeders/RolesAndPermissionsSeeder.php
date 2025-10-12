@@ -39,6 +39,20 @@ class RolesAndPermissionsSeeder extends Seeder
             // Locations
             'locations.viewAny', 'locations.view', 'locations.create', 'locations.update', 'locations.delete',
 
+            // --- Nuovi permessi: AZIONI noleggio ---
+            'rentals.checkout', 'rentals.inuse', 'rentals.checkin', 'rentals.close', 'rentals.cancel', 'rentals.noshow', 
+
+            // Contratti noleggio
+            'rentals.contract.generate', 'rentals.contract.upload_signed',
+
+            // Checklist & Danni
+            'rental_checklists.create', 'rental_checklists.update', 'rental_damages.create', 'rental_damages.update',
+            'rental_damages.delete',
+
+            // --- Nuovi permessi: MEDIA ---
+            'media.upload', 'media.delete', 'media.attach.contract', 'media.attach.contract_signed',
+            'media.attach.checklist_photo', 'media.attach.damage_photo', 'media.attach.rental_document',
+
             // Audit/Report
             'audit.view', 'reports.view',
         ];
@@ -72,6 +86,17 @@ class RolesAndPermissionsSeeder extends Seeder
             'rentals.viewAny','rentals.view','rentals.create','rentals.update','rentals.delete',
 
             'locations.viewAny','locations.view', 'locations.create','locations.update', 'locations.delete',
+
+            'rentals.checkout', 'rentals.inuse', 'rentals.checkin', 'rentals.close', 'rentals.cancel', 'rentals.noshow', 
+
+            'rentals.contract.generate', 'rentals.contract.upload_signed',
+
+            'rental_checklists.create', 'rental_checklists.update', 'rental_damages.create', 'rental_damages.update',
+            'rental_damages.delete',
+
+            'media.upload', 'media.delete', 'media.attach.contract', 'media.attach.contract_signed',
+            'media.attach.checklist_photo', 'media.attach.damage_photo', 'media.attach.rental_document',
+
             // opzionali:
             // 'audit.view','reports.view',
         ];
