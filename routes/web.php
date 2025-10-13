@@ -261,6 +261,15 @@ Route::middleware([
         ->name('rentals.destroy')
         ->middleware('permission:rentals.delete');
 
+// ------------------------- Generazione Contratto (PDF) -------------------------
+    /**
+     * Genera il contratto in PDF (preview o download)
+     * Permesso: rentals.contract.generate
+     */
+    Route::get('/rentals/{rental}/contract', [RentalController::class, 'generateContract'])
+        ->name('rentals.contract.generate')
+        ->middleware('permission:rentals.contract.generate');
+
 // ------------------------- Checklist & Danni -------------------------
     /**
      * Vista create checklist (pickup/return)

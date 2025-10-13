@@ -6,6 +6,7 @@ use App\Models\Rental;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
+use PDF; // Assicurati di avere una libreria PDF installata, es. barryvdh/laravel-dompdf
 
 /**
  * Controller Resource: Rental (Contratti)
@@ -223,4 +224,22 @@ class RentalController extends Controller
 
         return view('pages.rentals.checklist.create', compact('rental'));
     }
-}
+
+    /**
+     * Genera il contratto in PDF (preview o download)
+     * Permesso: rentals.contract.generate
+     */
+    public function generateContract(Request $request, Rental $rental)
+    {
+        $this->authorize('generateContract', $rental);
+
+        // Logica per generare il contratto in PDF
+        $pdf = PDF::loadView('pages.rentals.contract', compact('rental'));
+
+        if ($request->has('preview')) {
+            return $pdf->stream('contract.pdf');
+        }
+
+        return $pdf->download('contract.pdf');
+    }
+}   

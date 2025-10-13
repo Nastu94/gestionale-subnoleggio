@@ -12,8 +12,8 @@ return new class extends Migration {
             $table->id();
             $table->foreignId('organization_id')->constrained('organizations')->cascadeOnUpdate()->restrictOnDelete(); // renter
             $table->foreignId('vehicle_id')->constrained('vehicles')->cascadeOnUpdate()->restrictOnDelete();
-            $table->foreignId('assignment_id')->constrained('vehicle_assignments')->cascadeOnUpdate()->restrictOnDelete();
-            $table->foreignId('customer_id')->constrained('customers')->cascadeOnUpdate()->restrictOnDelete();
+            $table->foreignId('assignment_id')->nullable()->constrained('vehicle_assignments')->cascadeOnUpdate()->restrictOnDelete();
+            $table->foreignId('customer_id')->nullable()->constrained('customers')->cascadeOnUpdate()->restrictOnDelete();
 
             $table->dateTime('planned_pickup_at');
             $table->dateTime('planned_return_at');
@@ -23,7 +23,7 @@ return new class extends Migration {
             $table->foreignId('pickup_location_id')->nullable()->constrained('locations')->nullOnDelete();
             $table->foreignId('return_location_id')->nullable()->constrained('locations')->nullOnDelete();
 
-            $table->enum('status', ['reserved','checked_out','in_use','checked_in','cancelled','no_show', 'draft', 'closed'])->default('reserved');
+            $table->enum('status', ['reserved','checked_out','in_use','checked_in','cancelled','no_show', 'draft', 'closed'])->default('draft');
 
             // denormalizzazioni utili per report/filtri veloci
             $table->unsignedInteger('mileage_out')->nullable();

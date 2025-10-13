@@ -61,7 +61,6 @@
                             <th>Veicolo</th>
                             <th class="w-40">Ritiro</th>
                             <th class="w-40">Riconsegna</th>
-                            <th class="w-28 text-center">Stato</th>
                             <th class="w-28 text-right">Azioni</th>
                         </tr>
                     </thead>
@@ -157,16 +156,10 @@
                                 </div>
                             </td>
 
-                            <td>{{ optional($r->customer)->name ?? '—' }}</td>
-                            <td>{{ optional($r->vehicle)->plate ?? optional($r->vehicle)->make . ' ' . optional($r->vehicle)->model ?? '—' }}</td>
-                            <td>{{ optional($r->planned_pickup_at)->format('d/m/Y H:i') ?? '—' }}</td>
-                            <td>{{ optional($r->planned_return_at)->format('d/m/Y H:i') ?? '—' }}</td>
-
-                            <td class="text-center">
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {{ $badgeClass }}">
-                                    {{ $badge }}
-                                </span>
-                            </td>
+                            <td class="text-center">{{ optional($r->customer)->name ?? '—' }}</td>
+                            <td class="text-center">{{ optional($r->vehicle)->plate . ' — ' . optional($r->vehicle)->make . ' ' . optional($r->vehicle)->model ?? '—' }}</td>
+                            <td class="text-center">{{ optional($r->planned_pickup_at)->format('d/m/Y H:i') ?? '—' }}</td>
+                            <td class="text-center">{{ optional($r->planned_return_at)->format('d/m/Y H:i') ?? '—' }}</td>
 
                             <td class="text-right">
                                 <a href="{{ route('rentals.show', $r) }}"
@@ -180,7 +173,7 @@
 
                     @if($rows->isEmpty())
                         <tr>
-                            <td colspan="7" class="text-center opacity-60 py-6">
+                            <td colspan="6" class="text-center opacity-60 py-6">
                                 Nessun noleggio trovato
                             </td>
                         </tr>

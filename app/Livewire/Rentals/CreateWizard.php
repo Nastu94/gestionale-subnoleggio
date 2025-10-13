@@ -3,18 +3,12 @@
 namespace App\Livewire\Rentals;
 
 use Livewire\Component;
-use App\Models\{Rental, Customer, Vehicle, Location, VehicleAssignment};
-use Illuminate\Validation\Rule;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
+use App\Models\{Rental, Customer, Vehicle, Location, VehicleAssignment}; // Location esiste nel tuo schema (dalle query)
+use Illuminate\Database\Eloquent\Builder;
 
-/**
- * Wizard creazione noleggio in stato draft:
- * 1) Dati noleggio
- * 2) Cliente
- * 3) Bozza (contratto + documenti preliminari)
- *
- * Nota: non rinomina campi; salva/aggiorna sempre con status='draft'.
- */
 class CreateWizard extends Component
 {
     /** Step corrente: 1..3 */
@@ -36,28 +30,88 @@ class CreateWizard extends Component
     /** Associazione cliente */
     public ?int $customer_id = null;
 
-    /** Creazione rapida cliente (se non esiste) — usa i campi minimi previsti da customers */
+    /** Form cliente (popolato alla selezione o per creazione) */
     public array $customerForm = [
-        'full_name'     => null,
+        'name'         => null,
         'email'         => null,
         'phone'         => null,
         'doc_id_type'   => null,
         'doc_id_number' => null,
+        'birth_date'    => null,
+        'address'       => null,
+        'city'          => null,
+        'province'      => null,
+        'zip'           => null,
+        'country_code'  => null,
     ];
 
     /** Ricerca cliente */
     public string $customerQuery = '';
 
-    /** Opzioni di select (caricate da DB / repository) */
+    /** Opzioni select */
     public $vehicles = [];
     public $locations = [];
 
+    /** Se true, il form è stato popolato da un cliente selezionato */
+    public bool $customerPopulated = false;
+
     public function mount(): void
     {
-        // Carica opzioni per select (minimal, puoi sostituire con repository/service)
-        $this->vehicles  = Vehicle::query()->orderBy('id','desc')->limit(100)->get(['id','plate','make', 'model'])->toArray();
-        // ipotizziamo un modello Location collegato; in assenza, lascia array vuoto
-        $this->locations = Location::query()->orderBy('name')->get(['id','name'])->toArray();
+        $this->loadOptions();
+    }
+
+    /** Carica veicoli e sedi secondo regole */
+    protected function loadOptions(): void
+    {
+        // --- SEDI ---
+        $this->locations = Location::query()
+            ->where('organization_id', auth()->user()->organization_id)
+            ->orderBy('name','asc')
+            ->get(['id','name'])
+            ->toArray();
+
+        // --- VEICOLI ---
+        $user   = Auth::user();
+        $orgId  = method_exists($user, 'organization') ? optional($user->organization)->id : ($user->organization_id ?? null);
+        $isAdmin = method_exists($user, 'hasRole') ? $user->hasRole('admin') : false;
+
+        $vehiclesQ = Vehicle::query();
+
+        /**
+         * Filtro assegnazioni:
+         * - Renter (non admin): mostra SOLO veicoli assegnati alla sua organizzazione
+         * - Admin: mostra SOLO veicoli non assegnati a nessun renter (flotta libera)
+         *
+         * NB: le colonne/relazioni 'assignments', 'organization_id', 'end_at' sono
+         *      dedotte dal tuo schema (vedi `rentals.assignment_id` nel DB). Se i nomi differiscono,
+         *      adegua i whereHas/whereDoesntHave allo schema reale.
+         */
+        if ($isAdmin) {
+            // Veicoli senza assegnazione aperta
+            $vehiclesQ->whereDoesntHave('assignments', function ($q) {
+                $q->whereNull('end_at'); // o 'returned_at' a seconda del tuo schema
+            });
+        } else {
+            if ($orgId) {
+                $vehiclesQ->whereHas('assignments', function ($q) use ($orgId) {
+                    $q->whereNull('end_at')      // assegnazione attiva
+                      ->where('organization_id', $orgId);
+                });
+            } else {
+                // fallback conservativo: nessun veicolo
+                $vehiclesQ->whereRaw('1=0');
+            }
+        }
+
+        $this->vehicles = $vehiclesQ
+            ->orderBy('id','desc')
+            ->limit(200)
+            ->get(['id','plate','make','model'])
+            ->map(fn($v) => [
+                'id'    => $v->id,
+                'label' => $v->plate . ' — ' . $v->make . ' ' . $v->model ?: ('#'.$v->id),
+            ])
+            ->toArray();
     }
 
     /** Regole di validazione base per step 1 */
@@ -65,23 +119,29 @@ class CreateWizard extends Component
     {
         return [
             'rentalData.vehicle_id'         => ['nullable','integer','exists:vehicles,id'],
-            'rentalData.pickup_location_id' => ['nullable','integer'],
-            'rentalData.return_location_id' => ['nullable','integer'],
+            'rentalData.pickup_location_id' => ['nullable','integer','exists:locations,id'],
+            'rentalData.return_location_id' => ['nullable','integer','exists:locations,id'],
             'rentalData.planned_pickup_at'  => ['nullable','date'],
             'rentalData.planned_return_at'  => ['nullable','date','after_or_equal:rentalData.planned_pickup_at'],
             'rentalData.notes'              => ['nullable','string'],
         ];
     }
 
-    /** Regole di validazione per creazione rapida customer (step 2) */
+    /** Regole per creazione/aggiornamento cliente */
     protected function rulesCustomerCreate(): array
     {
         return [
-            'customerForm.name'     => ['required','string','max:255'],
+            'customerForm.name'          => ['required','string','max:255'],
             'customerForm.email'         => ['nullable','email','max:255'],
             'customerForm.phone'         => ['nullable','string','max:50'],
             'customerForm.doc_id_type'   => ['nullable','string','max:50'],
             'customerForm.doc_id_number' => ['required','string','max:100'],
+            'customerForm.birth_date'    => ['nullable','date'],
+            'customerForm.address'       => ['nullable','string','max:255'],
+            'customerForm.city'          => ['nullable','string','max:100'],
+            'customerForm.province'      => ['nullable','string','max:10'],
+            'customerForm.zip'           => ['nullable','string','max:20'],
+            'customerForm.country_code'  => ['nullable','string','max:2'],
         ];
     }
 
@@ -90,13 +150,10 @@ class CreateWizard extends Component
     {
         $this->validate($this->rulesStep1());
 
-        // Crea o aggiorna la bozza
         $rental = $this->rentalId
             ? Rental::query()->findOrFail($this->rentalId)
             : new Rental();
 
-        // Imposta status 'draft' (fase neutra)
-        $rental->status = 'draft';
 
         // recupero l'assegnazione del veicolo selezionato
         $assignment = VehicleAssignment::query()
@@ -111,36 +168,45 @@ class CreateWizard extends Component
         $rental->return_location_id = $this->rentalData['return_location_id'] ?? null;
         $rental->planned_pickup_at  = $this->castDate($this->rentalData['planned_pickup_at'] ?? null);
         $rental->planned_return_at  = $this->castDate($this->rentalData['planned_return_at'] ?? null);
-        $rental->organization_id    = auth()->user()->organization_id; // imposta se necessario
-        $rental->assignment_id      = $assignment->id ?? null; // resetta se necessario
+        $rental->organization_id    = auth()->user()->organization_id;
+        $rental->assignment_id      = $assignment->id ?? null;
         $rental->notes              = $this->rentalData['notes'] ?? null;
 
-        // customer_id se già selezionato nello step 2
         if ($this->customer_id) {
             $rental->customer_id = $this->customer_id;
         }
-
-        // Imposta organization/created_by se nel tuo progetto sono obbligatori (omessi qui per non rinominare variabili)
+        $rental->status = 'draft';
         $rental->save();
-
         $this->rentalId = $rental->id;
 
         // Feedback UI
         $this->dispatch('toast', type:'success', message:'Bozza salvata.');
     }
 
-    /** Step → avanti (salva prima la bozza così abbiamo l'ID per gli upload) */
+    /** Avanti di step (salviamo in 1 → 2 per avere l’ID bozza) */
     public function next(): void
     {
         if ($this->step === 1) {
+            // validazioni base + salvataggio bozza
+            $this->saveDraft();
+            // check overlap veicolo
+            $this->assertVehicleAvailability();
+        }
+
+        if ($this->step === 2) {
+            // se ha selezionato o creato un cliente, controlla overlap sul cliente
+            if ($this->customer_id) {
+                $this->assertCustomerNoOverlap();
+            }
+            // salva comunque per avere stato coerente
             $this->saveDraft();
         }
+
         if ($this->step < 3) {
             $this->step++;
         }
     }
 
-    /** Step ← indietro */
     public function prev(): void
     {
         if ($this->step > 1) {
@@ -148,33 +214,54 @@ class CreateWizard extends Component
         }
     }
 
-    /** Associa un cliente trovato (step 2) e salva bozza */
+    /** Selezione cliente: popola il form invece del toast e collega alla bozza */
     public function selectCustomer(int $id): void
     {
-        $this->customer_id = $id;
+        $customer = Customer::query()->findOrFail($id);
+
+        $this->customer_id = $customer->id;
+
+        // Popola il form con i dati trovati (campi compatibili con la tua tabella customers)
+        $this->customerForm = [
+            'name'          => $customer->name,
+            'email'         => $customer->email,
+            'phone'         => $customer->phone,
+            'doc_id_type'   => $customer->doc_id_type,
+            'doc_id_number' => $customer->doc_id_number,
+            'birth_date'    => optional($customer->birthdate)->format('Y-m-d'),
+            'address'       => $customer->address_line,
+            'city'          => $customer->city,
+            'province'      => $customer->province,
+            'zip'           => $customer->postal_code,
+            'country_code'  => $customer->country_code,
+        ];
+        $this->customerPopulated = true;
+
+        // Collega alla bozza in modo silenzioso
         $this->saveDraft();
     }
 
-    /** Crea al volo il cliente (step 2) e associa alla bozza */
-    public function createCustomer(): void
+    /** Crea o aggiorna il cliente usando i dati nel form e collega alla bozza */
+    public function createOrUpdateCustomer(): void
     {
         $this->validate($this->rulesCustomerCreate());
 
-        // Trova duplicati per (organization_id, doc_id_number) se necessario
-        $customer = new Customer($this->customerForm);
-        // Imposta organization se obbligatorio nel tuo schema (omesso qui per compatibilità)
-        $customer->save();
+        if ($this->customer_id) {
+            $customer = Customer::query()->findOrFail($this->customer_id);
+            $customer->fill($this->customerForm)->save();
+        } else {
+            $customer = new Customer($this->customerForm);
+            $customer->save();
+            $this->customer_id = $customer->id;
+        }
 
-        $this->customer_id = $customer->id;
+        $this->customerPopulated = true;
         $this->saveDraft();
-
-        $this->dispatch('toast', type:'success', message:'Cliente creato e associato.');
     }
 
-    /** Conferma bozza: redirect allo show o alla pagina reserved (qui solo redirect allo show) */
+    /** Fine wizard → vai alla show */
     public function finish(): void
     {
-        // Non settiamo reserved qui: l’azione formale di passaggio di stato resta nei controller di transizione.
         if (!$this->rentalId) {
             $this->saveDraft();
         }
@@ -186,6 +273,94 @@ class CreateWizard extends Component
     {
         if (empty($v)) return null;
         try { return Carbon::parse($v); } catch (\Throwable) { return null; }
+    }
+
+    /**
+     * Quando l'utente seleziona un veicolo, popoliamo automaticamente la sede di ritiro
+     * in base alla *sede attuale* del veicolo. Usiamo più fallback per adattarci allo schema:
+     * - $vehicle->default_pickup_location_id
+     * - $vehicle->current_location_id
+     * - $vehicle->location?->id (relazione)
+     * - $vehicle->pickup_location_id (se lo usate così)
+     */
+    public function updatedRentalDataVehicleId($vehicleId): void
+    {
+        if ($vehicleId === null) {
+            $this->rentalData['pickup_location_id'] = '';
+            return;
+        }
+
+        $vehicle = Vehicle::query()->find($vehicleId);
+        if (!$vehicle) return;
+
+        $currentLocationId =
+            $vehicle->default_pickup_location_id
+            ?? $vehicle->current_location_id
+            ?? optional($vehicle->location)->id
+            ?? $vehicle->pickup_location_id
+            ?? null;
+
+        if ($currentLocationId) {
+            $this->rentalData['pickup_location_id'] = $currentLocationId;
+        }
+    }
+
+    /**
+     * Verifica sovrapposizioni per lo stesso veicolo nelle date scelte.
+     * Overlap rule: A.start < B.end && A.end > B.start
+     */
+    protected function assertVehicleAvailability(): void
+    {
+        $vehicleId = $this->rentalData['vehicle_id'] ?? null;
+        $start     = $this->castDate($this->rentalData['planned_pickup_at'] ?? null);
+        $end       = $this->castDate($this->rentalData['planned_return_at'] ?? null);
+
+        if (!$vehicleId || !$start || !$end) return; // mancano dati => non blocchiamo qui
+
+        $exists = Rental::query()
+            ->where('vehicle_id', $vehicleId)
+            ->when($this->rentalId, fn(Builder $q) => $q->where('id','!=',$this->rentalId))
+            // qualsiasi stato (compresi draft/reserved/checked_*)
+            // se vuoi escludere cancelled/no_show, filtra qui.
+            ->where(function (Builder $q) use ($start, $end) {
+                $q->where('planned_pickup_at', '<', $end)
+                ->where('planned_return_at', '>', $start);
+            })
+            ->exists();
+
+        if ($exists) {
+            throw ValidationException::withMessages([
+                'rentalData.vehicle_id' => 'Il veicolo selezionato risulta già prenotato nelle date indicate.',
+                'rentalData.planned_return_at' => 'Intervallo non disponibile per questo veicolo.',
+            ]);
+        }
+    }
+
+    /**
+     * Verifica che lo stesso cliente non abbia già una prenotazione nello stesso periodo.
+     */
+    protected function assertCustomerNoOverlap(): void
+    {
+        $customerId = $this->customer_id;
+        $start      = $this->castDate($this->rentalData['planned_pickup_at'] ?? null);
+        $end        = $this->castDate($this->rentalData['planned_return_at'] ?? null);
+
+        if (!$customerId || !$start || !$end) return;
+
+        $exists = Rental::query()
+            ->where('customer_id', $customerId)
+            ->when($this->rentalId, fn(Builder $q) => $q->where('id','!=',$this->rentalId))
+            ->where(function (Builder $q) use ($start, $end) {
+                $q->where('planned_pickup_at', '<', $end)
+                ->where('planned_return_at', '>', $start);
+            })
+            ->exists();
+
+        if ($exists) {
+            throw ValidationException::withMessages([
+                'customerForm.full_name' => 'Questo cliente ha già una prenotazione che si sovrappone al periodo selezionato.',
+            ]);
+        }
     }
 
     public function render()
