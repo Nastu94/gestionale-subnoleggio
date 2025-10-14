@@ -15,7 +15,7 @@
                 </div>
                 <div>
                     <div class="opacity-70">Cliente</div>
-                    <div class="font-medium">{{ optional($rental->customer)->full_name ?? '—' }}</div>
+                    <div class="font-medium">{{ optional($rental->customer)->name ?? '—' }}</div>
                 </div>
                 <div>
                     <div class="opacity-70">Veicolo</div>

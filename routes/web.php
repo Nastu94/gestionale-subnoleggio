@@ -15,6 +15,7 @@ use App\Http\Controllers\LocationController;
 
 use App\Http\Controllers\RentalController;
 use App\Http\Controllers\RentalMediaController;
+use App\Http\Controllers\RentalContractController;
 use App\Http\Controllers\AssignmentController;
 use App\Http\Controllers\BlockController;
 use App\Http\Controllers\OrganizationController;
@@ -266,7 +267,7 @@ Route::middleware([
      * Genera il contratto in PDF (preview o download)
      * Permesso: rentals.contract.generate
      */
-    Route::get('/rentals/{rental}/contract', [RentalController::class, 'generateContract'])
+    Route::post('/rentals/{rental}/contract/generate', [RentalContractController::class, 'generate'])
         ->name('rentals.contract.generate')
         ->middleware('permission:rentals.contract.generate');
 

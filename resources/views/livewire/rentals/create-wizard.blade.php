@@ -88,6 +88,66 @@ $btnSoft = 'inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibol
             <textarea wire:model.defer="rentalData.notes" rows="3" class="{{ $input }}" placeholder="Note operative…"></textarea>
             @error('rentalData.notes') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
         </label>
+
+        {{-- Coperture e franchigie --}}
+        <label class="form-control md:col-span-2">
+            <span class="label-text mb-2 text-sm font-semibold">Coperture e franchigie</span>
+
+            <div class="grid md:grid-cols-2 gap-4">
+                {{-- Kasko --}}
+                <div class="rounded-md border border-gray-200 dark:border-gray-700 p-3">
+                    <label class="inline-flex items-center gap-2">
+                        <input type="checkbox" class="rounded" wire:model.defer="coverage.kasko">
+                        <span>Kasko</span>
+                    </label>
+                    <div class="mt-2">
+                        <span class="text-xs text-gray-600">Franchigia (€)</span>
+                        <input type="number" step="0.01" min="0" class="{{ $input }} mt-1"
+                            wire:model.defer="franchise.kasko" placeholder="es. 500.00">
+                    </div>
+                    @error('franchise.kasko') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                </div>
+
+                {{-- Furto/Incendio --}}
+                <div class="rounded-md border border-gray-200 dark:border-gray-700 p-3">
+                    <label class="inline-flex items-center gap-2">
+                        <input type="checkbox" class="rounded" wire:model.defer="coverage.furto_incendio">
+                        <span>Furto / Incendio</span>
+                    </label>
+                    <div class="mt-2">
+                        <span class="text-xs text-gray-600">Franchigia (€)</span>
+                        <input type="number" step="0.01" min="0" class="{{ $input }} mt-1"
+                            wire:model.defer="franchise.furto_incendio" placeholder="es. 800.00">
+                    </div>
+                    @error('franchise.furto_incendio') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                </div>
+
+                {{-- Cristalli --}}
+                <div class="rounded-md border border-gray-200 dark:border-gray-700 p-3">
+                    <label class="inline-flex items-center gap-2">
+                        <input type="checkbox" class="rounded" wire:model.defer="coverage.cristalli">
+                        <span>Cristalli</span>
+                    </label>
+                    <div class="mt-2">
+                        <span class="text-xs text-gray-600">Franchigia (€)</span>
+                        <input type="number" step="0.01" min="0" class="{{ $input }} mt-1"
+                            wire:model.defer="franchise.cristalli" placeholder="es. 150.00">
+                    </div>
+                    @error('franchise.cristalli') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                </div>
+
+                {{-- Assistenza --}}
+                <div class="rounded-md border border-gray-200 dark:border-gray-700 p-3">
+                    <label class="inline-flex items-center gap-2">
+                        <input type="checkbox" class="rounded" wire:model.defer="coverage.assistenza">
+                        <span>Assistenza stradale</span>
+                    </label>
+                    <div class="text-xs text-gray-600 mt-1">
+                        Include carro attrezzi/veicolo sostitutivo secondo disponibilità (testo variabile per clausole).
+                    </div>
+                </div>
+            </div>
+        </label>
     </div>
     @endif
 
@@ -222,9 +282,22 @@ $btnSoft = 'inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibol
                     </p>
 
                     @if($rentalId)
-                        {{-- Per ora solo il pulsante. Collegheremo la rotta all’azione di generazione. --}}
                         <form method="POST" action="{{ route('rentals.contract.generate', $rentalId) }}">
                             @csrf
+
+                            {{-- Passiamo le scelte del wizard (se presenti) senza cambiare i nomi --}}
+                            <input type="hidden" name="coverage[kasko]" value="{{ $coverage['kasko'] ? 1 : 0 }}">
+                            <input type="hidden" name="coverage[furto_incendio]" value="{{ $coverage['furto_incendio'] ? 1 : 0 }}">
+                            <input type="hidden" name="coverage[cristalli]" value="{{ $coverage['cristalli'] ? 1 : 0 }}">
+                            <input type="hidden" name="coverage[assistenza]" value="{{ $coverage['assistenza'] ? 1 : 0 }}">
+
+                            <input type="hidden" name="franchise[kasko]" value="{{ $franchise['kasko'] }}">
+                            <input type="hidden" name="franchise[furto_incendio]" value="{{ $franchise['furto_incendio'] }}">
+                            <input type="hidden" name="franchise[cristalli]" value="{{ $franchise['cristalli'] }}">
+
+                            {{-- Km previsti (opzionale, per preventivo) --}}
+                            <input type="hidden" name="expected_km" value="{{ (int) ($expectedKm ?? 0) }}">
+
                             <button type="submit" class="{{ $btnIndigo }}">
                                 Genera contratto (PDF)
                             </button>

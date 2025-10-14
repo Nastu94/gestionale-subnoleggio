@@ -44,6 +44,21 @@ class CreateWizard extends Component
         'zip'           => null,
         'country_code'  => null,
     ];
+    
+    /** Selezioni coperture (flags) */
+    public array $coverage = [
+        'kasko'           => false,
+        'furto_incendio'  => false,
+        'cristalli'       => false,
+        'assistenza'      => false,
+    ];
+
+    /** Franchigie per coperture (valori in €) */
+    public array $franchise = [
+        'kasko'          => null,
+        'furto_incendio' => null,
+        'cristalli'      => null,
+    ];
 
     /** Ricerca cliente */
     public string $customerQuery = '';
@@ -124,6 +139,15 @@ class CreateWizard extends Component
             'rentalData.planned_pickup_at'  => ['nullable','date'],
             'rentalData.planned_return_at'  => ['nullable','date','after_or_equal:rentalData.planned_pickup_at'],
             'rentalData.notes'              => ['nullable','string'],
+            'coverage.kasko'           => ['boolean'],
+            'coverage.furto_incendio'  => ['boolean'],
+            'coverage.cristalli'       => ['boolean'],
+            'coverage.assistenza'      => ['boolean'],
+
+            // Se una copertura è selezionata, la relativa franchigia può essere richiesta (qui la lasciamo facoltativa).
+            'franchise.kasko'          => ['nullable','numeric','min:0'],
+            'franchise.furto_incendio' => ['nullable','numeric','min:0'],
+            'franchise.cristalli'      => ['nullable','numeric','min:0'],
         ];
     }
 

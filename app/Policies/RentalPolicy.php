@@ -71,11 +71,12 @@ class RentalPolicy
     // Contratti
     public function contractGenerate(User $user, Rental $rental): bool
     {
-        return $user->can('rentals.contract.generate');
+        // Permesso specifico + visibilità sull'oggetto
+        return $user->can('rentals.contract.generate') && $this->view($user, $rental);
     }
     public function contractUploadSigned(User $user, Rental $rental): bool
     {
-        return $user->can('rentals.contract.upload_signed');
+        return $user->can('rentals.contract.upload_signed') && $this->view($user, $rental);
     }
 
     // Media sul Rental

@@ -93,7 +93,7 @@ class RentalsBoard extends Component
             ->with(['customer','vehicle'])
             ->when($this->state, fn($qb) => $qb->where('status', $this->state))
             ->when($this->q, fn($qb) => $qb
-                ->where('reference', 'like', '%'.$this->q.'%')
+                ->where('id', 'like', '%'.$this->q.'%')
                 ->orWhereHas('customer', fn($qq) => $qq->where('name','like','%'.$this->q.'%'))
             )
             ->orderByDesc('id');
