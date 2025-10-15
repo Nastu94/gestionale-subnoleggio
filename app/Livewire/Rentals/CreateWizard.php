@@ -3,10 +3,12 @@
 namespace App\Livewire\Rentals;
 
 use Livewire\Component;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use App\Models\{Rental, Customer, Vehicle, Location, VehicleAssignment}; // Location esiste nel tuo schema (dalle query)
+use App\Services\Contracts\GenerateRentalContract;
 use Illuminate\Database\Eloquent\Builder;
 
 class CreateWizard extends Component
@@ -227,6 +229,7 @@ class CreateWizard extends Component
         }
 
         if ($this->step < 3) {
+            $this->dispatch('toast', type: 'info', message: 'Step salvato, puoi procedere.');
             $this->step++;
         }
     }
@@ -281,6 +284,38 @@ class CreateWizard extends Component
 
         $this->customerPopulated = true;
         $this->saveDraft();
+    }
+
+    /** Genera il contratto (step 3) */
+    public function generateContract(GenerateRentalContract $service): void
+    {
+        if (!$this->rentalId) {
+            $this->dispatch('toast', type: 'error', message: 'Salva la bozza prima di generare il contratto.');
+            return;
+        }
+
+        $rental = Rental::query()->findOrFail($this->rentalId);
+        $this->authorize('contractGenerate', $rental);
+
+        try {
+            $service->handle(
+                $rental,
+                $this->coverage ?? null,
+                $this->franchise ?? null,
+                (int)($this->expectedKm ?? 0)
+            );
+
+            $this->dispatch('toast', type: 'success', message: 'Contratto generato e salvato.');
+            // Se vuoi, ricarica solo un pannello/pezzo della pagina:
+            // $this->dispatch('refresh-contract-panel');
+        } catch (\Throwable $e) {
+            report($e);
+            $this->dispatch(
+                'toast',
+                type: 'error',
+                message: config('app.debug') ? $e->getMessage() : 'Errore durante la generazione del contratto.'
+            );
+        }
     }
 
     /** Fine wizard → vai alla show */
@@ -353,6 +388,7 @@ class CreateWizard extends Component
             ->exists();
 
         if ($exists) {
+            $this->dispatch('toast', type: 'error', message: 'Il veicolo è già prenotato per le date selezionate.');
             throw ValidationException::withMessages([
                 'rentalData.vehicle_id' => 'Il veicolo selezionato risulta già prenotato nelle date indicate.',
                 'rentalData.planned_return_at' => 'Intervallo non disponibile per questo veicolo.',
@@ -382,7 +418,7 @@ class CreateWizard extends Component
 
         if ($exists) {
             throw ValidationException::withMessages([
-                'customerForm.full_name' => 'Questo cliente ha già una prenotazione che si sovrappone al periodo selezionato.',
+                'customerForm.name' => 'Questo cliente ha già una prenotazione che si sovrappone al periodo selezionato.',
             ]);
         }
     }

@@ -19,17 +19,23 @@
         </nav>
     </div>
 
-    {{-- AVVISI RENTER --}}
-    @php $hasRenter = app('db')->table('vehicle_assignments')
-        ->where('vehicle_id', $this->vehicle->id)
-        ->where('status','active')
-        ->where('start_at','<=', now())
-        ->where(fn($q)=>$q->whereNull('end_at')->orWhere('end_at','>',now()))
-        ->exists(); @endphp
-    @unless($hasRenter)
+    {{-- AVVISI / CONTESTO RENTER --}}
+    @php
+        $effectiveRenterId = $this->effectiveRenterOrgId;
+        $isAdminFallback = $effectiveRenterId && ($effectiveRenterId === $this->vehicle->admin_organization_id);
+    @endphp
+
+    @unless($effectiveRenterId)
         <div class="rounded border border-amber-300 bg-amber-50 p-4 text-amber-800">
-            Nessun renter attivo per questo veicolo: assegna il veicolo per poter creare/modificare il listino.
+            Nessun renter attivo per questo veicolo e nessuna gestione diretta disponibile con le tue autorizzazioni.
+            Contatta un amministratore per abilitare la gestione.
         </div>
+    @else
+        @if($isAdminFallback)
+            <div class="rounded border border-emerald-300 bg-emerald-50 p-3 text-emerald-800 text-sm">
+                Veicolo non assegnato: stai gestendo il listino come <b>organizzazione proprietaria</b>.
+            </div>
+        @endif
     @endunless
 
     {{-- ======================== OVERVIEW ======================== --}}
@@ -63,7 +69,7 @@
                 </div>
                 <div class="flex gap-2">
                     @if($pricelist)
-                        @if($canCreate && $hasRenter)
+                        @if($canCreate && $effectiveRenterId)
                             <button type="button" wire:click="duplicateActiveToDraft"
                                     class="rounded-md bg-slate-800 px-3 py-1.5 text-white hover:bg-slate-900">
                                 Duplica attiva → bozza
@@ -121,7 +127,7 @@
                             Salva bozza
                         </button>
                     @endif
-                    @if($this->canEdit===false && $canCreate && $hasRenter)
+                    @if($this->canEdit===false && $canCreate && $effectiveRenterId)
                         <button type="button" wire:click="duplicateActiveToDraft"
                                 class="rounded-md border px-3 py-1.5 text-slate-800 dark:text-white">
                             Crea bozza da attiva

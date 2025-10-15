@@ -136,7 +136,7 @@ class GenerateRentalContract
                 'return_location'  => $return?->name,
             ],
             'customer' => [
-                'full_name'     => $customer?->full_name ?? '—',
+                'name'          => $customer?->name ?? '—',
                 'doc_id_type'   => $customer?->doc_id_type ?? null,
                 'doc_id_number' => $customer?->doc_id_number ?? null,
                 'address'       => $customer?->address ?? null,

@@ -26,6 +26,14 @@ class VehiclePricingService
             })
             ->value('renter_org_id');
 
+        // Fallback: gestione diretta dell'admin org
+        if (!$renterOrgId && $vehicle->admin_organization_id) {
+            $user = auth()->user();
+            if ($user && $user->hasRole('admin')) {
+                $renterOrgId = $vehicle->admin_organization_id;
+            }
+        }
+
         if (!$renterOrgId) return null;
 
         return VehiclePricelist::where('vehicle_id', $vehicle->id)

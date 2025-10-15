@@ -51,7 +51,7 @@
             <div class="col">
                 <div class="box">
                     <h2>Cliente</h2>
-                    <div><strong>{{ $customer['full_name'] }}</strong></div>
+                    <div><strong>{{ $customer['name'] }}</strong></div>
                     <div>Doc: {{ $customer['doc_id_type'] ?? 'ID' }} {{ $customer['doc_id_number'] ?? '' }}</div>
                     <div>{{ $customer['address'] ?? '' }} {{ $customer['zip'] ?? '' }} {{ $customer['city'] ?? '' }} {{ $customer['province'] ?? '' }}</div>
                     <div class="small">{{ $customer['phone'] ?? '' }} {{ $customer['email'] ?? '' }}</div>

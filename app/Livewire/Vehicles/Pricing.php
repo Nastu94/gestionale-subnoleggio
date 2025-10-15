@@ -147,12 +147,33 @@ class Pricing extends Component
     private function currentRenterOrgId(): ?int
     {
         $now = now();
-        return DB::table('vehicle_assignments')
+
+        $rid = DB::table('vehicle_assignments')
             ->where('vehicle_id', $this->vehicle->id)
             ->where('status', 'active')
             ->where('start_at', '<=', $now)
-            ->where(fn($q) => $q->whereNull('end_at')->orWhere('end_at', '>', $now))
+            ->where(function ($q) use ($now) {
+                $q->whereNull('end_at')->orWhere('end_at', '>', $now);
+            })
             ->value('renter_org_id');
+
+        if ($rid) {
+            return (int) $rid;
+        }
+
+        // ⬇️ Fallback admin org se l'utente può gestire i non assegnati
+        $user = auth()->user();
+        if ($this->vehicle->admin_organization_id && $user && ($user->hasRole('admin') || $user->can('vehicle_pricing.manage_unassigned'))) {
+            return (int) $this->vehicle->admin_organization_id;
+        }
+
+        return null;
+    }
+
+    /** Computed per la Blade: id org effettiva con cui stai lavorando (renter assegnato o admin org) */
+    public function getEffectiveRenterOrgIdProperty(): ?int
+    {
+        return $this->currentRenterOrgId();
     }
 
     // CREA/AGGIORNA BOZZA (mai attiva qui)

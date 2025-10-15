@@ -90,7 +90,7 @@ $btnSoft = 'inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibol
         </label>
 
         {{-- Coperture e franchigie --}}
-        <label class="form-control md:col-span-2">
+        <div class="form-control md:col-span-2">
             <span class="label-text mb-2 text-sm font-semibold">Coperture e franchigie</span>
 
             <div class="grid md:grid-cols-2 gap-4">
@@ -147,7 +147,7 @@ $btnSoft = 'inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibol
                     </div>
                 </div>
             </div>
-        </label>
+        </div>
     </div>
     @endif
 
@@ -280,28 +280,16 @@ $btnSoft = 'inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibol
                     <p class="text-sm opacity-80">
                         Il contratto viene <strong>generato dal gestionale</strong>. Usa il pulsante per creare la versione PDF su <em>Rental → contract</em>.
                     </p>
-
                     @if($rentalId)
-                        <form method="POST" action="{{ route('rentals.contract.generate', $rentalId) }}">
-                            @csrf
-
-                            {{-- Passiamo le scelte del wizard (se presenti) senza cambiare i nomi --}}
-                            <input type="hidden" name="coverage[kasko]" value="{{ $coverage['kasko'] ? 1 : 0 }}">
-                            <input type="hidden" name="coverage[furto_incendio]" value="{{ $coverage['furto_incendio'] ? 1 : 0 }}">
-                            <input type="hidden" name="coverage[cristalli]" value="{{ $coverage['cristalli'] ? 1 : 0 }}">
-                            <input type="hidden" name="coverage[assistenza]" value="{{ $coverage['assistenza'] ? 1 : 0 }}">
-
-                            <input type="hidden" name="franchise[kasko]" value="{{ $franchise['kasko'] }}">
-                            <input type="hidden" name="franchise[furto_incendio]" value="{{ $franchise['furto_incendio'] }}">
-                            <input type="hidden" name="franchise[cristalli]" value="{{ $franchise['cristalli'] }}">
-
-                            {{-- Km previsti (opzionale, per preventivo) --}}
-                            <input type="hidden" name="expected_km" value="{{ (int) ($expectedKm ?? 0) }}">
-
-                            <button type="submit" class="{{ $btnIndigo }}">
-                                Genera contratto (PDF)
-                            </button>
-                        </form>
+                        <button
+                            type="button"
+                            wire:click="generateContract"
+                            wire:loading.attr="disabled"
+                            class="{{ $btnIndigo }}"
+                        >
+                            <span wire:loading.remove>Genera contratto (PDF)</span>
+                            <span wire:loading>Generazione…</span>
+                        </button>
                     @else
                         <button class="{{ $btnSoft }}" wire:click="saveDraft">Salva bozza per abilitare</button>
                     @endif
