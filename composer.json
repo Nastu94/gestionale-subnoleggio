@@ -17,6 +17,8 @@
         "laravel/tinker": "^2.10.1",
         "livewire/livewire": "^3.6.4",
         "power-components/livewire-powergrid": "^6.4",
+        "spatie/image": "3.3.2",
+        "spatie/image-optimizer": "^1.7",
         "spatie/laravel-activitylog": "^4.10",
         "spatie/laravel-medialibrary": "^11.12",
         "spatie/laravel-permission": "^6.20",

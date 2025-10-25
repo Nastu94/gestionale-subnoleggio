@@ -6,6 +6,7 @@ use Livewire\Component;
 use Livewire\WithPagination;
 use App\Models\Rental;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Builder;
 
 class RentalsBoard extends Component
 {
@@ -59,20 +60,59 @@ class RentalsBoard extends Component
         return ['draft','reserved','checked_out','in_use','checked_in','closed','cancelled','no_show'];
     }
 
-    /** KPI per stato (rispettando eventuale ricerca) */
+    /** Ricerca riutilizzabile su id e cliente */
+    protected function applySearch(Builder $q): Builder
+    {
+        $term = trim((string) $this->q);
+        if ($term === '') {
+            return $q;
+        }
+
+        return $q->where(function (Builder $sub) use ($term) {
+            // ✅ niente reference: ricerchiamo su id LIKE e nome cliente
+            $sub->where('id', 'like', "%{$term}%")
+                ->orWhereExists(function ($c) use ($term) {
+                    $c->selectRaw(1)
+                    ->from('customers')
+                    ->whereColumn('rentals.customer_id', 'customers.id')
+                    ->whereNull('customers.deleted_at')
+                    ->where('customers.name', 'like', "%{$term}%");
+                });
+        });
+    }
+
+    /** KPI per stato: rispettare ricerca + stato, con parentesi corrette */
     public function getKpisProperty(): array
     {
-        $kpis = [];
-        foreach ($this->states as $s) {
-            $kpis[$s] = Rental::query()
-                ->when($this->q, fn($qb) => $qb
-                    ->where('reference', 'like', '%'.$this->q.'%')
-                    ->orWhereHas('customer', fn($qq) => $qq->where('name','like','%'.$this->q.'%'))
-                )
-                ->where('status', $s)
-                ->count();
+        $base = Rental::query()->whereNull('deleted_at');
+
+        // Applica ricerca UNA VOLTA sola per coerenza numerica tra KPI e lista
+        $base = $this->applySearch(clone $base);
+
+        $states = ['draft','reserved','checked_out','in_use','checked_in','closed','cancelled','no_show'];
+
+        $out = [];
+        foreach ($states as $s) {
+            $out[$s] = (clone $base)->where('status', $s)->count();
         }
-        return $kpis;
+
+        return $out;
+    }
+
+    /** Lista righe: stato selezionato + ricerca, con parentesi corrette */
+    public function getRowsProperty()
+    {
+        $q = Rental::query()->whereNull('deleted_at');
+
+        // Stato attivo (se presente)
+        if ($this->state) {
+            $q->where('status', $this->state);
+        }
+
+        // Ricerca
+        $q = $this->applySearch($q);
+
+        return $q->latest('id')->with(['customer','vehicle'])->paginate(15);
     }
 
     public function setView(string $view): void

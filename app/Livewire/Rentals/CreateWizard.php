@@ -3,6 +3,7 @@
 namespace App\Livewire\Rentals;
 
 use Livewire\Component;
+use Livewire\WithFileUploads;  
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -13,6 +14,9 @@ use Illuminate\Database\Eloquent\Builder;
 
 class CreateWizard extends Component
 {
+    use AuthorizesRequests;
+    use WithFileUploads;
+
     /** Step corrente: 1..3 */
     public int $step = 1;
 
@@ -72,9 +76,43 @@ class CreateWizard extends Component
     /** Se true, il form è stato popolato da un cliente selezionato */
     public bool $customerPopulated = false;
 
+    /** Stato contratto generato (media corrente) */
+    public ?int $currentContractMediaId = null;
+    public ?string $currentContractUrl = null;
+
+    /** Upload documenti preliminari (Livewire) */
+    public ?string $docCollection = 'documents';       
+    public $docFile = null;
+
     public function mount(): void
     {
         $this->loadOptions();
+        $this->refreshCurrentContract();               // se $rentalId è già presente
+    }
+
+    /**
+     * Rileggi l’ultimo contratto "valido" (custom_properties.current === true)
+     * e popola URL + media_id per abilitare/disabilitare la UI.
+     */
+    public function refreshCurrentContract(): void
+    {
+        $this->currentContractMediaId = null;
+        $this->currentContractUrl     = null;
+
+        if (!$this->rentalId) return;
+
+        $rental = Rental::find($this->rentalId);
+        if (!$rental) return;
+
+        $media = $rental->getMedia('contract')
+            ->filter(fn($m) => (bool) $m->getCustomProperty('current') === true)
+            ->sortByDesc('created_at')
+            ->first();
+
+        if ($media) {
+            $this->currentContractMediaId = (int) $media->id;
+            $this->currentContractUrl     = $media->getUrl();
+        }
     }
 
     /** Carica veicoli e sedi secondo regole */
@@ -304,6 +342,9 @@ class CreateWizard extends Component
                 $this->franchise ?? null,
                 (int)($this->expectedKm ?? 0)
             );
+
+            // Ricarica stato contratto per mostrare "Apri" e disabilitare "Genera"
+            $this->refreshCurrentContract();
 
             $this->dispatch('toast', type: 'success', message: 'Contratto generato e salvato.');
             // Se vuoi, ricarica solo un pannello/pezzo della pagina:

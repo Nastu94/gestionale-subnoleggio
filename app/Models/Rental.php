@@ -10,8 +10,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Spatie\MediaLibrary\HasMedia as SpatieHasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
-use Spatie\Image\Manipulations;
 use Illuminate\Support\Str;
+use Spatie\Image\Enums\Fit; 
 
 /**
  * Modello: Rental
@@ -82,21 +82,28 @@ class Rental extends Model implements SpatieHasMedia
      */
     public function registerMediaConversions(Media $media = null): void
     {
-        if ($media && !Str::startsWith($media->mime_type, 'image/')) return;
+        // stop ai PDF/Non-immagini
+        if ($media && !Str::startsWith($media->mime_type, 'image/')) {
+            return;
+        }
 
+        // Miniatura quadrata 256x256 (crop)
         $this->addMediaConversion('thumb')
-            ->fit(Manipulations::FIT_CROP, 256, 256)
+            ->fit(Fit::Crop, 256, 256)
             ->nonQueued();
 
+        // Anteprima massima 1024px mantenendo proporzioni
         $this->addMediaConversion('preview')
-            ->fit(Manipulations::FIT_MAX, 1024, 1024)
+            ->fit(Fit::Max, 1024, 1024)
             ->keepOriginalImageFormat()
             ->nonQueued();
 
+        // Versione HD fino a 1920px per firme/documenti immagine
         $this->addMediaConversion('hd')
-            ->fit(Manipulations::FIT_MAX, 1920, 1920)
+            ->fit(Fit::Max, 1920, 1920)
             ->keepOriginalImageFormat()
-            ->performOnCollections('signatures','documents')
+            ->performOnCollections('signatures','documents', 'id_card', 'driver_license', 'privacy')
             ->nonQueued();
     }
+
 }

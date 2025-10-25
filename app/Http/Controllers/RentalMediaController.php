@@ -118,18 +118,34 @@ class RentalMediaController extends Controller
      */
     public function storeRentalDocument(Request $request, Rental $rental)
     {
+        // Autorizzazioni coerenti con il tuo flusso
         $this->authorize('uploadMedia', $rental);
-        Gate::authorize('attachRentalDocument', $rental); // opzionale: se definisci un gate/permesso specifico
+        Gate::authorize('attachRentalDocument', $rental); // se lo usi davvero
 
-        $request->validate([
-            'file' => ['required','file','max:20480'], // accettiamo qualsiasi tipo utile
+        // ✅ Validazioni: collection opzionale ma vincolata; file fino a 20MB
+        $validated = $request->validate([
+            'collection' => ['nullable','in:documents,id_card,driver_license,privacy,other'],
+            'file'       => ['required','file','mimes:pdf,jpg,jpeg,png','max:20480'],
         ]);
 
-        $media = $rental->addMediaFromRequest('file')
-            ->usingName('rental-document')
-            ->toMediaCollection('documents');
+        // Default di sicurezza: se non arriva la collection, usa "documents"
+        $collection = $validated['collection'] ?? 'documents';
 
-        return response()->json(['ok' => true, 'media_id' => $media->id], Response::HTTP_CREATED);
+        // Salvataggio su Media Library direttamente dal payload della Request
+        $media = $rental->addMediaFromRequest('file')
+            ->usingFileName($request->file('file')->getClientOriginalName() ?: 'allegato')
+            ->toMediaCollection($collection);
+
+        // Risposta JSON per la UI (AJAX)
+        return response()->json([
+            'ok'       => true,
+            'media_id' => $media->id,
+            'url'      => $media->getUrl(),
+            'name'     => $media->file_name,
+            'col'      => $media->collection_name,
+            'size'     => $media->size,
+            'msg'      => 'Documento caricato.',
+        ], Response::HTTP_CREATED);
     }
 
     /**

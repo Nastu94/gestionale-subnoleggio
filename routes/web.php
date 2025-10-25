@@ -25,6 +25,22 @@ use App\Http\Controllers\VehiclePhotoController;
 
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\AuditController;
+use Illuminate\Support\Facades\Response;
+
+Route::get('/_debug/spatie-image', function () {
+    $exists = class_exists(\Spatie\Image\Manipulations::class);
+
+    // Composer 2 espone InstalledVersions: utile per verificare versione caricata
+    $version = class_exists(\Composer\InstalledVersions::class)
+        ? \Composer\InstalledVersions::getPrettyVersion('spatie/image')
+        : null;
+
+    return Response::json([
+        'class_exists' => $exists,
+        'spatie/image' => $version,
+        'php_sapi'     => php_sapi_name(),
+    ]);
+})->middleware('auth'); 
 
 Route::get('/', function () {
     return view('auth.login');
@@ -44,6 +60,7 @@ Route::middleware([
     | Permessi: gestiti nella view via Gate (le tiles e il menu si auto-filtrano).
     */
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+
 
 /*
 |--------------------------------------------------------------------------
@@ -341,14 +358,13 @@ Route::middleware([
         ->name('rentals.noshow')
         ->middleware('permission:rentals.noshow');
 
-
     // ------------------------- Media (controller dedicato) -------------------------
 
     /*
     | Contratto generato (PDF) → Rental->contract
     | Permesso: media.attach.contract + rentals.contract.generate
     */
-    Route::post('/rentals/{rental}/media/contract', [RentaMediaController::class, 'storeContract'])
+    Route::post('/rentals/{rental}/media/contract', [RentalMediaController::class, 'storeContract'])
         ->name('rentals.media.contract.store')
         ->middleware(['permission:media.attach.contract','permission:rentals.contract.generate']);
 
@@ -356,7 +372,7 @@ Route::middleware([
     | Contratto firmato (PDF) → Rental->signatures + Checklist(pickup)->signatures
     | Permesso: media.attach.contract_signed + rentals.contract.upload_signed
     */
-    Route::post('/rentals/{rental}/media/contract-signed', [RentaMediaController::class, 'storeSignedContract'])
+    Route::post('/rentals/{rental}/media/contract-signed', [RentalMediaController::class, 'storeSignedContract'])
         ->name('rentals.media.contract.signed.store')
         ->middleware(['permission:media.attach.contract_signed','permission:rentals.contract.upload_signed']);
 
@@ -364,7 +380,7 @@ Route::middleware([
     | Foto checklist (pickup/return) → RentalChecklist->photos
     | Permesso: media.attach.checklist_photo
     */
-    Route::post('/rental-checklists/{checklist}/media/photos', [RentaMediaController::class, 'storeChecklistPhoto'])
+    Route::post('/rental-checklists/{checklist}/media/photos', [RentalMediaController::class, 'storeChecklistPhoto'])
         ->name('checklists.media.photos.store')
         ->middleware('permission:media.attach.checklist_photo');
 
@@ -372,7 +388,7 @@ Route::middleware([
     | Foto danno → RentalDamage->photos
     | Permesso: media.attach.damage_photo
     */
-    Route::post('/rental-damages/{damage}/media/photos', [RentaMediaController::class, 'storeDamagePhoto'])
+    Route::post('/rental-damages/{damage}/media/photos', [RentalMediaController::class, 'storeDamagePhoto'])
         ->name('damages.media.photos.store')
         ->middleware('permission:media.attach.damage_photo');
 
@@ -380,7 +396,7 @@ Route::middleware([
     | Documenti vari → Rental->documents
     | Permesso: media.attach.rental_document
     */
-    Route::post('/rentals/{rental}/media/documents', [RentaMediaController::class, 'storeRentalDocument'])
+    Route::post('/rentals/{rental}/media/documents', [RentalMediaController::class, 'storeRentalDocument'])
         ->name('rentals.media.documents.store')
         ->middleware('permission:media.attach.rental_document');
 
@@ -388,7 +404,7 @@ Route::middleware([
     | Delete media (generico) — valida ownership nel controller
     | Permesso: media.delete
     */
-    Route::delete('/media/{media}', [RentaMediaController::class, 'destroy'])
+    Route::delete('/media/{media}', [RentalMediaController::class, 'destroy'])
         ->name('media.destroy')
         ->middleware('permission:media.delete');
 

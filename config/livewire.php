@@ -65,12 +65,12 @@ return [
 
     'temporary_file_upload' => [
         'enabled'   => true,
-        'disk'      => env('LIVEWIRE_UPLOAD_DISK', 'public'), // 'public' o 'local'
-        'directory' => 'livewire-tmp',                        // NON vuoto
-        'rules'     => ['image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+        'disk'      => 'public',                  // ← cambia
+        'directory' => 'livewire-tmp',            // ← senza slash iniziale
+        'rules'     => 'file|mimes:pdf,jpg,jpeg,png|max:10240',
         'middleware'=> 'throttle:60,1',
         'preview_mimes' => ['png','gif','bmp','svg','wav','mp4','mov','avi','wmv','mp3','m4a','jpg','jpeg','webp'],
-        'max_upload_time' => 5,
+        'max_upload_time' => 30,
     ],
 
     /*
