@@ -29,6 +29,7 @@ class Customer extends Model implements SpatieHasMedia
 
     protected $casts = [
         'birthdate' => 'date',
+        'driver_license_expires_at' => 'date',
     ];
 
     public function organization() { return $this->belongsTo(Organization::class); }

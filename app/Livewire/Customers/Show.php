@@ -12,8 +12,8 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
  *
  * - Il renter può modificare TUTTI i campi identitari + contatti + residenza.
  * - Unicità doc_id_number per tenant (organization_id).
- * - Nessun rename di campi; usiamo quelli esistenti sul Model/Migration.
  * - Notifiche via toast (evento Livewire) invece di flash/redirect.
+ * - Aggiunta gestione patente (numero + scadenza).
  */
 class Show extends Component
 {
@@ -24,11 +24,15 @@ class Show extends Component
 
     // Bind form (campi esistenti)
     public ?string $name = null;
-    public ?string $doc_id_type = null;
+    public ?string $doc_id_type = null;         // select UI: id|passport (altri valori preservati in sola lettura)
     public ?string $doc_id_number = null;
-    public ?string $birthdate = null; // Y-m-d
+    public ?string $birthdate = null;           // Y-m-d
     public ?string $email = null;
     public ?string $phone = null;
+
+    // Patente (nuovi campi)
+    public ?string $driver_license_number = null;
+    public ?string $driver_license_expires_at = null; // Y-m-d
 
     // Residenza (unico indirizzo)
     public ?string $address_line = null;
@@ -48,11 +52,12 @@ class Show extends Component
         // Precarico valori dal model (nessun rename)
         $this->fill($customer->only([
             'name','doc_id_type','doc_id_number','email','phone',
-            'address_line','city','province','postal_code','country_code','notes',
+            'driver_license_number','address_line','city','province','postal_code','country_code','notes',
         ]));
 
-        // Normalizza birthdate per input[type=date]
+        // Normalizza date per input[type=date]
         $this->birthdate = optional($customer->birthdate)->format('Y-m-d');
+        $this->driver_license_expires_at = optional($customer->driver_license_expires_at)->format('Y-m-d');
     }
 
     /** Regole di validazione coerenti con i vincoli DB */
@@ -63,16 +68,24 @@ class Show extends Component
 
         return [
             'name'          => ['required','string','min:2','max:191'],
+
+            // Nota: a DB il tipo è string/enum; in UI limitiamo le scelte, ma accettiamo valori esistenti.
             'doc_id_type'   => ['nullable','string','max:32'],
+
             'doc_id_number' => [
                 'nullable','string','min:3','max:64',
                 Rule::unique('customers','doc_id_number')
                     ->ignore($id)
                     ->where(fn($q) => $q->where('organization_id', $orgId)),
             ],
+
             'birthdate'     => ['nullable','date','after:1900-01-01','before_or_equal:today'],
-            'email'         => ['nullable','email:rfc,dns','max:191'],
+            'email'         => ['nullable','email','max:191'],
             'phone'         => ['nullable','string','max:32'],
+
+            // Patente (nuovi)
+            'driver_license_number'      => ['nullable','string','max:64'],
+            'driver_license_expires_at'  => ['nullable','date','after:1900-01-01'],
 
             // Residenza (unico indirizzo)
             'address_line'  => ['nullable','string','max:191'],
@@ -96,16 +109,17 @@ class Show extends Component
 
         $data = $this->validate();
 
-        // Se il Model ha cast su birthdate → puoi assegnare la stringa Y-m-d; altrimenti resta stringa valida.
+        // Assign & save (se il Model ha cast sulle date, la stringa Y-m-d è ok)
         $this->customer->fill($data)->save();
 
         // Ricarico e riallineo il form (utile se ci sono mutator/cast dal DB)
         $this->customer->refresh();
         $this->fill($this->customer->only([
             'name','doc_id_type','doc_id_number','email','phone',
-            'address_line','city','province','postal_code','country_code','notes',
+            'driver_license_number','address_line','city','province','postal_code','country_code','notes',
         ]));
         $this->birthdate = optional($this->customer->birthdate)->format('Y-m-d');
+        $this->driver_license_expires_at = optional($this->customer->driver_license_expires_at)->format('Y-m-d');
 
         // Toast di successo (listener globale già presente nel progetto)
         $this->dispatch('toast', type: 'success', message: 'Dati cliente aggiornati correttamente.');
@@ -113,6 +127,14 @@ class Show extends Component
 
     public function render()
     {
-        return view('livewire.customers.show');
+        // Opzioni UI per Tipo documento d'identità (limitate a id/passport)
+        $docIdOptions = [
+            'id'       => "Carta d'identità",
+            'passport' => 'Passaporto',
+        ];
+
+        return view('livewire.customers.show', [
+            'docIdOptions' => $docIdOptions,
+        ]);
     }
 }
