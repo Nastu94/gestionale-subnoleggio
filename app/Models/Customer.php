@@ -24,6 +24,7 @@ class Customer extends Model implements SpatieHasMedia
     protected $fillable = [
         'organization_id','name','email','phone','doc_id_type','doc_id_number',
         'birthdate','address_line','city','province','postal_code','country_code','notes',
+        'driver_license_number','driver_license_expires_at',
     ];
 
     protected $casts = [

@@ -211,14 +211,33 @@ $btnSoft = 'inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibol
 
                 <div class="grid md:grid-cols-2 gap-3">
                     <label>
-                        <span class="block mb-1 text-sm">Tipo documento</span>
-                        <input type="text" wire:model.defer="customerForm.doc_id_type" class="{{ $input }}" placeholder="es. patente, CI…" />
+                        <span class="block mb-1 text-sm">Tipo Documento d'identità *</span>
+                        <select wire:model.defer="customerForm.doc_id_type" class="{{ $input }}">
+                            <option value="">— Seleziona —</option>
+                            <option value="id">Carta d'identità</option>
+                            <option value="passport">Passaporto</option>
+                        </select>
                         @error('customerForm.doc_id_type') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                     </label>
+
                     <label>
-                        <span class="block mb-1 text-sm">Numero documento *</span>
+                        <span class="block mb-1 text-sm">Numero documento d'identità *</span>
                         <input type="text" wire:model.defer="customerForm.doc_id_number" class="{{ $input }}" />
                         @error('customerForm.doc_id_number') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                    </label>
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-3">
+                    <label>
+                        <span class="block mb-1 text-sm">Numero Patente</span>
+                        <input type="text" wire:model.defer="customerForm.driver_license_number" class="{{ $input }}" />
+                        @error('customerForm.driver_license_number') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                    </label>
+
+                    <label>
+                        <span class="block mb-1 text-sm">Scadenza Patente</span>
+                        <input type="date" wire:model.defer="customerForm.driver_license_expires_at" class="{{ $input }}" />
+                        @error('customerForm.driver_license_expires_at') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                     </label>
                 </div>
 

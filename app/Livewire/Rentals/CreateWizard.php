@@ -49,6 +49,8 @@ class CreateWizard extends Component
         'province'      => null,
         'zip'           => null,
         'country_code'  => null,
+        'driver_license_number'       => null,
+        'driver_license_expires_at'   => null,
     ];
     
     /** Selezioni coperture (flags) */
@@ -81,7 +83,7 @@ class CreateWizard extends Component
     public ?string $currentContractUrl = null;
 
     /** Upload documenti preliminari (Livewire) */
-    public ?string $docCollection = 'documents';       
+    public ?string $docCollection = 'documents';
     public $docFile = null;
 
     public function mount(): void
@@ -198,7 +200,7 @@ class CreateWizard extends Component
             'customerForm.name'          => ['required','string','max:255'],
             'customerForm.email'         => ['nullable','email','max:255'],
             'customerForm.phone'         => ['nullable','string','max:50'],
-            'customerForm.doc_id_type'   => ['nullable','string','max:50'],
+            'customerForm.doc_id_type'   => ['required','in:id,passport'],
             'customerForm.doc_id_number' => ['required','string','max:100'],
             'customerForm.birth_date'    => ['nullable','date'],
             'customerForm.address'       => ['nullable','string','max:255'],
@@ -206,6 +208,8 @@ class CreateWizard extends Component
             'customerForm.province'      => ['nullable','string','max:10'],
             'customerForm.zip'           => ['nullable','string','max:20'],
             'customerForm.country_code'  => ['nullable','string','max:2'],
+            'customerForm.driver_license_number'      => ['nullable','string','max:64'],
+            'customerForm.driver_license_expires_at'  => ['nullable','date'],
         ];
     }
 
@@ -262,6 +266,8 @@ class CreateWizard extends Component
             if ($this->customer_id) {
                 $this->assertCustomerNoOverlap();
             }
+            // ✅ BLOCCO patente: deve coprire tutto il periodo fino alla riconsegna
+            $this->assertDriverLicenseValidThroughReturn();
             // salva comunque per avere stato coerente
             $this->saveDraft();
         }
@@ -299,6 +305,8 @@ class CreateWizard extends Component
             'province'      => $customer->province,
             'zip'           => $customer->postal_code,
             'country_code'  => $customer->country_code,
+            'driver_license_number'      => $customer->driver_license_number,
+            'driver_license_expires_at'  => optional($customer->driver_license_expires_at)->format('Y-m-d'),
         ];
         $this->customerPopulated = true;
 
@@ -460,6 +468,41 @@ class CreateWizard extends Component
         if ($exists) {
             throw ValidationException::withMessages([
                 'customerForm.name' => 'Questo cliente ha già una prenotazione che si sovrappone al periodo selezionato.',
+            ]);
+        }
+    }
+
+    /**
+     * Verifica che la patente sia valida fino alla fine del noleggio.
+     * Regola: il noleggio può terminare lo stesso giorno della scadenza (valida fino a fine giornata).
+     *
+     * @throws \Illuminate\Validation\ValidationException
+     */
+    protected function assertDriverLicenseValidThroughReturn(): void
+    {
+        // Data/ora di riconsegna pianificata
+        $end = $this->castDate($this->rentalData['planned_return_at'] ?? null);
+
+        // Scadenza patente (solo data) dal form cliente
+        $expires = $this->castDate($this->customerForm['driver_license_expires_at'] ?? null);
+
+        // Se mancano i dati necessari, non blocchiamo qui
+        if (!$end || !$expires) {
+            return;
+        }
+
+        // Consideriamo valida la patente fino alle 23:59:59 del giorno di scadenza
+        $expiresEndOfDay = $expires->copy()->endOfDay();
+
+        // Se la riconsegna è successiva al termine della giornata di scadenza → blocco
+        if ($end->greaterThan($expiresEndOfDay)) {
+            // Feedback UI immediato
+            $this->dispatch('toast', type: 'error', message: 'La patente del cliente risulta scadere prima della fine del noleggio.');
+
+            // Errori di validazione associati sia alla patente sia alla data di riconsegna
+            throw ValidationException::withMessages([
+                'customerForm.driver_license_expires_at' => 'La patente deve essere valida almeno fino alla data/ora di riconsegna.',
+                'rentalData.planned_return_at'           => 'La riconsegna non può essere successiva alla scadenza della patente.',
             ]);
         }
     }
