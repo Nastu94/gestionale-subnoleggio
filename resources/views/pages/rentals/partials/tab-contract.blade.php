@@ -1,3 +1,4 @@
+{{-- resources/views/pages/rentals/partials/tab-contract.blade.php --}}
 <div class="card shadow">
     <div class="card-body">
         <div class="flex items-center justify-between">

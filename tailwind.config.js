@@ -1,6 +1,7 @@
 import defaultTheme from 'tailwindcss/defaultTheme';
 import forms from '@tailwindcss/forms';
 import typography from '@tailwindcss/typography';
+import daisyui from 'daisyui'; // ✅ Aggiunta
 
 /** @type {import('tailwindcss').Config} */
 export default {
@@ -19,5 +20,11 @@ export default {
         },
     },
 
-    plugins: [forms, typography],
+    // ✅ DaisyUI attivato (manteniamo gli altri plugin invariati)
+    plugins: [forms, typography, daisyui],
+
+    // Opzionale: lasciamo i temi di default per evitare side-effects
+    daisyui: {
+        themes: true,
+    },
 };

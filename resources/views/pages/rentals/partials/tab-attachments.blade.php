@@ -1,3 +1,4 @@
+{{-- resources/views/pages/rentals/partials/tab-attachments.blade.php --}}
 <div class="card shadow">
     <div class="card-body space-y-4">
         <div class="card-title">Allegati noleggio</div>

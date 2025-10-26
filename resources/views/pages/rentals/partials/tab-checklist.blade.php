@@ -1,3 +1,4 @@
+{{-- resources/views/pages/rentals/partials/tab-checklist.blade.php --}}
 @php
     $checklist = $rental->checklists->firstWhere('type', $type);
 @endphp

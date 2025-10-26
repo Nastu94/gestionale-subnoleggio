@@ -1,3 +1,4 @@
+{{-- resources/views/pages/rentals/partials/tab-timeline.blade.php --}}
 {{-- Timeline eventi — costruita dai campi del rental e dalla presenza media/checklist/danni --}}
 @php
     $pickup   = $rental->checklists->firstWhere('type','pickup');

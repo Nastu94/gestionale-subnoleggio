@@ -25,22 +25,6 @@ use App\Http\Controllers\VehiclePhotoController;
 
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\AuditController;
-use Illuminate\Support\Facades\Response;
-
-Route::get('/_debug/spatie-image', function () {
-    $exists = class_exists(\Spatie\Image\Manipulations::class);
-
-    // Composer 2 espone InstalledVersions: utile per verificare versione caricata
-    $version = class_exists(\Composer\InstalledVersions::class)
-        ? \Composer\InstalledVersions::getPrettyVersion('spatie/image')
-        : null;
-
-    return Response::json([
-        'class_exists' => $exists,
-        'spatie/image' => $version,
-        'php_sapi'     => php_sapi_name(),
-    ]);
-})->middleware('auth'); 
 
 Route::get('/', function () {
     return view('auth.login');
@@ -358,7 +342,7 @@ Route::middleware([
         ->name('rentals.noshow')
         ->middleware('permission:rentals.noshow');
 
-    // ------------------------- Media (controller dedicato) -------------------------
+// ------------------------- Media (controller dedicato) -------------------------
 
     /*
     | Contratto generato (PDF) → Rental->contract

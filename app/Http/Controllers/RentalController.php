@@ -205,8 +205,8 @@ class RentalController extends Controller
     {
         $this->authorize('noshow', $rental);
 
-        if ($rental->status !== 'reserved') {
-            return response()->json(['ok' => false, 'message' => 'No-show consentito solo da reserved.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        if ($rental->status !== 'draft') {
+            return response()->json(['ok' => false, 'message' => 'No-show consentito solo da draft.'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         $rental->status = 'no_show';
