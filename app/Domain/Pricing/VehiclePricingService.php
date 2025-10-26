@@ -60,7 +60,7 @@ class VehiclePricingService
         $end   = CarbonImmutable::instance($dropoffAt)->tz('Europe/Rome');
 
         // giorni arrotondati per eccesso sulle ORE REALI (gestisce DST)
-        $hours = $start->floatDiffInRealHours($end);   // +1h nel weekend di cambio ora
+        $hours = $start->floatDiffInRealHours($end);
         $days  = max(1, (int) ceil($hours / 24));
 
         // Precarico in memoria per evitare query per giorno
@@ -80,7 +80,6 @@ class VehiclePricingService
             if ($isWeekend && $weekendPct > 0) {
                 $daily += (int) round($daily * ($weekendPct/100));
             }
-
             if ($season && $season->season_pct) {
                 $daily += (int) round($daily * ($season->season_pct/100));
             }
@@ -96,29 +95,58 @@ class VehiclePricingService
             $extra    = $excess * $pl->extra_km_cents;
         }
 
-        $subtotal = $dailyTotals + $extra;
+        // Subtotale prima dei tiers
+        $subtotalBeforeTier = $dailyTotals + $extra;
 
         // Applica tier in base ai giorni (il più specifico / priorità più alta)
         $tier = $tiers->first(fn($t) => $t->matchesDays($days));
+        $subtotalAfterTier = $subtotalBeforeTier;
         if ($tier) {
             if (!is_null($tier->override_daily_cents)) {
-                // Override daily = ignora weekend/season per semplicità (MVP)
-                $subtotal = $tier->override_daily_cents * $days + $extra;
+                // Override €/g: ignora weekend/stagioni per semplicità (MVP)
+                $subtotalAfterTier = $tier->override_daily_cents * $days + $extra;
             } elseif (!is_null($tier->discount_pct) && $tier->discount_pct > 0) {
-                $subtotal = (int) round($subtotal * (1 - $tier->discount_pct/100));
+                $subtotalAfterTier = (int) round($subtotalBeforeTier * (1 - $tier->discount_pct/100));
             }
         }
 
-        $total = $this->applyRounding($subtotal, $pl->rounding);
+        // Arrotondamento (totale senza cauzione)
+        $totalRounded = $this->applyRounding($subtotalAfterTier, $pl->rounding);
+
+        // === Nuovo: costo L/T giornaliero e margine ===
+        // Prova a recuperare il veicolo (via relazione o vehicle_id)
+        $vehicle = $pl->relationLoaded('vehicle') ? $pl->vehicle : ($pl->vehicle ?? null);
+        if (!$vehicle && property_exists($pl, 'vehicle_id')) {
+            $vehicle = Vehicle::find($pl->vehicle_id);
+        }
+
+        $ltDailyCost = 0; // in cents/giorno
+        if ($vehicle && !empty($vehicle->lt_rental_monthly_cents)) {
+            // mensile * 12 / 365 (arrotondato ai cents)
+            $ltDailyCost = (int) round(($vehicle->lt_rental_monthly_cents * 12) / 365);
+        }
+
+        // Prezzo medio/giorno simulato (escludendo cauzione, usando il totale arrotondato)
+        $avgDailyPrice = (int) round($totalRounded / $days);
+
+        // Margine giornaliero e totale dopo L/T
+        $netDailyAfterLt  = $avgDailyPrice - $ltDailyCost;
+        $netTotalAfterLt  = $netDailyAfterLt * $days;
 
         return [
-            'days'        => $days,
-            'daily_total' => $dailyTotals, // prima dei tiers
-            'km_extra'    => $extra,
-            'tier'        => $tier?->only(['name','override_daily_cents','discount_pct']),
-            'deposit'     => (int) ($pl->deposit_cents ?? 0),
-            'total'       => $total,
-            'currency'    => $pl->currency,
+            'days'               => $days,
+            'daily_total'        => $dailyTotals, // prima dei tiers
+            'km_extra'           => $extra,
+            'tier'               => $tier?->only(['name','override_daily_cents','discount_pct']),
+            'deposit'            => (int) ($pl->deposit_cents ?? 0),
+            'total'              => $totalRounded,     // senza cauzione, già arrotondato
+            'currency'           => $pl->currency,
+
+            // === Nuovi campi per il simulatore ===
+            'lt_daily_cost'      => $ltDailyCost,      // costo L/T medio per giorno
+            'avg_daily_price'    => $avgDailyPrice,    // prezzo medio/giorno simulato (post-tier, post-rounding, senza cauzione)
+            'net_daily_after_lt' => $netDailyAfterLt,  // margine €/giorno dopo costo L/T
+            'net_total_after_lt' => $netTotalAfterLt,  // margine totale dopo costo L/T
         ];
     }
 

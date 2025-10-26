@@ -445,12 +445,27 @@
             </div>
 
             @if($quote)
-                <div class="mt-4 grid sm:grid-cols-5 gap-4 text-sm">
+                <div class="mt-4 grid sm:grid-cols-8 gap-4 text-sm">
                     <div><span class="text-gray-500">Giorni</span><div class="font-medium">{{ $quote['days'] }}</div></div>
                     <div><span class="text-gray-500">Quota giorni</span><div class="font-medium">{{ $fmt($quote['daily_total']) }}</div></div>
                     <div><span class="text-gray-500">Km extra</span><div class="font-medium">{{ $fmt($quote['km_extra']) }}</div></div>
                     <div><span class="text-gray-500">Cauzione</span><div class="font-medium">{{ $fmt($quote['deposit']) }}</div></div>
                     <div><span class="text-gray-500">Totale</span><div class="font-semibold">{{ $fmt($quote['total']) }}</div></div>
+
+                    {{-- Nuovi indicatori economici --}}
+                    <div><span class="text-gray-500">Costo L/T (€/g)</span><div class="font-medium">{{ $fmt($quote['lt_daily_cost']) }}</div></div>
+                    <div><span class="text-gray-500">Prezzo medio /g</span><div class="font-medium">{{ $fmt($quote['avg_daily_price']) }}</div></div>
+                    <div>
+                        <span class="text-gray-500">Margine €/g</span>
+                        <div class="font-semibold @if(($quote['net_daily_after_lt'] ?? 0) < 0) text-rose-600 @endif">
+                            {{ $fmt($quote['net_daily_after_lt']) }}
+                        </div>
+                    </div>
+                </div>
+
+                {{-- se vuoi, sotto puoi mostrare anche il margine complessivo --}}
+                <div class="mt-2 text-xs text-gray-500">
+                    Margine totale dopo L/T: <strong>{{ $fmt($quote['net_total_after_lt']) }}</strong>
                 </div>
                 @if(!empty($quote['tier']))
                     <div class="mt-2 text-xs text-gray-500">

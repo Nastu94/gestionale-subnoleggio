@@ -34,6 +34,13 @@ class Form extends Component
         'default_pickup_location_id' => null, // impostati solo backend
         'is_active'                  => 1,    // impostati solo backend
         'notes'                      => null,
+
+        // 👇 Aggiunte UI (in euro)
+        'lt_rental_monthly_eur'      => null,
+        'insurance_kasko_eur'        => null,
+        'insurance_rca_eur'          => null,
+        'insurance_cristalli_eur'    => null,
+        'insurance_furto_eur'        => null,
     ];
 
     // Opzioni per select
@@ -79,6 +86,13 @@ class Form extends Component
                 'default_pickup_location_id' => $this->vehicle->default_pickup_location_id,
                 'is_active'                  => (int) ($this->vehicle->is_active ?? 1),
                 'notes'                      => $this->vehicle->notes,
+
+                // 👇 Prefill (da _cents → _eur)
+                'lt_rental_monthly_eur'      => $this->vehicle->lt_rental_monthly_cents   !== null ? $this->vehicle->lt_rental_monthly_cents   / 100 : null,
+                'insurance_kasko_eur'        => $this->vehicle->insurance_kasko_cents     !== null ? $this->vehicle->insurance_kasko_cents     / 100 : null,
+                'insurance_rca_eur'          => $this->vehicle->insurance_rca_cents       !== null ? $this->vehicle->insurance_rca_cents       / 100 : null,
+                'insurance_cristalli_eur'    => $this->vehicle->insurance_cristalli_cents !== null ? $this->vehicle->insurance_cristalli_cents / 100 : null,
+                'insurance_furto_eur'        => $this->vehicle->insurance_furto_cents     !== null ? $this->vehicle->insurance_furto_cents     / 100 : null,
             ];
         } else {
             $this->authorize('create', Vehicle::class);
@@ -88,6 +102,8 @@ class Form extends Component
             $this->form['fuel_type']       = 'petrol';
             $this->form['transmission']    = 'manual';
             $this->form['mileage_current'] = 0;
+
+            // (i 5 campi economici restano null in create)
         }
     }
 
@@ -115,6 +131,13 @@ class Form extends Component
             'form.segment'         => ['nullable','string','max:32'],
             'form.mileage_current' => ['required','integer','min:0'],
             'form.notes'           => ['nullable','string'],
+
+            // 👇 Aggiunte economiche (UI in euro)
+            'form.lt_rental_monthly_eur'   => ['nullable','numeric','min:0'],
+            'form.insurance_kasko_eur'     => ['nullable','numeric','min:0'],
+            'form.insurance_rca_eur'       => ['nullable','numeric','min:0'],
+            'form.insurance_cristalli_eur' => ['nullable','numeric','min:0'],
+            'form.insurance_furto_eur'     => ['nullable','numeric','min:0'],
             // i 3 campi “forzati” non si validano qui
         ];
     }
@@ -152,6 +175,30 @@ class Form extends Component
         $data['fuel_type']       = $this->safeEnum($data['fuel_type'], array_keys($this->fuelOptions), 'petrol');
         $data['transmission']    = $this->safeEnum($data['transmission'], array_keys($this->transmissionOptions), 'manual');
 
+        // Converte "euro" → "cents" (accetta anche virgola come separatore decimale)
+        $toCents = function ($value): ?int {
+            if ($value === null || $value === '') return null;
+            $norm = str_replace([',', ' '], ['.', ''], (string) $value);
+            return (int) round(((float) $norm) * 100);
+        };
+
+        // Costruisco il payload finale per il Model (rimuovo *_eur, aggiungo *_cents)
+        $save = $data;
+
+        unset(
+            $save['lt_rental_monthly_eur'],
+            $save['insurance_kasko_eur'],
+            $save['insurance_rca_eur'],
+            $save['insurance_cristalli_eur'],
+            $save['insurance_furto_eur'],
+        );
+
+        $save['lt_rental_monthly_cents']   = $toCents($data['lt_rental_monthly_eur']   ?? null);
+        $save['insurance_kasko_cents']     = $toCents($data['insurance_kasko_eur']     ?? null);
+        $save['insurance_rca_cents']       = $toCents($data['insurance_rca_eur']       ?? null);
+        $save['insurance_cristalli_cents'] = $toCents($data['insurance_cristalli_eur'] ?? null);
+        $save['insurance_furto_cents']     = $toCents($data['insurance_furto_eur']     ?? null);
+
         // Forzature backend: org admin + prima sede + attivo
         $adminOrgId = $this->adminOrgId();
         $firstLocId = $this->firstAdminLocationId($adminOrgId);
@@ -160,20 +207,20 @@ class Form extends Component
             $this->saving = false;
             return;
         }
-        $data['admin_organization_id']      = $adminOrgId;
-        $data['default_pickup_location_id'] = $firstLocId;
-        $data['is_active']                  = 1;
+        $save['admin_organization_id']      = $adminOrgId;
+        $save['default_pickup_location_id'] = $firstLocId;
+        $save['is_active']                  = 1;
 
         if ($this->isEdit()) {
-            $this->vehicle->update($data);
+            $this->vehicle->update($save);
             $vehicle = $this->vehicle->fresh();
             $this->dispatch('toast', ['type' => 'success', 'message' => 'Veicolo aggiornato.']);
         } else {
-            $vehicle = Vehicle::create($data);
+            $vehicle = Vehicle::create($save);
             $this->dispatch('toast', ['type' => 'success', 'message' => 'Veicolo creato.']);
         }
 
-        // Redirect sicuro: passa il MODEL (o ['vehicle' => $vehicle->getKey()])
+        // Redirect sicuro
         $this->redirectRoute('vehicles.show', ['vehicle' => $vehicle], navigate: true);
     }
 
@@ -219,7 +266,7 @@ class Form extends Component
     {
         if (!$orgId) return null;
 
-        $q = Location::query()->orderBy('id');
+        $q = \App\Models\Location::query()->orderBy('id');
         try {
             if (\Schema::hasColumn('locations', 'organization_id')) {
                 $q->where('organization_id', $orgId);

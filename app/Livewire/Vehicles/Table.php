@@ -5,6 +5,7 @@ namespace App\Livewire\Vehicles;
 use App\Models\Vehicle;
 use App\Models\VehicleState;
 use App\Models\VehicleMileageLog;
+use App\Models\VehicleMaintenanceDetail;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -66,6 +67,14 @@ class Table extends Component
         'maintenance' => 0,
         'expiring'    => 0,
     ];
+
+    /** Modale manutenzione */
+    public ?int $maintenanceModalVehicleId = null;
+    public string $maintenanceWorkshopInput = '';
+    public ?string $maintenanceOpenNotes = null;
+
+    public ?float $maintenanceCloseCost = null;
+    public ?string $maintenanceCloseNotes = null;
 
     /** Sanitizzazione input iniziali */
     public function mount(): void
@@ -370,10 +379,102 @@ class Table extends Component
 
         VehicleState::query()
             ->where('vehicle_id', $vehicle->id)
+            ->whereIn('state', ['maintenance','out_of_service'])
             ->whereNull('ended_at')
             ->update(['ended_at' => now()]);
 
         $this->dispatch('toast', type: 'success', message: 'Stato tecnico chiuso.');
+    }
+
+    /** Conferma apertura manutenzione */
+    public function confirmOpenMaintenance(int $vehicleId, string $workshop, ?string $notes = null): void
+    {
+        $vehicle = Vehicle::withTrashed()->findOrFail($vehicleId);
+        $this->authorize('manageMaintenance', $vehicle);
+
+        if ($vehicle->trashed()) {
+            $this->dispatch('toast', type: 'warning', message: 'Veicolo archiviato: ripristina prima di modificare lo stato.');
+            return;
+        }
+
+        $already = VehicleState::where('vehicle_id', $vehicle->id)
+            ->whereIn('state', ['maintenance','out_of_service'])
+            ->whereNull('ended_at')
+            ->exists();
+
+        if ($already) {
+            $this->dispatch('toast', type: 'info', message: 'Manutenzione già aperta.');
+            return;
+        }
+
+        $state = VehicleState::create([
+            'vehicle_id' => $vehicle->id,
+            'state'      => 'maintenance',
+            'started_at' => now(),
+            'ended_at'   => null,
+            'reason'     => 'Apertura da tabella veicoli',
+            'created_by' => auth()->id(),
+        ]);
+
+        VehicleMaintenanceDetail::create([
+            'vehicle_state_id' => $state->id,
+            'workshop'         => trim($workshop) !== '' ? trim($workshop) : 'N/D',
+            'notes'            => $notes,
+            'currency'         => 'EUR',
+        ]);
+
+        // pulizia input modal
+        $this->maintenanceModalVehicleId = null;
+        $this->maintenanceWorkshopInput = '';
+        $this->maintenanceOpenNotes = null;
+
+        $this->dispatch('toast', type: 'success', message: 'Manutenzione aperta.');
+    }
+
+    /** Conferma chiusura manutenzione */
+    public function confirmCloseMaintenance(int $vehicleId, ?float $costEuro = null, ?string $notes = null): void
+    {
+        $vehicle = Vehicle::withTrashed()->findOrFail($vehicleId);
+        $this->authorize('manageMaintenance', $vehicle);
+
+        if ($vehicle->trashed()) {
+            $this->dispatch('toast', type: 'warning', message: 'Veicolo archiviato: ripristina prima di modificare lo stato.');
+            return;
+        }
+
+        $state = VehicleState::where('vehicle_id', $vehicle->id)
+            ->whereIn('state', ['maintenance'])
+            ->whereNull('ended_at')
+            ->latest('started_at')
+            ->first();
+
+        if (!$state) {
+            $this->dispatch('toast', type: 'error', message: 'Nessuna manutenzione aperta.');
+            return;
+        }
+
+        $state->update(['ended_at' => now()]);
+
+        $detail = VehicleMaintenanceDetail::firstOrCreate(
+            ['vehicle_state_id' => $state->id],
+            ['workshop' => 'N/D', 'currency' => 'EUR']
+        );
+
+        if ($costEuro !== null) {
+            $detail->cost_cents = (int) round($costEuro * 100);
+        }
+        if ($notes) {
+            // append o sovrascrivi; qui append per tenere traccia
+            $detail->notes = trim($detail->notes ? ($detail->notes." — ".$notes) : $notes);
+        }
+        $detail->save();
+
+        // pulizia input modal
+        $this->maintenanceModalVehicleId = null;
+        $this->maintenanceCloseCost = null;
+        $this->maintenanceCloseNotes = null;
+
+        $this->dispatch('toast', type: 'success', message: 'Manutenzione chiusa.');
     }
 
     /** Archivia (soft delete) singolo veicolo */
@@ -417,13 +518,20 @@ class Table extends Component
                 ->exists();
 
             if (!$exists) {
-                VehicleState::create([
+                $st = VehicleState::create([
                     'vehicle_id' => $v->id,
                     'state'      => 'maintenance',
                     'started_at' => $now,
                     'ended_at'   => null,
                     'reason'     => 'Bulk manutenzione (selezionati)',
                     'created_by' => auth()->id(),
+                ]);
+
+                VehicleMaintenanceDetail::create([
+                    'vehicle_state_id' => $st->id,
+                    'workshop'         => 'N/D',
+                    'notes'            => 'Apertura dalla tabella veicoli',
+                    'currency'         => 'EUR',
                 ]);
             }
         }

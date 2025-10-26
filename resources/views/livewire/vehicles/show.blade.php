@@ -128,8 +128,13 @@
 
         {{-- PROFILO --}}
         @if($tab === 'profile')
+            @php
+                $euro = fn($cents) => is_null($cents) ? '—' : number_format($cents/100, 2, ',', '.') . ' €';
+            @endphp
+
             <div class="rounded-lg border bg-white p-4">
                 <h2 class="mb-3 text-base font-semibold">Profilo</h2>
+
                 <dl class="grid grid-cols-2 gap-3 text-sm">
                     <dt class="text-gray-500">VIN</dt><dd>{{ $v->vin ?? '—' }}</dd>
                     <dt class="text-gray-500">Colore</dt><dd>{{ $v->color ?? '—' }}</dd>
@@ -139,6 +144,22 @@
                     <dt class="text-gray-500">Cambio</dt><dd>{{ $v->transmission ?? '—' }}</dd>
                     <dt class="text-gray-500">Creato il</dt><dd>{{ optional($v->created_at)->format('d/m/Y H:i') }}</dd>
                     <dt class="text-gray-500">Aggiornato il</dt><dd>{{ optional($v->updated_at)->format('d/m/Y H:i') }}</dd>
+
+                    {{-- --- Nuovi campi costi --- --}}
+                    <dt class="text-gray-500">Noleggio L/T (mensile)</dt>
+                    <dd>{{ $euro($v->lt_rental_monthly_cents) }}</dd>
+
+                    <dt class="text-gray-500">Franchigia RCA</dt>
+                    <dd>{{ $euro($v->insurance_rca_cents) }}</dd>
+
+                    <dt class="text-gray-500">Franchigia Kasko</dt>
+                    <dd>{{ $euro($v->insurance_kasko_cents) }}</dd>
+
+                    <dt class="text-gray-500">Franchigia Cristalli</dt>
+                    <dd>{{ $euro($v->insurance_cristalli_cents) }}</dd>
+
+                    <dt class="text-gray-500">Franchigia Furto/Incendio</dt>
+                    <dd>{{ $euro($v->insurance_furto_cents) }}</dd>
                 </dl>
             </div>
 
@@ -281,11 +302,19 @@
                     @can('manageMaintenance', $v)
                         @if(!$isArchived)
                             @if(!$isMaintenance)
-                                <button type="button" class="rounded bg-amber-600 px-2 py-1 text-white" wire:click="setMaintenance">
+                                {{-- APRI MANUTENZIONE → apre modale --}}
+                                <button type="button"
+                                        class="rounded bg-amber-600 px-2 py-1 text-white"
+                                        x-data
+                                        x-on:click="$dispatch('open-maint-open-modal')">
                                     Apri manutenzione
                                 </button>
                             @else
-                                <button type="button" class="rounded bg-emerald-700 px-2 py-1 text-white" wire:click="clearMaintenance">
+                                {{-- CHIUDI MANUTENZIONE → apre modale --}}
+                                <button type="button"
+                                        class="rounded bg-emerald-700 px-2 py-1 text-white"
+                                        x-data
+                                        x-on:click="$dispatch('open-maint-close-modal')">
                                     Chiudi manutenzione
                                 </button>
                             @endif
@@ -309,6 +338,26 @@
                                         <div class="text-gray-600">{{ $s->reason }}</div>
                                     @endif
                                 </div>
+
+                                {{-- Dettaglio manutenzione (workshop/costo/note) --}}
+                                @if($s->state === 'maintenance')
+                                    @php
+                                        $meta = $s->maintenanceDetail;
+                                        $euro = fn($c) => is_null($c) ? null : number_format($c/100, 2, ',', '.').' €';
+                                    @endphp
+                                    <dl class="mt-2 grid grid-cols-2 gap-2 text-xs">
+                                        <dt class="text-gray-500">Officina/Luogo</dt>
+                                        <dd>{{ $meta?->workshop ?? '—' }}</dd>
+
+                                        <dt class="text-gray-500">Costo</dt>
+                                        <dd>{{ isset($meta?->cost_cents) ? $euro((int)$meta->cost_cents) : '—' }}</dd>
+
+                                        @if(!empty($meta?->notes))
+                                            <dt class="text-gray-500">Note</dt>
+                                            <dd>{{ $meta->notes }}</dd>
+                                        @endif
+                                    </dl>
+                                @endif
                             </div>
                         @empty
                             <div class="text-gray-500">Nessuno stato registrato.</div>
@@ -379,7 +428,7 @@
          x-on:open-mileage-modal.window="open=true; current=$event.detail.current; value=$event.detail.current;">
         <template x-if="open">
             <div class="fixed inset-0 z-50">
-                <div class="absolute inset-0 bg-black/40" x-on:click="open=false"></div>
+                <div class="absolute inset-0 bg-black/40"></div>
                 <div class="absolute left-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded bg-white p-4 shadow-xl">
                     <div class="text-lg font-semibold">Aggiorna chilometraggio</div>
                     <div class="mt-2 text-sm text-gray-600">Attuale: <strong x-text="current.toLocaleString('it-IT')"></strong> km</div>
@@ -392,6 +441,74 @@
                         <button type="button" class="rounded bg-indigo-600 px-3 py-1 text-white"
                                 x-on:click="$wire.updateMileage(parseInt(value,10)); open=false;">
                             Salva
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    {{-- MODALE: APRI MANUTENZIONE (workshop + note) --}}
+    <div x-data="{ open:false }"
+        x-on:open-maint-open-modal.window="open=true; $wire.set('maintWorkshop', null); $wire.set('maintNotes', null);">
+        <template x-if="open">
+            <div class="fixed inset-0 z-50">
+                <div class="absolute inset-0 bg-black/40"></div>
+                <div class="absolute left-1/2 top-1/2 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded bg-white p-4 shadow-xl">
+                    <div class="text-lg font-semibold">Apri manutenzione</div>
+                    <div class="mt-3 grid gap-3">
+                        <div>
+                            <label class="block text-xs text-gray-500">Officina/Luogo *</label>
+                            <input type="text" class="mt-1 w-full rounded border-gray-300"
+                                wire:model.defer="maintWorkshop" maxlength="128" placeholder="Es. Officina Rossi, Via…">
+                            @error('maintWorkshop')<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500">Note (opz.)</label>
+                            <textarea rows="3" class="mt-1 w-full rounded border-gray-300"
+                                    wire:model.defer="maintNotes" placeholder="Dettagli…"></textarea>
+                            @error('maintNotes')<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror
+                        </div>
+                    </div>
+                    <div class="mt-4 flex justify-end gap-2">
+                        <button type="button" class="rounded border px-3 py-1" x-on:click="open=false">Annulla</button>
+                        <button type="button" class="rounded bg-amber-600 px-3 py-1 text-white"
+                                x-on:click="$wire.setMaintenance().then(() => { open=false; })">
+                            Apri
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    {{-- MODALE: CHIUDI MANUTENZIONE (costo + note) --}}
+    <div x-data="{ open:false }"
+        x-on:open-maint-close-modal.window="open=true; $wire.set('maintCloseCostEur', null); /* mantieni eventuali note esistenti o azzera: */ $wire.set('maintNotes', null);">
+        <template x-if="open">
+            <div class="fixed inset-0 z-50">
+                <div class="absolute inset-0 bg-black/40"></div>
+                <div class="absolute left-1/2 top-1/2 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded bg-white p-4 shadow-xl">
+                    <div class="text-lg font-semibold">Chiudi manutenzione</div>
+                    <div class="mt-3 grid gap-3">
+                        <div>
+                            <label class="block text-xs text-gray-500">Costo totale (€) *</label>
+                            <input type="number" min="0" step="0.01" class="mt-1 w-full rounded border-gray-300"
+                                wire:model.defer="maintCloseCostEur" placeholder="0,00">
+                            @error('maintCloseCostEur')<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500">Note (opz.)</label>
+                            <textarea rows="3" class="mt-1 w-full rounded border-gray-300"
+                                    wire:model.defer="maintNotes" placeholder="Esito, ricambi, ecc."></textarea>
+                            @error('maintNotes')<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror
+                        </div>
+                    </div>
+                    <div class="mt-4 flex justify-end gap-2">
+                        <button type="button" class="rounded border px-3 py-1" x-on:click="open=false">Annulla</button>
+                        <button type="button" class="rounded bg-emerald-700 px-3 py-1 text-white"
+                                x-on:click="$wire.clearMaintenance().then(() => { open=false; })">
+                            Chiudi
                         </button>
                     </div>
                 </div>

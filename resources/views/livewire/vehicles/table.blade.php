@@ -232,12 +232,18 @@
 
                             @can('manageMaintenance', $v)
                                 @if(!$v->is_maintenance)
-                                    <button type="button" class="rounded bg-amber-600 px-2 py-1 mt-1 text-white" wire:click="setMaintenance({{ $v->id }})">
+                                    <button type="button"
+                                            class="rounded bg-amber-600 px-2 py-1 mt-1 text-white"
+                                            x-data
+                                            x-on:click="$dispatch('open-maintenance-open-modal', { id: {{ $v->id }} })">
                                         Manutenzione
                                     </button>
                                 @else
-                                    <button type="button" class="rounded bg-emerald-700 px-2 py-1 mt-1 text-white" wire:click="clearTechnicalState({{ $v->id }})">
-                                        Ripristina stato
+                                    <button type="button"
+                                            class="rounded bg-emerald-700 px-2 py-1 mt-1 text-white"
+                                            x-data
+                                            x-on:click="$dispatch('open-maintenance-close-modal', { id: {{ $v->id }} })">
+                                        Chiudi manutenzione
                                     </button>
                                 @endif
                             @endcan
@@ -383,7 +389,7 @@
          x-on:open-mileage-modal.window="open=true; id=$event.detail.id; current=$event.detail.current; value=$event.detail.current;">
         <template x-if="open">
             <div class="fixed inset-0 z-[100]">
-                <div class="absolute inset-0 bg-black/40" x-on:click="open=false"></div>
+                <div class="absolute inset-0 bg-black/40"></div>
                 <div class="absolute left-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-md bg-white p-4 shadow-xl">
                     <div class="text-lg font-semibold">Aggiorna chilometraggio</div>
                     <div class="mt-2 text-sm text-gray-600">Valore attuale: <strong x-text="current.toLocaleString('it-IT')"></strong> km</div>
@@ -403,4 +409,71 @@
             </div>
         </template>
     </div>
+
+    <!-- Modal: APERTURA manutenzione (workshop) -->
+    <div x-data="{ open:false, id:null, workshop:'', notes:'' }"
+        x-on:open-maintenance-open-modal.window="open=true; id=$event.detail.id; workshop=''; notes='';">
+        <template x-if="open">
+            <div class="fixed inset-0 z-[100]">
+                <div class="absolute inset-0 bg-black/40"></div>
+                <div class="absolute left-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-md bg-white p-4 shadow-xl">
+                    <div class="text-lg font-semibold">Apri manutenzione</div>
+                    <div class="mt-2 text-sm text-gray-600">
+                        Inserisci l’officina / luogo in cui avverrà la manutenzione.
+                    </div>
+                    <div class="mt-3 space-y-2">
+                        <div>
+                            <label class="block text-xs text-gray-600">Officina / Luogo *</label>
+                            <input type="text" x-model="workshop" class="w-full rounded-md border-gray-300" placeholder="Officina Rossi (Via…)">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-600">Note (opz.)</label>
+                            <textarea rows="2" x-model="notes" class="w-full rounded-md border-gray-300" placeholder="Dettagli intervento…"></textarea>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex justify-end gap-2">
+                        <button type="button" class="rounded border px-3 py-1" x-on:click="open=false">Annulla</button>
+                        <button type="button" class="rounded bg-amber-600 px-3 py-1 text-white hover:bg-amber-700"
+                                x-on:click="$wire.confirmOpenMaintenance(id, workshop, notes); open=false;">
+                            Conferma apertura
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Modal: CHIUSURA manutenzione (costo) -->
+    <div x-data="{ open:false, id:null, cost:'', notes:'' }"
+        x-on:open-maintenance-close-modal.window="open=true; id=$event.detail.id; cost=''; notes='';">
+        <template x-if="open">
+            <div class="fixed inset-0 z-[100]">
+                <div class="absolute inset-0 bg-black/40"></div>
+                <div class="absolute left-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-md bg-white p-4 shadow-xl">
+                    <div class="text-lg font-semibold">Chiudi manutenzione</div>
+                    <div class="mt-2 text-sm text-gray-600">
+                        Inserisci il costo totale (se disponibile). Potrai aggiornarlo anche in seguito.
+                    </div>
+                    <div class="mt-3 space-y-2">
+                        <div>
+                            <label class="block text-xs text-gray-600">Costo totale (€)</label>
+                            <input type="number" min="0" step="0.01" x-model="cost" class="w-full rounded-md border-gray-300" placeholder="0,00">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-600">Note (opz.)</label>
+                            <textarea rows="2" x-model="notes" class="w-full rounded-md border-gray-300" placeholder="Esito intervento…"></textarea>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex justify-end gap-2">
+                        <button type="button" class="rounded border px-3 py-1" x-on:click="open=false">Annulla</button>
+                        <button type="button" class="rounded bg-emerald-700 px-3 py-1 text-white hover:bg-emerald-800"
+                                x-on:click="$wire.confirmCloseMaintenance(id, (cost ? parseFloat(cost) : null), notes); open=false;">
+                            Conferma chiusura
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+
 </div>

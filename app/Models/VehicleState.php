@@ -25,4 +25,6 @@ class VehicleState extends Model
 
     public function vehicle()   { return $this->belongsTo(Vehicle::class); }
     public function creator()   { return $this->belongsTo(User::class, 'created_by'); }
+    public function maintenanceDetail() { return $this->hasOne(VehicleMaintenanceDetail::class, 'vehicle_state_id'); }
 }
+

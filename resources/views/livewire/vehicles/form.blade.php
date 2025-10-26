@@ -34,7 +34,7 @@
             <div class="col-span-3">
                 <label class="block text-xs text-gray-500">Targa *</label>
                 <input type="text" class="mt-1 w-full rounded border-gray-300 uppercase"
-                       wire:model.defer="form.plate" maxlength="16" placeholder="ABC123DE" autofocus>
+                       wire:model.defer="form.plate" maxlength="16" placeholder="AB123CD" autofocus>
                 @error('form.plate') <div class="mt-1 text-xs text-rose-600">{{ $message }}</div> @enderror
             </div>
 
@@ -124,6 +124,57 @@
                 <input type="number" class="mt-1 w-full rounded border-gray-300"
                        wire:model.defer="form.mileage_current" min="0" step="1" placeholder="0">
                 @error('form.mileage_current') <div class="mt-1 text-xs text-rose-600">{{ $message }}</div> @enderror
+            </div>
+
+            {{-- --- Divider opzionale --- --}}
+            <div class="col-span-12">
+                <div class="mt-2 mb-1 h-px bg-gray-200"></div>
+            </div>
+
+            {{-- Sezione costi --}}
+            <div class="col-span-12">
+                <h3 class="text-sm font-semibold text-gray-900">Costi & assicurazioni</h3>
+                <p class="text-xs text-gray-500">Inserisci gli importi in euro.</p>
+            </div>
+
+            {{-- Noleggio L/T (mensile) --}}
+            <div class="col-span-3">
+                <label class="block text-xs text-gray-500">Noleggio L/T (mensile) €</label>
+                <input type="number" step="0.01" min="0" class="mt-1 w-full rounded border-gray-300"
+                    wire:model.defer="form.lt_rental_monthly_eur" placeholder="es. 399,00">
+                @error('form.lt_rental_monthly_eur') <div class="mt-1 text-xs text-rose-600">{{ $message }}</div> @enderror
+            </div>
+
+            {{-- Kasko --}}
+            <div class="col-span-3">
+                <label class="block text-xs text-gray-500">FranchigiaKasko €</label>
+                <input type="number" step="0.01" min="0" class="mt-1 w-full rounded border-gray-300"
+                    wire:model.defer="form.insurance_kasko_eur" placeholder="es. 25,00">
+                @error('form.insurance_kasko_eur') <div class="mt-1 text-xs text-rose-600">{{ $message }}</div> @enderror
+            </div>
+
+            {{-- RCA --}}
+            <div class="col-span-3">
+                <label class="block text-xs text-gray-500">Franchigia RCA €</label>
+                <input type="number" step="0.01" min="0" class="mt-1 w-full rounded border-gray-300"
+                    wire:model.defer="form.insurance_rca_eur" placeholder="es. 35,00">
+                @error('form.insurance_rca_eur') <div class="mt-1 text-xs text-rose-600">{{ $message }}</div> @enderror
+            </div>
+
+            {{-- Cristalli --}}
+            <div class="col-span-3">
+                <label class="block text-xs text-gray-500">Franchigia Cristalli €</label>
+                <input type="number" step="0.01" min="0" class="mt-1 w-full rounded border-gray-300"
+                    wire:model.defer="form.insurance_cristalli_eur" placeholder="es. 5,00">
+                @error('form.insurance_cristalli_eur') <div class="mt-1 text-xs text-rose-600">{{ $message }}</div> @enderror
+            </div>
+
+            {{-- Furto/Incendio --}}
+            <div class="col-span-3">
+                <label class="block text-xs text-gray-500">Franchigia Furto/Incendio €</label>
+                <input type="number" step="0.01" min="0" class="mt-1 w-full rounded border-gray-300"
+                    wire:model.defer="form.insurance_furto_eur" placeholder="es. 18,00">
+                @error('form.insurance_furto_eur') <div class="mt-1 text-xs text-rose-600">{{ $message }}</div> @enderror
             </div>
 
             {{-- notes --}}

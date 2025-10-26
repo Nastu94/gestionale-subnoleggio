@@ -40,6 +40,12 @@ class Show extends Component
     /** Model corrente (per comodità nel template) */
     public ?Vehicle $vehicle = null;
 
+    // Dati input per aprire/chiudere manutenzione
+    public ?string $maintWorkshop = null;      // richiesto all'apertura
+    public ?string $maintNotes = null;         // opzionale (apertura/chiusura)
+    public ?float  $maintCloseCostEur = null;  // richiesto alla chiusura
+
+
     /** Etichette localizzate per i tipi documento (enum) */
     protected array $docLabels = [
         'insurance'    => 'RCA',
@@ -104,7 +110,7 @@ class Show extends Component
                 'adminOrganization:id,name',
                 'defaultPickupLocation:id,name',
                 'documents'    => fn ($q) => $q->orderBy('expiry_date'),
-                'states'       => fn ($q) => $q->orderByDesc('started_at'),
+                'states'       => fn ($q) => $q->orderByDesc('started_at')->with('maintenanceDetail'),
                 'assignments'  => fn ($q) => $q->orderByDesc('start_at'),
             ])
             ->withExists(['assignments as is_assigned' => function ($sub) use ($now) {
@@ -184,21 +190,44 @@ class Show extends Component
             return;
         }
 
+        $this->validate([
+            'maintWorkshop' => ['required','string','max:128'],
+            'maintNotes'    => ['nullable','string'],
+        ], [], [
+            'maintWorkshop' => 'Luogo/officina',
+            'maintNotes'    => 'Note',
+        ]);
+
         $exists = VehicleState::where('vehicle_id', $v->id)
-            ->whereIn('state', ['maintenance', 'out_of_service'])
+            ->whereIn('state', ['maintenance','out_of_service'])
             ->whereNull('ended_at')
             ->exists();
 
-        if (!$exists) {
-            VehicleState::create([
-                'vehicle_id' => $v->id,
-                'state'      => 'maintenance',
-                'started_at' => Carbon::now(),
-                'ended_at'   => null,
-                'reason'     => 'Impostato dalla pagina veicolo',
-                'created_by' => Auth::id(),
-            ]);
+        if ($exists) {
+            $this->dispatch('toast', type: 'info', message: 'Esiste già uno stato tecnico aperto.');
+            return;
         }
+
+        $state = VehicleState::create([
+            'vehicle_id' => $v->id,
+            'state'      => 'maintenance',
+            'started_at' => now(),
+            'ended_at'   => null,
+            'reason'     => 'Impostato dalla pagina veicolo',
+            'created_by' => auth()->id(),
+        ]);
+
+        // Dettaglio manutenzione 1:1
+        $state->maintenanceDetail()->create([
+            'workshop'   => trim($this->maintWorkshop),
+            'cost_cents' => null,
+            'currency'   => 'EUR',
+            'notes'      => $this->maintNotes ? trim($this->maintNotes) : null,
+        ]);
+
+        // pulizia campi form
+        $this->maintWorkshop = null;
+        $this->maintNotes = null;
 
         $this->dispatch('toast', type: 'success', message: 'Manutenzione aperta.');
     }
@@ -217,9 +246,47 @@ class Show extends Component
             return;
         }
 
-        VehicleState::where('vehicle_id', $v->id)
+        $state = VehicleState::where('vehicle_id', $v->id)
+            ->where('state', 'maintenance')
             ->whereNull('ended_at')
-            ->update(['ended_at' => Carbon::now()]);
+            ->latest('started_at')
+            ->first();
+
+        if (!$state) {
+            $this->dispatch('toast', type: 'info', message: 'Nessuna manutenzione aperta da chiudere.');
+            return;
+        }
+
+        $this->validate([
+            'maintCloseCostEur' => ['required','numeric','min:0'],
+            'maintNotes'        => ['nullable','string'],
+        ], [], [
+            'maintCloseCostEur' => 'Costo manutenzione (€)',
+            'maintNotes'        => 'Note',
+        ]);
+
+        $state->update(['ended_at' => now()]);
+
+        // aggiorna/crea dettaglio
+        $prevNotes      = optional($state->maintenanceDetail)->notes;
+        $newNotes       = trim((string) $this->maintNotes);
+        $mergedNotes    = $prevNotes;
+
+        if ($newNotes !== '') {
+            $mergedNotes = $prevNotes ? ($prevNotes . "\n— " . $newNotes) : $newNotes;
+        }
+
+        $state->maintenanceDetail()->updateOrCreate(
+            ['vehicle_state_id' => $state->id],
+            [
+                'cost_cents' => (int) round(((float) $this->maintCloseCostEur) * 100),
+                'notes'      => $mergedNotes,
+                'currency'   => 'EUR',
+            ]
+        );
+
+        $this->maintCloseCostEur = null;
+        $this->maintNotes = null;
 
         $this->dispatch('toast', type: 'success', message: 'Manutenzione chiusa.');
     }
