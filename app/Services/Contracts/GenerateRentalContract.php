@@ -100,18 +100,59 @@ class GenerateRentalContract
             }
         }
 
-        // --- 3) Coperture & franchigie (dal wizard o default false/null)
-        $coverage = $coverage ?? [
-            'kasko' => false,
-            'furto_incendio' => false,
-            'cristalli' => false,
-            'assistenza' => false,
-        ];
+        // --- 3) Coperture & franchigie (flags + override) ---------------------------
+        // Flags dal wizard (se null → default). Aggiungiamo 'rca' e la forziamo true.
+        $coverage = array_merge([
+            'rca'             => true,   // obbligatoria
+            'kasko'           => false,
+            'furto_incendio'  => false,
+            'cristalli'       => false,
+            'assistenza'      => false,
+        ], $coverage ?? []);
+
+        // sicurezza: RCA sempre attiva
+        $coverage['rca'] = true;
+
+        // Override franchigie dal wizard (stessi nomi chiave). Possono essere null (nessun override).
         $franchise = $franchise ?? [
-            'kasko' => null,
+            'kasko'          => null,
             'furto_incendio' => null,
-            'cristalli' => null,
+            'cristalli'      => null,
+            // opzionale: puoi prevedere 'rca' in futuro
         ];
+
+        // Franchigie base dal veicolo (convertite in euro); possono essere null se non impostate.
+        $baseFranchise = [
+            'rca'             => $vehicle?->insurance_rca_cents        !== null ? $vehicle->insurance_rca_cents        / 100 : null,
+            'kasko'           => $vehicle?->insurance_kasko_cents      !== null ? $vehicle->insurance_kasko_cents      / 100 : null,
+            'cristalli'       => $vehicle?->insurance_cristalli_cents  !== null ? $vehicle->insurance_cristalli_cents  / 100 : null,
+            // DB: insurance_furto_cents → chiave logica 'furto_incendio'
+            'furto_incendio'  => $vehicle?->insurance_furto_cents      !== null ? $vehicle->insurance_furto_cents      / 100 : null,
+        ];
+
+        /**
+         * Nuova logica deterministica:
+         * - includiamo SEMPRE tutte le chiavi in $finalFranchise
+         * - valore = override numerico se presente, altrimenti base del veicolo
+         * - il Blade decide se mostrarlo: se copertura attiva (o RCA) e valore non null → stampa "Franchigia: € …"
+         */
+        $finalFranchise = [];
+        foreach (['rca','kasko','cristalli','furto_incendio'] as $key) {
+            $overrideRaw = $franchise[$key]   ?? null;
+            $base        = $baseFranchise[$key] ?? null;
+
+            // Normalizza override: stringa vuota → null
+            $override = (is_string($overrideRaw) && trim($overrideRaw) === '') ? null : $overrideRaw;
+
+            // Usa override se numerico, altrimenti la base
+            $value = is_numeric($override) ? (float) $override : $base;
+
+            // Inseriamo SEMPRE la chiave (anche null) per semplificare il Blade
+            $finalFranchise[$key] = $value;
+        }
+
+        // Sovrascrivi i dati passati al Blade
+        $coverage['rca'] = true; // doppia cintura
 
         // --- 4) Clausole standard da config
         $clauses = config('rental.clauses', []);
@@ -154,15 +195,15 @@ class GenerateRentalContract
                 'vin'    => $vehicle?->vin ?? null,
             ],
             'pricing'    => $pricingData,
-            'coverages'  => $coverage,
-            'franchigie' => $franchise,
+            'coverages'  => $coverage,        // include rca=true
+            'franchigie' => $finalFranchise,  // valori finali (base + eventuale override)
             'clauses'    => $clauses,
         ];
 
         // --- 6) Render HTML del contratto
         $html = $this->view->make('contracts.rental', $vars)->render();
 
-        // --- 7) Genera PDF (Dompdf). Assicurati di avere barryvdh/laravel-dompdf installato.
+        // --- 7) Genera PDF (Dompdf).
         /** @var \Barryvdh\DomPDF\PDF $pdf */
         $pdf = app('dompdf.wrapper')
             ->setPaper('a4', 'portrait')

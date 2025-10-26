@@ -86,6 +86,14 @@ class CreateWizard extends Component
     public ?string $docCollection = 'documents';
     public $docFile = null;
 
+    /** Valori base franchigie (per UI) */
+    public array $franchiseBase = [
+        'rca'            => null,
+        'kasko'          => null,
+        'cristalli'      => null,
+        'furto_incendio' => null,
+    ];
+
     public function mount(): void
     {
         $this->loadOptions();
@@ -175,21 +183,23 @@ class CreateWizard extends Component
     protected function rulesStep1(): array
     {
         return [
-            'rentalData.vehicle_id'         => ['nullable','integer','exists:vehicles,id'],
-            'rentalData.pickup_location_id' => ['nullable','integer','exists:locations,id'],
-            'rentalData.return_location_id' => ['nullable','integer','exists:locations,id'],
-            'rentalData.planned_pickup_at'  => ['nullable','date'],
-            'rentalData.planned_return_at'  => ['nullable','date','after_or_equal:rentalData.planned_pickup_at'],
+            'rentalData.vehicle_id'         => ['required','integer','exists:vehicles,id'],
+            'rentalData.pickup_location_id' => ['required','integer','exists:locations,id'],
+            'rentalData.return_location_id' => ['required','integer','exists:locations,id'],
+            'rentalData.planned_pickup_at'  => ['required','date'],
+            'rentalData.planned_return_at'  => ['required','date','after_or_equal:rentalData.planned_pickup_at'],
             'rentalData.notes'              => ['nullable','string'],
-            'coverage.kasko'           => ['boolean'],
-            'coverage.furto_incendio'  => ['boolean'],
-            'coverage.cristalli'       => ['boolean'],
-            'coverage.assistenza'      => ['boolean'],
+            'coverage.rca'                  => ['boolean'], // sempre obbligatoria
+            'coverage.kasko'                => ['boolean'],
+            'coverage.furto_incendio'       => ['boolean'],
+            'coverage.cristalli'            => ['boolean'],
+            'coverage.assistenza'           => ['boolean'],
 
             // Se una copertura è selezionata, la relativa franchigia può essere richiesta (qui la lasciamo facoltativa).
-            'franchise.kasko'          => ['nullable','numeric','min:0'],
-            'franchise.furto_incendio' => ['nullable','numeric','min:0'],
-            'franchise.cristalli'      => ['nullable','numeric','min:0'],
+            'franchise.rca'                 => ['nullable','numeric','min:0'],
+            'franchise.kasko'               => ['nullable','numeric','min:0'],
+            'franchise.furto_incendio'      => ['nullable','numeric','min:0'],
+            'franchise.cristalli'           => ['nullable','numeric','min:0'],
         ];
     }
 
@@ -198,25 +208,92 @@ class CreateWizard extends Component
     {
         return [
             'customerForm.name'          => ['required','string','max:255'],
-            'customerForm.email'         => ['nullable','email','max:255'],
-            'customerForm.phone'         => ['nullable','string','max:50'],
+            'customerForm.email'         => ['required','email','max:255'],
+            'customerForm.phone'         => ['required','string','max:50'],
             'customerForm.doc_id_type'   => ['required','in:id,passport'],
             'customerForm.doc_id_number' => ['required','string','max:100'],
-            'customerForm.birth_date'    => ['nullable','date'],
-            'customerForm.address'       => ['nullable','string','max:255'],
-            'customerForm.city'          => ['nullable','string','max:100'],
-            'customerForm.province'      => ['nullable','string','max:10'],
-            'customerForm.zip'           => ['nullable','string','max:20'],
-            'customerForm.country_code'  => ['nullable','string','max:2'],
-            'customerForm.driver_license_number'      => ['nullable','string','max:64'],
-            'customerForm.driver_license_expires_at'  => ['nullable','date'],
+            'customerForm.birth_date'    => ['required','date'],
+            'customerForm.address'       => ['required','string','max:255'],
+            'customerForm.city'          => ['required','string','max:100'],
+            'customerForm.province'      => ['required','string','max:10'],
+            'customerForm.zip'           => ['required','string','max:20'],
+            'customerForm.country_code'  => ['required','string','max:2'],
+            'customerForm.driver_license_number'      => ['required','string','max:64'],
+            'customerForm.driver_license_expires_at'  => ['required','date'],
+        ];
+    }
+
+        /**
+     * Messaggi di validazione personalizzati per lo STEP 1.
+     * Chiavi: "<campo>.<regola>"
+     */
+    protected function messages(): array
+    {
+        return [
+            // rentalData.*
+            'rentalData.vehicle_id.required'         => 'Seleziona un veicolo.',
+            'rentalData.vehicle_id.exists'           => 'Il veicolo selezionato non è valido.',
+            'rentalData.pickup_location_id.required' => 'Seleziona la sede di ritiro.',
+            'rentalData.pickup_location_id.exists'   => 'La sede di ritiro non è valida.',
+            'rentalData.return_location_id.required' => 'Seleziona la sede di riconsegna.',
+            'rentalData.return_location_id.exists'   => 'La sede di riconsegna non è valida.',
+
+            'rentalData.planned_pickup_at.required'  => 'Inserisci data e ora di ritiro.',
+            'rentalData.planned_pickup_at.date'      => 'La data di ritiro non è valida.',
+            'rentalData.planned_return_at.required'  => 'Inserisci data e ora di riconsegna.',
+            'rentalData.planned_return_at.date'      => 'La data di riconsegna non è valida.',
+            'rentalData.planned_return_at.after_or_equal' => 'La riconsegna deve essere successiva o uguale al ritiro.',
+
+            // coverage.* (checkbox)
+            'coverage.rca.boolean'             => 'Selezione non valida per RCA.',
+            'coverage.kasko.boolean'           => 'Selezione non valida per Kasko.',
+            'coverage.furto_incendio.boolean'  => 'Selezione non valida per Furto/Incendio.',
+            'coverage.cristalli.boolean'       => 'Selezione non valida per Cristalli.',
+            'coverage.assistenza.boolean'      => 'Selezione non valida per Assistenza.',
+
+            // franchise.* (override importi)
+            'franchise.rca.numeric'            => 'La franchigia RCA deve essere un importo valido.',
+            'franchise.rca.min'                => 'La franchigia RCA non può essere negativa.',
+            'franchise.kasko.numeric'          => 'La franchigia Kasko deve essere un importo valido.',
+            'franchise.kasko.min'              => 'La franchigia Kasko non può essere negativa.',
+            'franchise.furto_incendio.numeric' => 'La franchigia Furto/Incendio deve essere un importo valido.',
+            'franchise.furto_incendio.min'     => 'La franchigia Furto/Incendio non può essere negativa.',
+            'franchise.cristalli.numeric'      => 'La franchigia Cristalli deve essere un importo valido.',
+            'franchise.cristalli.min'          => 'La franchigia Cristalli non può essere negativa.',
+        ];
+    }
+
+    /**
+     * Label "umane" dei campi, usate per comporre i messaggi.
+     */
+    protected function validationAttributes(): array
+    {
+        return [
+            'rentalData.vehicle_id'         => 'veicolo',
+            'rentalData.pickup_location_id' => 'sede di ritiro',
+            'rentalData.return_location_id' => 'sede di riconsegna',
+            'rentalData.planned_pickup_at'  => 'ritiro pianificato',
+            'rentalData.planned_return_at'  => 'riconsegna pianificata',
+            'coverage.rca'                  => 'RCA base',
+            'coverage.kasko'                => 'Kasko',
+            'coverage.furto_incendio'       => 'Furto/Incendio',
+            'coverage.cristalli'            => 'Cristalli',
+            'coverage.assistenza'           => 'Assistenza',
+            'franchise.rca'                 => 'franchigia RCA',
+            'franchise.kasko'               => 'franchigia Kasko',
+            'franchise.furto_incendio'      => 'franchigia Furto/Incendio',
+            'franchise.cristalli'           => 'franchigia Cristalli',
         ];
     }
 
     /** Salva/aggiorna la bozza (sempre status=draft) */
     public function saveDraft(): void
     {
-        $this->validate($this->rulesStep1());
+        $this->validate(
+            $this->rulesStep1(),
+            $this->messages(),
+            $this->validationAttributes()
+        );
 
         $rental = $this->rentalId
             ? Rental::query()->findOrFail($this->rentalId)
@@ -395,12 +472,15 @@ class CreateWizard extends Component
     {
         if ($vehicleId === null) {
             $this->rentalData['pickup_location_id'] = '';
+            // pulizia base quando si deseleziona
+            $this->franchiseBase = ['rca'=>null,'kasko'=>null,'cristalli'=>null,'furto_incendio'=>null];
             return;
         }
 
         $vehicle = Vehicle::query()->find($vehicleId);
         if (!$vehicle) return;
 
+        // sede pickup (già esistente)
         $currentLocationId =
             $vehicle->default_pickup_location_id
             ?? $vehicle->current_location_id
@@ -411,6 +491,16 @@ class CreateWizard extends Component
         if ($currentLocationId) {
             $this->rentalData['pickup_location_id'] = $currentLocationId;
         }
+
+        // NUOVO: “base” delle franchigie lette dal veicolo (in euro)
+        $toEuro = fn($cents) => is_null($cents) ? null : round($cents / 100, 2);
+
+        $this->franchiseBase = [
+            'rca'            => $toEuro($vehicle->insurance_rca_cents      ?? null),
+            'kasko'          => $toEuro($vehicle->insurance_kasko_cents    ?? null),
+            'cristalli'      => $toEuro($vehicle->insurance_cristalli_cents?? null),
+            'furto_incendio' => $toEuro($vehicle->insurance_furto_cents    ?? null),
+        ];
     }
 
     /**

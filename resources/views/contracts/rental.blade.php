@@ -128,7 +128,7 @@
             <h2>Coperture e franchigie</h2>
             <table class="table">
                 <tr>
-                    <th>RC base</th><td>Inclusa (obbligatoria)</td>
+                    <th>RC base</th><td>Inclusa (obbligatoria) — Franchigia: € {{ number_format($franchigie['rca'], 2, ',', '.') }}</td>
                     <th>Kasko</th>
                     <td>
                         {{ !empty($coverages['kasko']) ? 'Inclusa' : 'Non inclusa' }}
