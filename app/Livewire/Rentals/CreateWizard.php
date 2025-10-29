@@ -323,6 +323,27 @@ class CreateWizard extends Component
         $rental->status = 'draft';
         $rental->save();
         $this->rentalId = $rental->id;
+        
+        // === Coverage 1:1 (creazione idempotente) ===============================
+        // Garantisce l'esistenza della riga su rental_coverages per questo rental.
+        // Usiamo firstOrCreate per rispettare la unique(rental_id) e non creare duplicati.
+        // Default: rca=true, altri false, franchigie/null (verranno aggiornate in step successivi).
+        $rental->coverage()->firstOrCreate(
+            ['rental_id' => $rental->id],
+            [
+                'rca'                        => true,   // obbligatoria nel tuo flusso
+                'kasko'                      => false,
+                'furto_incendio'             => false,
+                'cristalli'                  => false,
+                'assistenza'                 => false,
+                'franchise_rca'              => null,
+                'franchise_kasko'            => null,
+                'franchise_furto_incendio'   => null,
+                'franchise_cristalli'        => null,
+                'notes'                      => null,
+            ]
+        );
+        // ========================================================================
 
         // Feedback UI
         $this->dispatch('toast', type:'success', message:'Bozza salvata.');

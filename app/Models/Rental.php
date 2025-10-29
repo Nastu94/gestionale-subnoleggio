@@ -107,4 +107,35 @@ class Rental extends Model implements SpatieHasMedia
             ->nonQueued();
     }
 
+    /**
+     * Relazione 1:1 con le coperture del noleggio.
+     * Restituisce null se non esiste ancora una riga su rental_coverages.
+     */
+    public function coverage(): HasOne
+    {
+        return $this->hasOne(RentalCoverage::class);
+    }
+
+    /**
+     * Helper non invasivo: garantisce l’esistenza della riga coverage (first-or-create).
+     * Utile quando salvi dal form o vuoi accedere in scrittura senza if.
+     */
+    public function ensureCoverage(): RentalCoverage
+    {
+        return $this->coverage()->firstOrCreate([
+            'rental_id' => $this->getKey(),
+        ], [
+            // default sicuri: rca true, altri false, franchigie null
+            'rca'               => true,
+            'kasko'             => false,
+            'furto_incendio'    => false,
+            'cristalli'         => false,
+            'assistenza'        => false,
+            'franchise_rca'     => null,
+            'franchise_kasko'   => null,
+            'franchise_furto_incendio' => null,
+            'franchise_cristalli' => null,
+            'notes'             => null,
+        ]);
+    }
 }
