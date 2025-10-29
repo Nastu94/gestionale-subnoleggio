@@ -299,6 +299,14 @@ Route::middleware([
 
 // ------------------------- Rentals: azioni stato -------------------------
     /*
+    | Registra pagamento
+    | Permesso: rentals.update
+    */
+    Route::post('/rentals/{rental}/payment', [RentalController::class, 'storePayment'])
+        ->name('rentals.record_payment')
+        ->middleware('permission:rentals.update');
+
+    /*
     | Checkout → checked_out
     | Permesso: rentals.checkout
     */

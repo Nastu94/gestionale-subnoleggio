@@ -29,7 +29,7 @@ class Rental extends Model implements SpatieHasMedia
         'pickup_location_id','return_location_id','status',
         'mileage_out','mileage_in','fuel_out_percent','fuel_in_percent',
         'notes','created_by', 'payment_recorded','payment_recorded_at','payment_method',
-        'payment_reference','payment_notes'
+        'payment_reference','payment_notes', 'amount',
     ];
 
     protected $casts = [
@@ -37,6 +37,7 @@ class Rental extends Model implements SpatieHasMedia
         'planned_return_at' => 'datetime',
         'actual_pickup_at'  => 'datetime',
         'actual_return_at'  => 'datetime',
+        'payment_recorded_at' => 'datetime',
         'mileage_out'       => 'integer',
         'mileage_in'        => 'integer',
         'fuel_out_percent'  => 'integer',

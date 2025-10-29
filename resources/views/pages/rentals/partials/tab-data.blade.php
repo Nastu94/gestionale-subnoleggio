@@ -159,7 +159,7 @@
                 <li class="flex items-center justify-between">
                     <span class="flex items-center gap-2"><span>💳</span> Pagamento registrato</span>
                     <span class="badge {{ $rental->payment_recorded ? 'badge-success' : 'badge-outline' }}">
-                        {{ $rental->payment_recorded ? optional($rental->payment_recorded_at)->format('d/m/Y H:i') : 'No' }}
+                        {{ $rental->payment_recorded ? optional($rental->payment_recorded_at)->format('d/m/Y') : 'No' }}
                     </span>
                 </li>
             </ul>

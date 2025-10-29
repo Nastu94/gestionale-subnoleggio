@@ -224,4 +224,39 @@ class RentalController extends Controller
 
         return view('pages.rentals.checklist.create', compact('rental'));
     }
+
+    /**
+     * Registra pagamento sul noleggio
+     */
+    public function storePayment(Request $request, Rental $rental)
+    {
+        $this->authorize('udpate', $rental);
+
+        $request->validate([
+            'payment_method'    => 'required|string|max:255',
+            'amount'            => 'required|numeric|min:1',
+            'payment_reference' => 'nullable|string|max:255',
+            'payment_notes'     => 'nullable|string|max:1000',
+        ],[
+            'payment_method.required' => 'Il metodo di pagamento è obbligatorio.',
+            'amount.required'         => 'L\'importo del pagamento è obbligatorio.',
+            'amount.numeric'          => 'L\'importo del pagamento deve essere un numero valido.',
+            'amount.min'              => 'L\'importo del pagamento deve essere almeno :min.',
+            'payment_reference.max'   => 'Il riferimento di pagamento non può superare i :max caratteri.',
+            'payment_notes.max'       => 'Le note di pagamento non possono superare i :max caratteri.',
+        ]);
+
+        // Registra pagamento
+        DB::transaction(function () use ($request, $rental) {
+            $rental->payment_recorded = true;
+            $rental->payment_recorded_at = now();
+            $rental->payment_method = $request->input('payment_method');
+            $rental->amount = $request->input('amount');
+            $rental->payment_reference = $request->input('payment_reference');
+            $rental->payment_notes = $request->input('payment_notes');
+            $rental->save();
+        });
+
+        return response()->json(['ok' => true, 'message' => 'Pagamento registrato con successo.'], Response::HTTP_OK);
+    }
 }   
