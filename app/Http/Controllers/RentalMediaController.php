@@ -90,7 +90,15 @@ class RentalMediaController extends Controller
             ->usingName('checklist-photo')
             ->toMediaCollection('photos');
 
-        return response()->json(['ok' => true, 'media_id' => $media->id], Response::HTTP_CREATED);
+        // ✅ Aggiungo info utili per la mini-tabella
+        return response()->json([
+            'ok'       => true,
+            'media_id' => $media->id,
+            'uuid'     => $media->uuid,         // utile se nel JSON salvi UUID
+            'url'      => $media->getUrl(),     // per “Apri”
+            'name'     => $media->file_name,    // per tabella
+            'size'     => $media->size,         // bytes
+        ], Response::HTTP_CREATED);
     }
 
     /**
