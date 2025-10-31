@@ -332,15 +332,14 @@ class CreateWizard extends Component
             ['rental_id' => $rental->id],
             [
                 'rca'                        => true,   // obbligatoria nel tuo flusso
-                'kasko'                      => false,
-                'furto_incendio'             => false,
-                'cristalli'                  => false,
-                'assistenza'                 => false,
-                'franchise_rca'              => null,
-                'franchise_kasko'            => null,
-                'franchise_furto_incendio'   => null,
-                'franchise_cristalli'        => null,
-                'notes'                      => null,
+                'kasko'                      => $this->coverage['kasko'] ?? false,
+                'furto_incendio'             => $this->coverage['furto_incendio'] ?? false,
+                'cristalli'                  => $this->coverage['cristalli'] ?? false,
+                'assistenza'                 => $this->coverage['assistenza'] ?? false,
+                'franchise_rca'              => $this->franchise['rca'] ?? null,
+                'franchise_kasko'            => $this->franchise['kasko'] ?? null,
+                'franchise_furto_incendio'   => $this->franchise['furto_incendio'] ?? null,
+                'franchise_cristalli'        => $this->franchise['cristalli'] ?? null,
             ]
         );
         // ========================================================================

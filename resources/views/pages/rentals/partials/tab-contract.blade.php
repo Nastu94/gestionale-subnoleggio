@@ -16,6 +16,25 @@
             </div>
         </div>
 
+        {{-- CTA: mostra solo se NON c'è un contratto generato --}}
+        @if(!$hasGenerated)
+            <div class="flex justify-end">
+                <button
+                    class="btn btn-primary shadow-none
+                        !bg-primary !text-primary-content !border-primary
+                        hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30
+                        disabled:opacity-50 disabled:cursor-not-allowed"
+                    wire:click="generateContract"
+                    wire:loading.attr="disabled"
+                    wire:target="generateContract"
+                    title="Genera una nuova versione del contratto (PDF)"
+                >
+                    <span wire:loading.remove wire:target="generateContract">Genera contratto (PDF)</span>
+                    <span wire:loading wire:target="generateContract" class="loading loading-spinner loading-sm"></span>
+                </button>
+            </div>
+        @endif
+
         <div class="grid md:grid-cols-2 gap-5">
             {{-- Colonna: versioni generate (PDF) --}}
             <div class="space-y-2">

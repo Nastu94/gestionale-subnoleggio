@@ -100,28 +100,34 @@ class GenerateRentalContract
             }
         }
 
-        // --- 3) Coperture & franchigie (flags + override) ---------------------------
-        // Flags dal wizard (se null → default). Aggiungiamo 'rca' e la forziamo true.
-        $coverage = array_merge([
-            'rca'             => true,   // obbligatoria
-            'kasko'           => false,
-            'furto_incendio'  => false,
-            'cristalli'       => false,
-            'assistenza'      => false,
-        ], $coverage ?? []);
+        // --- 3) Coperture & franchigie (flags + override + fallback da DB/veicolo) -----
 
-        // sicurezza: RCA sempre attiva
-        $coverage['rca'] = true;
+        // 3.a) Legge dal DB (rental_coverages) se presente
+        $rc = $rental->coverage()->first(); // relazione 1:1; può essere null
 
-        // Override franchigie dal wizard (stessi nomi chiave). Possono essere null (nessun override).
-        $franchise = $franchise ?? [
-            'kasko'          => null,
-            'furto_incendio' => null,
-            'cristalli'      => null,
-            // opzionale: puoi prevedere 'rca' in futuro
+        // Flags dal DB (default sicuri). NOTA: rca rimane true per policy.
+        $dbCoverageFlags = [
+            'rca'            => (bool)($rc->rca ?? true),
+            'kasko'          => (bool)($rc->kasko ?? false),
+            'furto_incendio' => (bool)($rc->furto_incendio ?? false),
+            'cristalli'      => (bool)($rc->cristalli ?? false),
+            'assistenza'     => (bool)($rc->assistenza ?? false),
         ];
 
-        // Franchigie base dal veicolo (convertite in euro); possono essere null se non impostate.
+        // Franchigie dal DB (decimal:2 → stringhe): normalizziamo a float|null
+        $dbFranchise = [
+            'rca'             => isset($rc?->franchise_rca)              ? (float)$rc->franchise_rca : null,
+            'kasko'           => isset($rc?->franchise_kasko)            ? (float)$rc->franchise_kasko : null,
+            'furto_incendio'  => isset($rc?->franchise_furto_incendio)   ? (float)$rc->franchise_furto_incendio : null,
+            'cristalli'       => isset($rc?->franchise_cristalli)        ? (float)$rc->franchise_cristalli : null,
+        ];
+
+        // 3.b) Flags finali: DB come base, eventuali override dal parametro $coverage
+        //     (se l’array è passato dal wizard, vince sui valori del DB)
+        $coverage = array_merge($dbCoverageFlags, $coverage ?? []);
+        $coverage['rca'] = true; // cintura & bretelle: RCA sempre attiva
+
+        // 3.c) Franchigie “base” dal veicolo (come prima, in EUR)
         $baseFranchise = [
             'rca'             => $vehicle?->insurance_rca_cents        !== null ? $vehicle->insurance_rca_cents        / 100 : null,
             'kasko'           => $vehicle?->insurance_kasko_cents      !== null ? $vehicle->insurance_kasko_cents      / 100 : null,
@@ -129,6 +135,33 @@ class GenerateRentalContract
             // DB: insurance_furto_cents → chiave logica 'furto_incendio'
             'furto_incendio'  => $vehicle?->insurance_furto_cents      !== null ? $vehicle->insurance_furto_cents      / 100 : null,
         ];
+
+        // 3.d) Franchigie finali: priorità (1) param → (2) DB → (3) veicolo
+        $inputFranchise = $franchise ?? []; // se passato, sovrascrive DB
+        $finalFranchise = [];
+
+        foreach (['rca','kasko','cristalli','furto_incendio'] as $key) {
+            $overrideRaw = $inputFranchise[$key] ?? null;
+            $fromDb      = $dbFranchise[$key]    ?? null;
+            $fromVeh     = $baseFranchise[$key]  ?? null;
+
+            // Normalizza stringhe vuote a null
+            $override = (is_string($overrideRaw) && trim($overrideRaw) === '') ? null : $overrideRaw;
+
+            // Scelta valore con precedenza: param → DB → veicolo
+            if (is_numeric($override)) {
+                $value = (float)$override;
+            } elseif ($fromDb !== null) {
+                $value = (float)$fromDb;
+            } else {
+                $value = $fromVeh; // può essere null
+            }
+
+            $finalFranchise[$key] = $value;
+        }
+
+        // (facciamo ricadere le variabili usate nel template)
+        $coverage['rca'] = true; // doppia garanzia
 
         /**
          * Nuova logica deterministica:

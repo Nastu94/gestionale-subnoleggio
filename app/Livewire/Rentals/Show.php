@@ -6,6 +6,8 @@ use Livewire\Attributes\Layout;
 use Livewire\Component;
 use App\Models\Rental;
 use Illuminate\Contracts\View\View;
+use App\Services\Contracts\GenerateRentalContract;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 /**
  * Livewire: Scheda noleggio con tab e Action Drawer.
@@ -15,6 +17,9 @@ use Illuminate\Contracts\View\View;
  */
 class Show extends Component
 {
+    use AuthorizesRequests;
+
+    /** @var Rental Istanza di noleggio */
     public Rental $rental;
 
     /** @var string Tab attivo: data|contract|pickup|return|damages|attachments|timeline */
@@ -32,6 +37,36 @@ class Show extends Component
     public function switch(string $tab): void
     {
         $this->tab = $tab;
+    }
+
+    /**
+     * Genera una nuova versione del contratto (PDF) e la salva su Media Library (collection "contract").
+     * - Autorizza l'utente (policy/permessi).
+     * - Usa il service GenerateRentalContract (già fornito).
+     * - Mostra un toast e aggiorna il componente Livewire senza navigare.
+     */
+    public function generateContract(GenerateRentalContract $generator): void
+    {
+        // 🔐 Autorizzazione
+        if (!auth()->user()?->can('rentals.contract.generate') || !auth()->user()?->can('media.attach.contract')) {
+            // Livewire v3: dispatch() crea un evento browser "toast" (il tuo layout lo ascolta)
+            $this->dispatch('toast', type: 'error', message: 'Permesso negato.');
+            return;
+        }
+
+        try {
+            // ⚙️ Generazione + salvataggio su Media Library (marca "current" solo l’ultimo: già nel service)
+            $generator->handle($this->rental);
+
+            // 🔄 Aggiorna il model e la UI
+            $this->rental->refresh();
+            $this->dispatch('toast', type: 'success', message: 'Contratto generato.');
+            $this->dispatch('$refresh'); // forza il re-render del componente
+
+        } catch (\Throwable $e) {
+            report($e);
+            $this->dispatch('toast', type: 'error', message: 'Errore durante la generazione del contratto.');
+        }
     }
 
     public function render(): View

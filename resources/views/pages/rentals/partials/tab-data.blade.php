@@ -90,6 +90,48 @@
                     <dt class="opacity-70">Sede riconsegna</dt>
                     <dd class="font-medium">{{ optional($rental->returnLocation)->name ?? '—' }}</dd>
                 </div>
+
+                <div>
+                    <dt class="opacity-70">Copertura RCA</dt>
+                    <dd class="font-medium">{{ $rental->coverage->rca ? 'Sì' : 'No' }}</dd>
+                </div>
+                <div>
+                    <dt class="opacity-70">Franchigia RCA</dt>
+                    <dd class="font-medium">{{ $rental->coverage->rca ? ($rental->coverage->franchise_rca ?? $rental->vehicle->insurance_rca_cents/100) . ' €' : '—' }}</dd>
+                </div>
+
+                <div>
+                    <dt class="opacity-70">Copertura Kasko</dt>
+                    <dd class="font-medium">{{ $rental->coverage->kasko ? 'Sì' : 'No' }}</dd>
+                </div>
+                <div>
+                    <dt class="opacity-70">Franchigia Kasko</dt>
+                    <dd class="font-medium">{{ $rental->coverage->kasko ? ($rental->coverage->franchise_kasko ?? $rental->vehicle->insurance_kasko_cents/100) . ' €' : '—' }}</dd>
+                </div>
+
+                <div>
+                    <dt class="opacity-70">Copertura Furto e Incendio</dt>
+                    <dd class="font-medium">{{ $rental->coverage->furto_incendio ? 'Sì' : 'No' }}</dd>
+                </div>
+                <div>
+                    <dt class="opacity-70">Franchigia Furto e Incendio</dt>
+                    <dd class="font-medium">{{ $rental->coverage->furto_incendio ? ($rental->coverage->franchise_furto_incendio ?? $rental->vehicle->insurance_furto_incendio_cents/100) . ' €' : '—' }}</dd>
+                </div>
+
+                <div>
+                    <dt class="opacity-70">Copertura Cristalli</dt>
+                    <dd class="font-medium">{{ $rental->coverage->cristalli ? 'Sì' : 'No' }}</dd>
+                </div>
+                <div>
+                    <dt class="opacity-70">Franchigia Cristalli</dt>
+                    <dd class="font-medium">{{ $rental->coverage->cristalli ? ($rental->coverage->franchise_cristalli ?? $rental->vehicle->insurance_cristalli_cents/100) . ' €' : '—' }}</dd>
+                </div>
+
+                <div>
+                    <dt class="opacity-70">Copertura Assistenza</dt>
+                    <dd class="font-medium">{{ $rental->coverage->assistenza ? 'Sì' : 'No' }}</dd>
+                </div>
+
             </dl>
 
             {{-- Note operative (tipografia migliorata) --}}
