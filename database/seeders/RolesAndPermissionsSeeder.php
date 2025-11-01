@@ -39,7 +39,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Locations
             'locations.viewAny', 'locations.view', 'locations.create', 'locations.update', 'locations.delete',
 
-            // --- Nuovi permessi: AZIONI noleggio ---
+            // --- AZIONI noleggio ---
             'rentals.checkout', 'rentals.inuse', 'rentals.checkin', 'rentals.close', 'rentals.cancel', 'rentals.noshow', 
 
             // Contratti noleggio
@@ -49,9 +49,9 @@ class RolesAndPermissionsSeeder extends Seeder
             'rental_checklists.create', 'rental_checklists.update', 'rental_damages.create', 'rental_damages.update',
             'rental_damages.delete',
 
-            // --- Nuovi permessi: MEDIA ---
+            // --- MEDIA ---
             'media.upload', 'media.delete', 'media.attach.contract', 'media.attach.contract_signed',
-            'media.attach.checklist_photo', 'media.attach.damage_photo', 'media.attach.rental_document',
+            'media.attach.checklist_photo', 'media.attach.damage_photo', 'media.attach.rental_document', 'media.attach.checklist_signed',
 
             // Audit/Report
             'audit.view', 'reports.view',
@@ -95,7 +95,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'rental_damages.delete',
 
             'media.upload', 'media.delete', 'media.attach.contract', 'media.attach.contract_signed',
-            'media.attach.checklist_photo', 'media.attach.damage_photo', 'media.attach.rental_document',
+            'media.attach.checklist_photo', 'media.attach.damage_photo', 'media.attach.rental_document', 'media.attach.checklist_signed',
 
             // opzionali:
             // 'audit.view','reports.view',

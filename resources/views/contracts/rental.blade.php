@@ -1,7 +1,5 @@
 {{-- resources/views/contracts/rental.blade.php --}}
-{{-- Contratto di noleggio - Bozza PDF
-     Nota: questo template NON genera il PDF; verrà usato dal service di generazione.
-     I placeholders si aspettano array/DTO con chiavi come sotto descritto. --}}
+{{-- Contratto di noleggio - Bozza PDF --}}
 
 @php
     /** @var array $org - dati organizzazione (name, vat, address, etc.) */

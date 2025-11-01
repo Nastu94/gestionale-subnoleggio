@@ -44,6 +44,7 @@ class Vehicle extends Model implements SpatieHasMedia
     public function blocks()            { return $this->hasMany(VehicleBlock::class); }
     public function mileageLogs()       { return $this->hasMany(VehicleMileageLog::class); }
     public function pricelists()        { return $this->hasMany(VehiclePricelist::class); }
+    public function damages()           { return $this->hasMany(VehicleDamage::class); }
 
     // --- Scope utili ---
     /** Veicoli attivi (non dismessi) */

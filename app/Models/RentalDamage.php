@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Spatie\MediaLibrary\HasMedia as SpatieHasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
-use Spatie\Image\Manipulations;
+use Spatie\Image\Enums\Fit; 
 use Illuminate\Support\Str;
 
 /**
@@ -45,16 +45,16 @@ class RentalDamage extends Model implements SpatieHasMedia
         if ($media && !Str::startsWith($media->mime_type, 'image/')) return;
 
         $this->addMediaConversion('thumb')
-            ->fit(Manipulations::FIT_CROP, 256, 256)
+            ->fit(Fit::crop, 256, 256)
             ->nonQueued();
 
         $this->addMediaConversion('preview')
-            ->fit(Manipulations::FIT_MAX, 1600, 1600)
+            ->fit(Fit::max, 1600, 1600)
             ->keepOriginalImageFormat()
             ->nonQueued();
 
         $this->addMediaConversion('hd')
-            ->fit(Manipulations::FIT_MAX, 2048, 2048)
+            ->fit(Fit::max, 2048, 2048)
             ->keepOriginalImageFormat()
             ->performOnCollections('photos')
             ->nonQueued();

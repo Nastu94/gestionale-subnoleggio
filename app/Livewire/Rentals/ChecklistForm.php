@@ -3,208 +3,824 @@
 namespace App\Livewire\Rentals;
 
 use App\Models\Rental;
+use App\Models\RentalChecklist;
+use App\Models\RentalDamage;
+use App\Models\VehicleDamage;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Arr;
 use Livewire\Component;
-use Livewire\WithFileUploads;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 /**
- * Form Livewire per creare/modificare la checklist.
- * In questo step aggiungiamo:
- * - Sezione Danni con blocchi dinamici
- * - Upload media temporanei (odometro, livello carburante, esterni, danni)
+ * Livewire Component: rentals.checklist-form
+ *
+ * Gestisce la creazione/edit della checklist di noleggio in 3 tab:
+ *  - TAB 1 (Base): chilometraggio, carburante, pulizia, firme (flag)
+ *  - TAB 2 (Checklist JSON v1): documenti, dotazioni, condizioni, note
+ *  - TAB 3 (Danni):
+ *      * pickup  → preload “vehicle_damages” aperti (readonly, nessun add/remove/salvataggio)
+ *      * return  → CRUD idempotente su “rental_damages” (fase corrente), lock-aware
+ *
+ * Nota: upload immagini/documenti e PDF restano nel controller dedicato.
  */
 class ChecklistForm extends Component
 {
     use AuthorizesRequests;
-    use WithFileUploads; // Necessario per gli upload Livewire (tmp)
 
-    /** Istanza del noleggio corrente */
+    /** @var \App\Models\Rental  Noleggio corrente (iniettato dal route-model binding) */
     public Rental $rental;
 
-    /** Tipo checklist: 'pickup' | 'return' (derivato da query) */
-    public ?string $type = null;
+    /** Tipo checklist: 'pickup' | 'return' (da query string) */
+    public string $type = 'pickup';
 
-    /** Campi scalar aderenti alla tabella `rental_checklists` */
+    // -------------------------------
+    //   TAB 1 — BASE
+    // -------------------------------
+
+    /** Km dichiarati in checklist */
     public ?int $mileage = null;
+
+    /** Carburante % (0–100) */
     public ?int $fuel_percent = 0;
+
+    /** Pulizia ('poor'|'fair'|'good'|'excellent'|null) */
     public ?string $cleanliness = null;
+
+    /** Flag firme (solo boolean “spunta”, la firma è media gestito da controller) */
     public bool $signed_by_customer = false;
     public bool $signed_by_operator = false;
 
-    /** Placeholder (non usato in questo step) */
+    /** UUID media firma (compatibilità, non usato nello step corrente) */
     public ?string $signature_media_uuid = null;
 
-    /** JSON dinamico della checklist (schema v1 definito nello step precedente) */
-    public array $checklist = [];
-
-    /** Km attuali del veicolo (per validazione chilometraggio) */
+    /** Km attuali del veicolo (solo riferimento UI/validazione) */
     public ?int $current_vehicle_mileage = null;
 
-    /**
-     * Danni inseriti dall'utente (UI → salveremo poi su `rental_damages`).
-     * Ogni item:
-     * - area: string (es. "paraurti posteriore dx")
-     * - description: string
-     * - severity: minor|moderate|major
-     * - preexisting: bool (true = danno preesistente)
-     * - photos_files: array di TemporaryUploadedFile (Livewire tmp)
-     */
-    public array $damage_items = [];
+    // -------------------------------
+    //   TAB 2 — CHECKLIST JSON v1
+    // -------------------------------
+
+    /** Struttura JSON normalizzata (array) salvata in rental_checklists.checklist_json */
+    public array $checklist = [];
+
+    // -------------------------------
+    //   TAB 3 — DANNI
+    // -------------------------------
 
     /**
-     * Foto checklist (Livewire tmp). In questo step **non** persistiamo:
-     * - odometer_file: foto del contachilometri
-     * - fuel_gauge_file: foto dell'indicatore carburante
-     * - exterior_files: array foto carrozzeria
+     * Danni per la tab (array di righe).
+     *  - pickup: preload da VehicleDamage (aperti) con accessor “risolti” (readonly).
+     *  - return: array dinamico (id, area, severity, description) su RentalDamage fase corrente.
      */
-    public array $checklist_photos = [
-        'odometer_file'   => null,
-        'fuel_gauge_file' => null,
-        'exterior_files'  => [],
+    public array $damages = [];
+
+    /** true se i danni sono solo consultivi (pickup) → disabilita add/remove/edit/salva */
+    public bool $damagesReadonly = false;
+
+    // -------------------------------
+    //   TAB 4 — MEDIA & DOCUMENTI
+    // -------------------------------
+
+    /** Foto checklist raggruppate per kind (odometer|fuel|exterior) */
+    public array $mediaChecklist = [
+        'odometer' => [],
+        'fuel'     => [],
+        'exterior' => [],
     ];
 
-    /** Regole di validazione */
-    protected function rules(): array
-    {
-        return [
-            // --- campi checklist table ---
-            'type'                => ['required', 'in:pickup,return'],
-            'mileage'             => ['nullable', 'integer', 'min:' . ($this->current_vehicle_mileage ?? 0), 'max:2000000'],
-            'fuel_percent'        => ['nullable', 'integer', 'min:0', 'max:100'],
-            'cleanliness'         => ['nullable', 'in:poor,fair,good,excellent'],
-            'signed_by_customer'  => ['boolean'],
-            'signed_by_operator'  => ['boolean'],
-            'signature_media_uuid'=> ['nullable', 'string', 'max:64'],
+    /** Stato PDF lato UI */
+    public ?string $last_pdf_url = null;  // URL ultimo PDF non firmato
+    public bool $pdf_dirty = true;        // se true, "Genera PDF" abilitato
 
-            // --- JSON schema v1 (chiavi principali) ---
-            'checklist'                                         => ['array'],
-            'checklist.schema_version'                          => ['required', 'in:1.0'],
-            'checklist.keys.count'                              => ['nullable', 'integer', 'min:0', 'max:5'],
-            'checklist.keys.spare_key_present'                  => ['boolean'],
-            'checklist.documents.registration_present'          => ['boolean'],
-            'checklist.documents.insurance_card_present'        => ['boolean'],
-            'checklist.documents.roadside_assistance_present'   => ['boolean'],
-            'checklist.equipment.triangle'                      => ['boolean'],
-            'checklist.equipment.reflective_vest'               => ['boolean'],
-            'checklist.equipment.first_aid_kit'                 => ['boolean'],
-            'checklist.equipment.spare_wheel'                   => ['boolean'],
-            'checklist.equipment.tyre_repair_kit'               => ['boolean'],
-            'checklist.equipment.jack'                          => ['boolean'],
-            'checklist.tyres.season'                            => ['nullable', 'in:summer,winter,all-season'],
-            'checklist.tyres.pressure_ok'                       => ['boolean'],
-            'checklist.tyres.tread_ok'                          => ['boolean'],
-            'checklist.electronics.lights_ok'                   => ['boolean'],
-            'checklist.electronics.turn_indicators_ok'          => ['boolean'],
-            'checklist.electronics.brake_lights_ok'             => ['boolean'],
-            'checklist.electronics.horn_ok'                     => ['boolean'],
-            'checklist.windows.windshield_chips'                => ['boolean'],
-            'checklist.windows.wipers_ok'                       => ['boolean'],
-            'checklist.interior.mats_present'                   => ['boolean'],
-            'checklist.interior.cigarette_burns'                => ['boolean'],
-            'checklist.fuel_cap_present'                        => ['boolean'],
-            'checklist.warning_lights'                          => ['array'],
-            'checklist.warning_lights.*'                        => ['string', 'max:50'],
-            'checklist.notes'                                   => ['nullable', 'string', 'max:500'],
+    // -------------------------------
+    //   Stato Checklist
+    // -------------------------------
 
-            // --- Danni dinamici ---
-            'damage_items'                                      => ['nullable','array'],
-            'damage_items.*.area'                               => ['required','string','max:100'],
-            'damage_items.*.description'                        => ['nullable','string','max:500'],
-            'damage_items.*.severity'                           => ['required','in:minor,moderate,major'],
-            'damage_items.*.preexisting'                        => ['boolean'],
-        ];
-    }
+    /** ID riga checklist (dopo saveBase) → abilita le tab 2-3 in UI */
+    public ?int $checklistId = null;
 
-    protected function messages(): array
-    {
-        return [
-            'mileage.min'              => __('Il chilometraggio non può essere inferiore ai km attuali del veicolo (:min km).'),
-            'damage_items.*.area.required'     => __('Specificare l’area del danno.'),
-            'damage_items.*.severity.in'       => __('La gravità deve essere: minor, moderate o major.'),
-            'damage_items.*.photos_files.*.image' => __('Le foto del danno devono essere immagini.'),
-        ];
-    }
+    /** Stato lock persistente (Opzione B: blocco dopo firma PDF) */
+    public bool $isLocked = false;
 
+    /**
+     * Mount iniziale:
+     * - Determina type ('pickup'|'return')
+     * - Preleva chilometraggio attuale veicolo
+     * - Precarica eventuale riga esistente checklist (e stato lock)
+     * - Precarica danni: vehicle_damages (pickup, open) | rental_damages (return, fase corrente)
+     */
     public function mount(Rental $rental, ?string $type = null): void
     {
-        $this->authorize('checklist.update', $rental);
         $this->rental = $rental;
-        $this->type = in_array($type, ['pickup', 'return'], true) ? $type : 'pickup';
+        $this->type   = \in_array($type, ['pickup','return'], true) ? $type : 'pickup';
 
-        // Km attuali del veicolo per validazione del chilometraggio
+        // Km attuali del veicolo per validazione “min”
         $vehicle = $rental->vehicle ?? null;
         $this->current_vehicle_mileage =
-            $vehicle->mileage_current ?? null;
+            $vehicle->mileage_current        // nome colonna usato nel tuo schema
+            ?? $vehicle->odometer_km // fallback comuni
+            ?? $vehicle->odometer
+            ?? 0;
 
-        if ($this->fuel_percent === null) {
-            $this->fuel_percent = 0;
+        // Se esiste già una checklist per (rental_id, type), precarica base + JSON + lock
+        $existing = $this->rental->checklists()->where('type', $this->type)->first();
+        if ($existing) {
+            $this->checklistId          = (int) $existing->id;
+            $this->isLocked             = $existing->isLocked();
+            $this->mileage              = $existing->mileage;
+            $this->fuel_percent         = $existing->fuel_percent;
+            $this->cleanliness          = $existing->cleanliness;
+            $this->signed_by_customer   = (bool) $existing->signed_by_customer;
+            $this->signed_by_operator   = (bool) $existing->signed_by_operator;
+            $this->signature_media_uuid = $existing->signature_media_uuid;
+            $this->checklist            = $existing->checklist_json ?? [];
+
+            // ===== Precarica foto 'photos' raggruppate per kind =====
+            $groups = ['odometer' => [], 'fuel' => [], 'exterior' => []];
+            foreach ($existing->getMedia('photos') as $m) {
+                /** @var \Spatie\MediaLibrary\MediaCollections\Models\Media $m */
+                $kind = $m->getCustomProperty('kind') ?: 'exterior'; // default robusto
+                if (!isset($groups[$kind])) $kind = 'exterior';
+                $groups[$kind][] = [
+                    'id'   => (int) $m->id,
+                    'name' => $m->file_name,
+                    'url'  => $m->getUrl(),
+                    'size' => (int) $m->size,
+                ];
+            }
+            $this->mediaChecklist = $groups;
         }
 
-        // Default JSON v1 se assente (come definito nello step precedente)
-        if (empty($this->checklist)) {
-            $this->checklist = [
-                'schema_version' => '1.0',
-                'keys' => ['count' => 1, 'spare_key_present' => false],
-                'documents' => [
-                    'registration_present' => true,
-                    'insurance_card_present' => true,
-                    'roadside_assistance_present' => false,
-                ],
-                'equipment' => [
-                    'triangle' => false, 'reflective_vest' => false, 'first_aid_kit' => false,
-                    'spare_wheel' => false, 'tyre_repair_kit' => false, 'jack' => false,
-                ],
-                'tyres' => ['season' => null, 'pressure_ok' => true, 'tread_ok' => true],
-                'electronics' => [
-                    'lights_ok' => true, 'turn_indicators_ok' => true,
-                    'brake_lights_ok' => true, 'horn_ok' => true,
-                ],
-                'windows' => ['windshield_chips' => false, 'wipers_ok' => true],
-                'interior' => ['mats_present' => true, 'cigarette_burns' => false],
-                'fuel_cap_present' => true,
-                'warning_lights' => [],
-                'notes' => null,
-                'photos' => [
-                    // In questo step usiamo i file tmp; gli UUID arriveranno nello step di salvataggio
-                    'odometer_media_uuid' => null,
-                    'fuel_gauge_media_uuid' => null,
-                    'exterior_media_uuids' => [],
-                ],
-            ];
+        // -------------------------
+        // Precarico DANNI per la tab
+        // -------------------------
+        if ($this->type === 'pickup') {
+            // In pickup i danni NON si inseriscono: mostriamo i danni veicolo aperti (readonly)
+            $this->damagesReadonly = true;
+
+            $vehicleId = $this->rental->vehicle?->id;
+            $this->damages = $vehicleId
+                ? VehicleDamage::query()
+                    ->forVehicle($vehicleId)
+                    ->open()
+                    ->orderBy('id')
+                    ->get()
+                    ->map(function (VehicleDamage $vd) {
+                        return [
+                            'id'          => (int) $vd->id,              // ID del vehicle_damage (consultazione)
+                            'area'        => $vd->resolved_area,        // accessor (preferisce manuale, fallback first_rental_damage)
+                            'severity'    => $vd->resolved_severity,    // accessor
+                            'description' => $vd->resolved_description, // accessor
+                            'source'      => $vd->source,               // solo display
+                        ];
+                    })
+                    ->values()
+                    ->all()
+                : [];
+        } else {
+            // In return (o altre fasi) lavoriamo sui rental_damages della fase corrente
+            $this->damagesReadonly = false;
+
+            $this->damages = RentalDamage::query()
+                ->where('rental_id', $this->rental->id)
+                ->where('phase', $this->type) // 'return' o altro
+                ->orderBy('id')
+                ->get()
+                ->map(function (RentalDamage $d) {
+                    return [
+                        'id'          => (int) $d->id,
+                        'area'        => $d->area,
+                        'severity'    => $d->severity,    // 'low'|'medium'|'high'
+                        'description' => $d->description,
+                    ];
+                })
+                ->values()
+                ->all();
         }
+
+        $this->refreshPdfState(); // calcola url + dirty
     }
 
-    /** Aggiunge un nuovo blocco danno (vuoto) alla collezione UI */
-    public function addDamage(): void
+    // =========================================================================
+    // TAB 1 — BASE: validazione + salvataggio (create/update) + eventi Alpine
+    // =========================================================================
+
+    /**
+     * Regole di validazione per TAB 1 (Base).
+     * - 'mileage' min vincolato ai km attuali del veicolo
+     * - 'fuel_percent' 0..100
+     */
+    protected function rulesBase(): array
     {
-        $this->damage_items[] = [
-            'area' => '',
-            'description' => '',
-            'severity' => 'minor',   // default prudente
-            'preexisting' => false,
-            'photos_files' => [],    // array di TemporaryUploadedFile
+        return [
+            'type'               => ['required','in:pickup,return'],
+            'mileage'            => ['required','integer','min:'.((int)($this->current_vehicle_mileage ?? 0)),'max:2000000'],
+            'fuel_percent'       => ['required','integer','min:0','max:100'],
+            'cleanliness'        => ['required','in:poor,fair,good,excellent'],
+            'signed_by_customer' => ['boolean'],
+            'signed_by_operator' => ['boolean'],
         ];
     }
 
-    /** Rimuove il blocco danno all'indice $index */
-    public function removeDamage(int $index): void
+    /**
+     * Salva/Crea la checklist (solo TAB 1).
+     * - Se riga esiste ed è locked → nessuna modifica, errore UI.
+     * - Se non esiste → crea riga con base + JSON corrente (se presente).
+     * - Emette eventi per Alpine: sblocca tab dopo successo; segnala lock se presente.
+     */
+    public function saveBase(): void
     {
-        if (isset($this->damage_items[$index])) {
-            unset($this->damage_items[$index]);
-            // Reindicizza gli indici per non rompere il binding
-            $this->damage_items = array_values($this->damage_items);
+        $data = $this->validate($this->rulesBase());
+
+        DB::transaction(function () use ($data) {
+            $existing = $this->rental->checklists()
+                ->where('type', $this->type)
+                ->lockForUpdate()
+                ->first();
+
+            if ($existing) {
+                $this->authorize('update', $existing);
+
+                if ($existing->isLocked()) {
+                    $this->isLocked    = true;
+                    $this->checklistId = (int) $existing->id;
+                    $this->addError('mileage', __('La checklist è bloccata e non può essere modificata.'));
+                    return;
+                }
+
+                // Update campi base checklist
+                $existing->fill([
+                    'mileage'            => $data['mileage'] ?? null,
+                    'fuel_percent'       => $data['fuel_percent'] ?? 0,
+                    'cleanliness'        => $data['cleanliness'] ?? null,
+                    'signed_by_customer' => (bool) $data['signed_by_customer'],
+                    'signed_by_operator' => (bool) $data['signed_by_operator'],
+                ])->save();
+
+                $this->checklistId = (int) $existing->id;
+                $this->isLocked    = false;
+
+                // === PICKUP: propaga su vehicles + rentals + LOG km ===
+                if ($this->type === 'pickup') {
+                    $veh   = $this->rental->vehicle()->lockForUpdate()->first();
+                    $mOut  = $data['mileage'] ?? null;
+                    $fOut  = $data['fuel_percent'] ?? null;
+
+                    if ($veh && $mOut !== null) {
+                        $old = (int) ($veh->mileage_current ?? 0);
+                        $new = (int) $mOut;
+
+                        // aggiorna veicolo SOLO se cambia
+                        if ($new !== $old) {
+                            $veh->forceFill(['mileage_current' => $new])->save();
+
+                            // log storico km
+                            DB::table('vehicle_mileage_logs')->insert([
+                                'vehicle_id'  => (int) $veh->id,
+                                'mileage_old' => $old,
+                                'mileage_new' => $new,
+                                'changed_by'  => (int) (auth()->id() ?? 0),
+                                'source'      => 'manual', // enum: 'manual','import','api'
+                                'notes'       => 'Aggiornamento nella checklist del noleggio #'.$this->rental->id,
+                                'changed_at'  => now(),
+                                'created_at'  => now(),
+                                'updated_at'  => now(),
+                            ]);
+                        }
+
+                        // riflette l’aggiornamento nel vincolo UI
+                        $this->current_vehicle_mileage = $new;
+                    }
+
+                    // Aggiorna i campi “out” del rental se valorizzati
+                    $updates = [];
+                    if ($mOut !== null) $updates['mileage_out']       = (int) $mOut;
+                    if ($fOut !== null) $updates['fuel_out_percent']  = (int) $fOut;
+                    if ($updates) {
+                        $this->rental->fill($updates)->save();
+                    }
+                }
+            } else {
+                $this->authorize('create', RentalChecklist::class);
+
+                $new = new RentalChecklist([
+                    'rental_id'            => $this->rental->id,
+                    'type'                 => $this->type,
+                    'mileage'              => $data['mileage'] ?? null,
+                    'fuel_percent'         => $data['fuel_percent'] ?? 0,
+                    'cleanliness'          => $data['cleanliness'] ?? null,
+                    'signed_by_customer'   => (bool) $data['signed_by_customer'],
+                    'signed_by_operator'   => (bool) $data['signed_by_operator'],
+                    'signature_media_uuid' => $this->signature_media_uuid,
+                    'checklist_json'       => $this->checklist ?? [],
+                    'created_by'           => auth()->id(),
+                ]);
+                $new->save();
+
+                $this->checklistId = (int) $new->id;
+                $this->isLocked    = false;
+
+                // === PICKUP: propaga su vehicles + rentals + LOG km ===
+                if ($this->type === 'pickup') {
+                    $veh   = $this->rental->vehicle()->lockForUpdate()->first();
+                    $mOut  = $data['mileage'] ?? null;
+                    $fOut  = $data['fuel_percent'] ?? null;
+
+                    if ($veh && $mOut !== null) {
+                        $old = (int) ($veh->mileage_current ?? 0);
+                        $new = (int) $mOut;
+
+                        // aggiorna veicolo SOLO se cambia
+                        if ($new !== $old) {
+                            $veh->forceFill(['mileage_current' => $new])->save();
+
+                            // log storico km
+                            DB::table('vehicle_mileage_logs')->insert([
+                                'vehicle_id'  => (int) $veh->id,
+                                'mileage_old' => $old,
+                                'mileage_new' => $new,
+                                'changed_by'  => (int) (auth()->id() ?? 0),
+                                'source'      => 'manual', // enum: 'manual','import','api'
+                                'notes'       => 'Aggiornamento nella checklist del noleggio #'.$this->rental->id,
+                                'changed_at'  => now(),
+                                'created_at'  => now(),
+                                'updated_at'  => now(),
+                            ]);
+                        }
+
+                        // riflette l’aggiornamento nel vincolo UI
+                        $this->current_vehicle_mileage = $new;
+                    }
+
+                    // Aggiorna i campi “out” del rental se valorizzati
+                    $updates = [];
+                    if ($mOut !== null) $updates['mileage_out']       = (int) $mOut;
+                    if ($fOut !== null) $updates['fuel_out_percent']  = (int) $fOut;
+                    if ($updates) {
+                        $this->rental->fill($updates)->save();
+                    }
+                }
+            }
+        });
+
+        // Notifiche/abilitazioni tab
+        if ($this->checklistId && !$this->isLocked) {
+            $this->dispatch('checklist-base-saved', checklistId: $this->checklistId, locked: false, type: $this->type);
         }
+        if ($this->checklistId && $this->isLocked) {
+            $this->dispatch('checklist-locked', checklistId: $this->checklistId, locked: true);
+        }
+
+        // Recalcola subito lo stato PDF (vedi punto 2)
+        $this->refreshPdfState();
+        $this->dispatch('toast', type: $this->isLocked ? 'warning' : 'success',
+            message: $this->isLocked ? __('Checklist bloccata: nessuna modifica applicata.') : __('Dati base salvati.'),
+            duration: 3000
+        );
     }
 
-    /** Solo validazione per questo step */
-    public function submit(): void
+    // =========================================================================
+    // TAB 2 — CHECKLIST (JSON v1): validazione/normalizzazione/salvataggio
+    // =========================================================================
+
+    /** Regole per la struttura JSON v1 della tab 2 */
+    protected function rulesChecklist(): array
     {
-        if($validated = $this->validate()){
-            $this->dispatch('toast', type: 'success', message: 'Checklist validata con successo. Procedi al salvataggio.');
-        } else {
-            $this->dispatch('toast', type: 'error', message: 'Ci sono errori nel modulo. Controlla i campi evidenziati.');
-        }
+        return [
+            // Documenti
+            'checklist.documents.id_card'         => ['nullable','boolean'],
+            'checklist.documents.driver_license'  => ['nullable','boolean'],
+            'checklist.documents.contract_copy'   => ['nullable','boolean'],
+
+            // Dotazioni / sicurezza
+            'checklist.equipment.spare_wheel'     => ['nullable','boolean'],
+            'checklist.equipment.jack'            => ['nullable','boolean'],
+            'checklist.equipment.triangle'        => ['nullable','boolean'],
+            'checklist.equipment.vest'            => ['nullable','boolean'],
+
+            // Condizioni veicolo
+            'checklist.vehicle.lights_ok'         => ['nullable','boolean'],
+            'checklist.vehicle.horn_ok'           => ['nullable','boolean'],
+            'checklist.vehicle.brakes_ok'         => ['nullable','boolean'],
+            'checklist.vehicle.tires_ok'          => ['nullable','boolean'],
+            'checklist.vehicle.windshield_ok'     => ['nullable','boolean'],
+
+            // Note libere
+            'checklist.notes'                     => ['nullable','string','max:2000'],
+        ];
     }
+
+    /**
+     * Normalizza l'array checklist in forma JSON v1 stabile (true/false/stringhe).
+     */
+    protected function normalizeChecklistV1(array $input): array
+    {
+        $bool = static fn($v) => filter_var($v, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? false;
+
+        return [
+            'schema_version' => 1,
+            'documents' => [
+                'id_card'        => $bool($input['documents']['id_card']        ?? false),
+                'driver_license' => $bool($input['documents']['driver_license'] ?? false),
+                'contract_copy'  => $bool($input['documents']['contract_copy']  ?? false),
+            ],
+            'equipment' => [
+                'spare_wheel' => $bool($input['equipment']['spare_wheel'] ?? false),
+                'jack'        => $bool($input['equipment']['jack']        ?? false),
+                'triangle'    => $bool($input['equipment']['triangle']    ?? false),
+                'vest'        => $bool($input['equipment']['vest']        ?? false),
+            ],
+            'vehicle' => [
+                'lights_ok'     => $bool($input['vehicle']['lights_ok']     ?? false),
+                'horn_ok'       => $bool($input['vehicle']['horn_ok']       ?? false),
+                'brakes_ok'     => $bool($input['vehicle']['brakes_ok']     ?? false),
+                'tires_ok'      => $bool($input['vehicle']['tires_ok']      ?? false),
+                'windshield_ok' => $bool($input['vehicle']['windshield_ok'] ?? false),
+            ],
+            'notes' => isset($input['notes']) ? (string) $input['notes'] : null,
+        ];
+    }
+
+    /**
+     * Persistenza della tab 2 (JSON v1) su checklist_json.
+     * Richiede che la checklist esista e non sia locked.
+     */
+    public function saveChecklist(): void
+    {
+        if (!$this->checklistId) {
+            $this->dispatch('toast', type:'warning', message:__('Salva prima i dati base.'), duration:3000);
+            return;
+        }
+
+        DB::transaction(function () {
+            /** @var \App\Models\RentalChecklist|null $row */
+            $row = RentalChecklist::lockForUpdate()->find($this->checklistId);
+            if (!$row) {
+                $this->dispatch('toast', type:'error', message:__('Checklist non trovata.'), duration:3000);
+                return;
+            }
+
+            $this->authorize('update', $row);
+            if ($row->isLocked()) {
+                $this->isLocked = true;
+                $this->dispatch('toast', type:'warning', message:__('Checklist bloccata: impossibile salvare modifiche.'), duration:3000);
+                return;
+            }
+
+            $this->validate($this->rulesChecklist());
+            $normalized = $this->normalizeChecklistV1($this->checklist ?? []);
+
+            $row->checklist_json = $normalized;
+            $row->save();
+
+            // Aggiorna stato locale (mutator/array casting)
+            $this->checklist = $row->checklist_json ?? [];
+
+            // Recalcola subito lo stato PDF
+            $this->refreshPdfState();
+
+            $this->dispatch('toast', type:'success', message:__('Checklist salvata.'), duration:3000);
+        });
+    }
+
+    // =========================================================================
+    // TAB 3 — DANNI: add/remove (solo return), salvataggio idempotente su rental_damages
+    // =========================================================================
+
+    /** Aggiunge una riga danno (solo return; in pickup è readonly) */
+    public function addDamageRow(): void
+    {
+        if ($this->damagesReadonly || !$this->checklistId || $this->isLocked) {
+            $this->dispatch('toast', type:'warning', message:__('Operazione non consentita in questa fase.'), duration:3000);
+            return;
+        }
+
+        $this->damages[] = [
+            'id'          => null,
+            'area'        => null,
+            'severity'    => null,   // 'low'|'medium'|'high'
+            'description' => null,
+        ];
+    }
+
+    /** Rimuove una riga danno dall’array UI (solo return) */
+    public function removeDamageRow(int $index): void
+    {
+        if ($this->damagesReadonly || !isset($this->damages[$index])) return;
+        unset($this->damages[$index]);
+        $this->damages = array_values($this->damages); // reindex
+    }
+
+    /** Regole per i danni (array può essere vuoto; severity allineata all’enum) */
+    protected function rulesDamages(): array
+    {
+        return [
+            'damages'               => ['array'],
+            'damages.*.id'          => ['nullable','integer'],
+            'damages.*.area'        => ['nullable','string','max:64'],
+            'damages.*.severity'    => ['nullable','in:low,medium,high'],
+            'damages.*.description' => ['nullable','string','max:2000'],
+        ];
+    }
+
+    /** True se la riga “danno” non ha dati significativi (non va salvata) */
+    protected function isDamageEmpty(array $data): bool
+    {
+        $a = trim((string)($data['area'] ?? ''));
+        $s = trim((string)($data['severity'] ?? ''));
+        $d = trim((string)($data['description'] ?? ''));
+        return $a === '' && $s === '' && $d === '';
+    }
+
+    /**
+     * Salva i danni (solo per fasi ≠ pickup).
+     * - Idempotente su rental_id + phase
+     * - Update i record con id; crea i nuovi; cancella quelli rimossi
+     * - Bloccato se checklist è locked
+     */
+    public function saveDamages(): void
+    {
+        // In pickup non salviamo: sono precaricati da vehicle_damages (readonly)
+        if ($this->type === 'pickup') {
+            $this->dispatch('toast', type:'info', message:__('In pickup i danni sono precaricati automaticamente.'), duration:3000);
+            return;
+        }
+
+        if (!$this->checklistId) {
+            $this->dispatch('toast', type:'warning', message:__('Salva prima i dati base.'), duration:3000);
+            return;
+        }
+
+        DB::transaction(function () {
+            $checklist = RentalChecklist::lockForUpdate()->find($this->checklistId);
+            if (!$checklist) {
+                $this->dispatch('toast', type:'error', message:__('Checklist non trovata.'), duration:3000);
+                return;
+            }
+
+            $this->authorize('update', $checklist);
+            if ($checklist->isLocked()) {
+                $this->isLocked = true;
+                $this->dispatch('toast', type:'warning', message:__('Checklist bloccata: impossibile salvare modifiche.'), duration:3000);
+                return;
+            }
+
+            $this->validate($this->rulesDamages());
+
+            // Danni esistenti per questo rental e questa fase
+            $existing = RentalDamage::query()
+                ->where('rental_id', $this->rental->id)
+                ->where('phase', $this->type)
+                ->get()
+                ->keyBy('id');
+
+            $keepIds   = [];
+            $inputRows = $this->damages ?? [];
+
+            foreach ($inputRows as $i => $row) {
+                $id   = Arr::get($row, 'id');
+                $data = [
+                    'area'        => Arr::get($row, 'area'),
+                    'severity'    => Arr::get($row, 'severity'),    // 'low'|'medium'|'high'
+                    'description' => Arr::get($row, 'description'),
+                ];
+
+                // Non salvare righe vuote
+                if ($this->isDamageEmpty($data)) {
+                    continue;
+                }
+
+                if ($id && $existing->has($id)) {
+                    /** @var RentalDamage $d */
+                    $d = $existing->get($id);
+                    $d->fill($data)->save();
+                    $keepIds[] = (int) $d->id;
+                } else {
+                    $d = new RentalDamage(array_merge($data, [
+                        'rental_id'  => $this->rental->id,
+                        'phase'      => $this->type,   // return (o altro)
+                        'created_by' => auth()->id(),
+                    ]));
+                    $d->save();
+                    $keepIds[] = (int) $d->id;
+
+                    // Aggiorna l’ID nella riga UI
+                    $this->damages[$i]['id'] = (int) $d->id;
+                }
+            }
+
+            // Cancella i danni rimossi in UI
+            foreach ($existing as $id => $d) {
+                if (!in_array((int) $id, $keepIds, true)) {
+                    $d->delete();
+                }
+            }
+        });
+        // Recalcola subito lo stato PDF
+        $this->refreshPdfState();
+
+        $this->dispatch('toast', type:'success', message:__('Danni salvati.'), duration:3000);
+    }
+
+    // ================== PDF: helper/compute ==================
+
+    /**
+     * Costruisce il payload canonico da "hashare".
+     * NOTA: legge dal DB (coerente con i dati salvati).
+     */
+    protected function buildPdfPayload(RentalChecklist $checklist): array
+    {
+        // 1) Dati base della checklist
+        $base = $checklist->only([
+            'type','mileage','fuel_percent','cleanliness',
+            'signed_by_customer','signed_by_operator',
+        ]);
+
+        // 2) JSON v1
+        $json = $checklist->checklist_json ?? [];
+
+        // 3)  Danni correnti collegati al rental (sempre)
+        $damages = RentalDamage::query()
+            ->where('rental_id', $checklist->rental_id)
+            ->orderBy('id')
+            ->get(['id','area','severity','description'])
+            ->map(fn($d) => [
+                'id'          => (int) $d->id,          // id di rental_damages
+                'rd_id'       => (int) $d->id,
+                'area'        => (string) ($d->area ?? ''),
+                'severity'    => (string) ($d->severity ?? ''),
+                'description' => (string) ($d->description ?? ''),
+                'preexisting' => false,
+                'source'      => 'rental',
+            ])->values()->all();
+
+        // 4) Danni "pickup" da vehicle_damages (aperti). Servono i campi, altrimenti fallback da first_rental_damage
+        if ($checklist->type === 'pickup') {
+            $vehicleId = $checklist->rental->vehicle?->id;
+
+            if ($vehicleId) {
+                $vehicleDamages = VehicleDamage::query()
+                    ->forVehicle($vehicleId)
+                    ->open()
+                    ->with(['firstRentalDamage' => function ($q) {
+                        $q->select('id','area','severity','description'); // rental_damages originari
+                    }])
+                    ->orderBy('id')
+                    ->get(['id','first_rental_damage_id','area','severity','description']);
+
+                $pickupDamages = $vehicleDamages->map(function ($vd) {
+                    // fallback dai campi del VD oppure dal first_rental_damage
+                    $area  = (string) ($vd->area ?? $vd->firstRentalDamage?->area ?? '');
+                    $sev   = (string) ($vd->severity ?? $vd->firstRentalDamage?->severity ?? '');
+                    $desc  = (string) ($vd->description ?? $vd->firstRentalDamage?->description ?? '');
+
+                    return [
+                        'id'          => (int) $vd->id,     // id di vehicle_damages (diverso dagli RD)
+                        'vd_id'       => (int) $vd->id,
+                        'area'        => $area,
+                        'severity'    => $sev,
+                        'description' => $desc,
+                        'preexisting' => true,
+                        'source'      => 'vehicle',
+                    ];
+                })->values()->all();
+
+                // Unisci: prima i vehicle (pregressi), poi i rental_damages
+                // Deduplica “soft” per (area|severity|description) per evitare doppioni visivi
+                $merged = collect($pickupDamages)
+                    ->concat($damages)
+                    ->unique(function ($r) {
+                        return strtolower(trim(($r['area'] ?? '').'|'.($r['severity'] ?? '').'|'.($r['description'] ?? '')));
+                    })
+                    ->values()
+                    ->all();
+
+                $damages = $merged;
+            }
+        }
+
+        return [
+            'base'     => $base,
+            'json'     => $json,
+            'damages'  => $damages,
+            'rentalId' => (int) $checklist->rental_id,
+            'chkId'    => (int) $checklist->id,
+        ];
+    }
+
+    /**
+     * Hash stabile del payload (JSON canonicalizzato).
+     */
+    protected function payloadHash(array $payload): string
+    {
+        // json_encode con opzioni stabili → poi sha256
+        $json = json_encode($payload, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRESERVE_ZERO_FRACTION);
+        return hash('sha256', $json);
+    }
+
+    /**
+     * Ricalcola url ultimo PDF e flag dirty (vs last_pdf_payload_hash).
+     */
+    protected function refreshPdfState(): void
+    {
+        $checklist = $this->resolveChecklistModel();
+        if (!$checklist) {
+            $this->last_pdf_url = null;
+            $this->pdf_dirty = true;
+            return;
+        }
+
+        // URL ultimo PDF (se presente)
+        $this->last_pdf_url = optional($checklist->lastPdf)->getUrl();
+
+        // Dirty: confronto hash(payload attuale) vs ultimo salvato
+        $payload = $this->buildPdfPayload($checklist);
+        $current = $this->payloadHash($payload);
+        $this->pdf_dirty = ($checklist->last_pdf_payload_hash !== $current);
+    }
+
+    /**
+     * Utility: recupera il modello aggiornato da DB.
+     */
+    protected function resolveChecklistModel(): ?RentalChecklist
+    {
+        if (!$this->checklistId) return null;
+
+        /** @var RentalChecklist|null $chk */
+        $chk = RentalChecklist::query()->with('lastPdf')->find($this->checklistId);
+        return $chk;
+    }
+
+    // ================== ACTION: Genera PDF ==================
+
+    /**
+     * Genera il PDF checklist, salva su Media Library e aggiorna hash/id.
+     * Disabilitato se la checklist è "locked".
+     */
+    public function generatePdf(): void
+    {
+        $checklist = $this->resolveChecklistModel();
+        if (!$checklist) {
+            $this->dispatch('toast', ['type'=>'error','message'=>__('Salva prima la checklist.')]);
+            return;
+        }
+
+        // Blocco modifica dopo firma (Opzione B)
+        if ($checklist->isLocked()) {
+            $this->dispatch('toast', ['type'=>'warning','message'=>__('Checklist bloccata: non è possibile rigenerare il PDF.')]);
+            return;
+        }
+
+        // Costruzione payload+hash dai dati PERSISTITI
+        $payload = $this->buildPdfPayload($checklist);
+        $hash = $this->payloadHash($payload);
+
+        // Se non ci sono cambiamenti ed esiste già un PDF → nothing to do
+        if ($checklist->last_pdf_payload_hash === $hash && $checklist->lastPdf) {
+            $this->last_pdf_url = $checklist->lastPdf->getUrl();
+            $this->pdf_dirty = false;
+            $this->dispatch('toast', ['type'=>'info','message'=>__('Nessuna modifica: PDF già aggiornato.')]);
+            return;
+        }
+
+        // Render PDF (usa la stessa libreria dei contratti: DomPDF)
+        // Prepara i dati minimi; il template Blade lo inseriremo nel prossimo step.
+        $viewData = [
+            'checklist' => $checklist->fresh(['rental','rental.vehicle','rental.customer']),
+            'payload'   => $payload,
+            'generated_at' => now(),
+        ];
+
+        $pdf = Pdf::loadView('pdfs.checklist', $viewData)
+                  ->setPaper('a4'); // portrait di default
+
+        // Nome file coerente e stabile
+        $fileName = sprintf('checklist-%s-%d-%s.pdf', $checklist->type, $checklist->id, now()->format('Ymd_His'));
+
+        DB::transaction(function () use ($checklist, $pdf, $fileName, $hash) {
+            // Salva su media library (collection "checklist_pdfs")
+            $media = $checklist->addMediaFromString($pdf->output())
+                ->usingFileName($fileName)
+                ->toMediaCollection('checklist_pdfs');
+
+            // Aggiorna stato "ultimo PDF"
+            $checklist->forceFill([
+                'last_pdf_payload_hash' => $hash,
+                'last_pdf_media_id'     => $media->id,
+            ])->save();
+        });
+
+        // Aggiorna stato UI
+        $this->refreshPdfState();
+
+        // Notifica
+        $this->dispatch('toast', ['type'=>'success','message'=>__('PDF generato correttamente.')]);
+    }
+
+    // -------------------------------
+    //   RENDER
+    // -------------------------------
 
     public function render()
     {

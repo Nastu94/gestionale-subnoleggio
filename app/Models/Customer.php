@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\MediaLibrary\HasMedia as SpatieHasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
-use Spatie\Image\Manipulations;
+use Spatie\Image\Enums\Fit; 
 use Illuminate\Support\Str;
 
 /**
@@ -50,11 +50,11 @@ class Customer extends Model implements SpatieHasMedia
         if ($media && !Str::startsWith($media->mime_type, 'image/')) return;
 
         $this->addMediaConversion('thumb')
-            ->fit(Manipulations::FIT_CROP, 256, 256)
+            ->fit(Fit::crop, 256, 256)
             ->nonQueued();
 
         $this->addMediaConversion('preview')
-            ->fit(Manipulations::FIT_MAX, 1200, 1200)
+            ->fit(Fit::max, 1200, 1200)
             ->keepOriginalImageFormat()
             ->nonQueued();
     }

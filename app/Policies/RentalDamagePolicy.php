@@ -21,11 +21,20 @@ class RentalDamagePolicy
     }
 
     /**
-     * Aggiornamento danno.
-     * Permesso: rental_damages.update
+     * Creazione/modifica di un danno.
+     * Permesso richiesto (esempio): rental_damages.update
+     * Blocco: vietato se la checklist padre è locked.
      */
     public function update(User $user, RentalDamage $damage): bool
     {
+        $checklist = $damage->rental?->checklists()
+            ->where('type', $damage->phase) // pickup/return/during
+            ->first();
+
+        if ($checklist && $checklist->isLocked()) {
+            return false; // vieta modifiche se la checklist di quella fase è bloccata
+        }
+
         return $user->can('rental_damages.update');
     }
 
@@ -39,20 +48,38 @@ class RentalDamagePolicy
     }
 
     /**
-     * Upload foto del danno.
-     * Permesso: media.attach.damage_photo
+     * Upload foto sul danno.
+     * Permesso richiesto: media.attach.damage_photo
+     * Blocco: vietato se la checklist padre è locked.
      */
     public function uploadPhoto(User $user, RentalDamage $damage): bool
     {
+        $checklist = $damage->rental?->checklists()
+            ->where('type', $damage->phase) // pickup/return/during
+            ->first();
+
+        if ($checklist && $checklist->isLocked()) {
+            return false; // vieta modifiche se la checklist di quella fase è bloccata
+        }
+
         return $user->can('media.attach.damage_photo');
     }
 
     /**
-     * Eliminazione media collegati al danno.
-     * Permesso: media.delete
+     * Eliminazione media associati al danno.
+     * Permesso richiesto: media.delete
+     * Blocco: vietato se la checklist padre è locked.
      */
     public function deleteMedia(User $user, RentalDamage $damage): bool
     {
+        $checklist = $damage->rental?->checklists()
+            ->where('type', $damage->phase) // pickup/return/during
+            ->first();
+
+        if ($checklist && $checklist->isLocked()) {
+            return false; // vieta modifiche se la checklist di quella fase è bloccata
+        }
+
         return $user->can('media.delete');
     }
 }

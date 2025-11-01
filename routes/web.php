@@ -281,22 +281,6 @@ Route::middleware([
         ->name('rental-checklists.create')
         ->middleware('permission:rentals.checklist.update');
 
-    /*
-    | Salva checklist (pickup/return)
-    | Permesso: rentals.checklist.update
-    */
-    Route::post('/rentals/{rental}/checklist', [RentalController::class, 'storeChecklist'])
-        ->name('rental-checklists.store')
-        ->middleware('permission:rentals.checklist.update');
-
-    /*
-    | Registra danno (pickup/return/during)
-    | Permesso: rentals.damage.create
-    */
-    Route::post('/rentals/{rental}/damage', [RentalController::class, 'storeDamage'])
-        ->name('rentals.damage.store')
-        ->middleware('permission:rentals.damage.create');
-
 // ------------------------- Rentals: azioni stato -------------------------
     /*
     | Registra pagamento
@@ -367,6 +351,14 @@ Route::middleware([
     Route::post('/rentals/{rental}/media/contract-signed', [RentalMediaController::class, 'storeSignedContract'])
         ->name('rentals.media.contract.signed.store')
         ->middleware(['permission:media.attach.contract_signed','permission:rentals.contract.upload_signed']);
+        
+    /*
+    | Checklist firmata (immagine/PDF) → RentalChecklist->signedPdf
+    | Permesso: media.attach.checklist_signed + rentals.checklist.update
+    */
+    Route::post('/rental-checklists/{checklist}/media/signed', [RentalMediaController::class, 'storeChecklistSigned']) // <-- nuovo endpoint
+        ->name('rental-media.checklist-signed.store')
+        ->middleware(['permission:media.attach.checklist_signed','permission:rentals.checklist.update']);
 
     /*
     | Foto checklist (pickup/return) → RentalChecklist->photos
