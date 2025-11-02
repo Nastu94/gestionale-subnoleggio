@@ -633,103 +633,6 @@
             </div>
         </div>
     </section>
-
-    {{-- ===== Script Alpine per upload/elimina ===== --}}
-    <script>
-    document.addEventListener('alpine:init', () => {
-        Alpine.data('checklistMedia', (cfg) => ({
-            state: {
-                checklistId: cfg.checklistId,
-                rentalId: cfg.rentalId,
-                locked: cfg.locked,
-                photos: {
-                    odometer: cfg.initial?.odometer || [],
-                    fuel:     cfg.initial?.fuel     || [],
-                    exterior: cfg.initial?.exterior || [],
-                },
-            },
-
-            async upload(kind, fileInput) {
-                if (this.state.locked || !this.state.checklistId) return;
-                const file = fileInput?.files?.[0];
-                if (!file) {
-                    this.toast('warning', '{{ __("Seleziona un file da caricare.") }}');
-                    return;
-                }
-
-                const form = new FormData();
-                form.append('file', file);
-                form.append('kind', kind);
-                form.append('_token', document.querySelector('meta[name="csrf-token"]').getAttribute('content'));
-
-                try {
-                    const res = await fetch(cfg.routes.uploadChecklistPhoto, {
-                        method: 'POST',
-                        body: form,
-                        headers: { 'Accept': 'application/json' },
-                    });
-
-                    if (!res.ok) {
-                        const err = await res.json().catch(() => ({}));
-                        throw new Error(err.message || 'Upload fallito');
-                    }
-
-                    const data = await res.json();
-                    // Push nella tabella del gruppo
-                    this.state.photos[kind].push({
-                        id: data.media_id,
-                        name: data.name ?? file.name,
-                        url: data.url,
-                        size: data.size ?? file.size,
-                    });
-
-                    // Reset input
-                    fileInput.value = '';
-                    this.toast('success', '{{ __("Foto caricata.") }}');
-                } catch (e) {
-                    this.toast('error', e.message || 'Errore di rete');
-                }
-            },
-
-            async destroy(mediaId, kind) {
-                if (this.state.locked) return;
-
-                const url = cfg.routes.deleteMedia.replace(/0$/, String(mediaId));
-                try {
-                    const res = await fetch(url, {
-                        method: 'DELETE',
-                        headers: {
-                            'Accept': 'application/json',
-                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                        },
-                    });
-
-                    if (!res.ok) {
-                        const err = await res.json().catch(() => ({}));
-                        throw new Error(err.message || 'Eliminazione fallita');
-                    }
-
-                    // Rimuovi dalla lista locale
-                    this.state.photos[kind] = this.state.photos[kind].filter(x => x.id !== mediaId);
-                    this.toast('success', '{{ __("Foto eliminata.") }}');
-                } catch (e) {
-                    this.toast('error', e.message || 'Errore di rete');
-                }
-            },
-
-            formatBytes(b) {
-                if (!b && b !== 0) return '';
-                const u = ['B','KB','MB','GB']; let i = 0; let n = b;
-                while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
-                return n.toFixed(1) + ' ' + u[i];
-            },
-
-            toast(type, message, duration = 3000) {
-                window.dispatchEvent(new CustomEvent('toast', { detail: { type, message, duration }}))
-            },
-        }));
-    });
-    </script>
 </div>
 
 {{-- ========== Script Alpine: stato tab ==========
@@ -776,6 +679,97 @@ document.addEventListener('alpine:init', () => {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             ].join(' ');
         },
-    }))
+    }));
+    Alpine.data('checklistMedia', (cfg) => ({
+        state: {
+            checklistId: cfg.checklistId,
+            rentalId: cfg.rentalId,
+            locked: cfg.locked,
+            photos: {
+                odometer: cfg.initial?.odometer || [],
+                fuel:     cfg.initial?.fuel     || [],
+                exterior: cfg.initial?.exterior || [],
+            },
+        },
+
+        async upload(kind, fileInput) {
+            if (this.state.locked || !this.state.checklistId) return;
+            const file = fileInput?.files?.[0];
+            if (!file) {
+                this.toast('warning', '{{ __("Seleziona un file da caricare.") }}');
+                return;
+            }
+
+            const form = new FormData();
+            form.append('file', file);
+            form.append('kind', kind);
+            form.append('_token', document.querySelector('meta[name="csrf-token"]').getAttribute('content'));
+
+            try {
+                const res = await fetch(cfg.routes.uploadChecklistPhoto, {
+                    method: 'POST',
+                    body: form,
+                    headers: { 'Accept': 'application/json' },
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.message || 'Upload fallito');
+                }
+
+                const data = await res.json();
+                // Push nella tabella del gruppo
+                this.state.photos[kind].push({
+                    id: data.media_id,
+                    name: data.name ?? file.name,
+                    url: data.url,
+                    size: data.size ?? file.size,
+                });
+
+                // Reset input
+                fileInput.value = '';
+                this.toast('success', '{{ __("Foto caricata.") }}');
+            } catch (e) {
+                this.toast('error', e.message || 'Errore di rete');
+            }
+        },
+
+        async destroy(mediaId, kind) {
+            if (this.state.locked) return;
+
+            const url = cfg.routes.deleteMedia.replace(/0$/, String(mediaId));
+            try {
+                const res = await fetch(url, {
+                    method: 'DELETE',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    },
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.message || 'Eliminazione fallita');
+                }
+
+                // Rimuovi dalla lista locale
+                this.state.photos[kind] = this.state.photos[kind].filter(x => x.id !== mediaId);
+                this.toast('success', '{{ __("Foto eliminata.") }}');
+            } catch (e) {
+                this.toast('error', e.message || 'Errore di rete');
+            }
+        },
+
+        formatBytes(b) {
+            if (!b && b !== 0) return '';
+            const u = ['B','KB','MB','GB']; let i = 0; let n = b;
+            while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+            return n.toFixed(1) + ' ' + u[i];
+        },
+
+        toast(type, message, duration = 3000) {
+            window.dispatchEvent(new CustomEvent('toast', { detail: { type, message, duration }}))
+        },
+    }));
 })
 </script>
