@@ -221,7 +221,7 @@
                         <div class="flex items-center gap-2">
                             <span class="text-lg">{{ $checklist->signed_by_customer ? '✅' : '—' }}</span>
                             @if($sigMedia)
-                                <a class="link" href="{{ $sigMedia->getUrl('preview') ?: $sigMedia->getUrl() }}" target="_blank">Apri firma</a>
+                                <a class="link" href="{{ $sigMedia->getUrl() ?: $sigMedia->getUrl('preview') }}" target="_blank">Apri firma</a>
                             @endif
                         </div>
                     </div>

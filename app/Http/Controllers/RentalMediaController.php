@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -47,31 +49,73 @@ class RentalMediaController extends Controller
      *  - Rental -> signatures
      *  - Checklist(PICKUP) -> signatures
      */
-    public function storeSignedContract(Request $request, Rental $rental)
+public function storeSignedContract(Request $request, Rental $rental)
+{
+    $this->authorize('contractUploadSigned', $rental);
+    $this->authorize('uploadMedia', $rental);
+
+    $request->validate([
+        'file' => ['required','file','mimetypes:application/pdf,image/jpeg,image/png','max:20480'],
+    ]);
+
+    $pickup = $rental->checklists()->where('type','pickup')->first();
+
+    try {
+        // 1) Salvo UNA volta sul Rental
+        $mediaRental = $rental->addMediaFromRequest('file')
+            ->usingName('rental-contract-signed')
+            ->toMediaCollection('signatures'); // se è singleFile(), sostituisce in sicurezza
+
+        // 2) Duplico sulla checklist senza riusare l'UploadedFile
+        if ($pickup) {
+            $mediaRental->copy($pickup, 'signatures');
+        }
+
+        return response()->json(['ok' => true], \Symfony\Component\HttpFoundation\Response::HTTP_CREATED);
+    } catch (\Throwable $e) {
+        // rollback “manuale” del file/record appena creato, così non restano cartelle vuote
+        if (isset($mediaRental)) {
+            try { $mediaRental->delete(); } catch (\Throwable $ignore) {}
+        }
+        throw $e;
+    }
+}
+
+    /**
+     * Apertura/visualizzazione inline di un Media (PDF/immagine).
+     * Regole:
+     *  - Verifica permessi in base al "padre" del media.
+     *  - Ritorna il file con MIME corretto per visualizzazione inline.
+     */
+    public function open(Media $media)
     {
-        $this->authorize('contractUploadSigned', $rental);
-        $this->authorize('uploadMedia', $rental);
+        // Autorizzazione sul "padre"
+        $parent = $media->model;
+        if ($parent instanceof \App\Models\Rental || $parent instanceof \App\Models\RentalChecklist) {
+            $this->authorize('view', $parent);
+        } else {
+            abort(403, 'Accesso negato.');
+        }
 
-        $request->validate([
-            'file' => ['required','file','mimetypes:application/pdf,image/jpeg,image/png','max:20480'],
-        ]);
+        // 1) Tentativo robusto: path assoluto fornito da Spatie
+        $fullPath = $media->getPath(); // assoluto, es: C:\laragon\...\storage\app\public\...
+        if (is_string($fullPath) && is_file($fullPath)) {
+            $mime = $media->mime_type ?: (function_exists('mime_content_type') ? mime_content_type($fullPath) : 'application/octet-stream');
 
-        DB::transaction(function () use ($request, $rental) {
-            // 1) Allego su Rental -> signatures
-            $rental->addMediaFromRequest('file')
-                ->usingName('rental-contract-signed')
-                ->toMediaCollection('signatures');
+            return response()->file($fullPath, [
+                'Content-Type'        => $mime,
+                'Content-Disposition' => 'inline; filename="'.$media->file_name.'"',
+                'Cache-Control'       => 'private, max-age=0, no-store',
+            ]);
+        }
 
-            // 2) Allego anche sulla checklist di pickup, se presente
-            $pickup = $rental->checklists()->where('type','pickup')->first();
-            if ($pickup) {
-                $pickup->addMediaFromRequest('file')
-                    ->usingName('rental-contract-signed')
-                    ->toMediaCollection('signatures');
-            }
-        });
+        // 2) Se è su disco 'public', prova URL pubblica (/storage symlink)
+        if ($media->disk === 'public') {
+            return redirect()->away($media->getUrl());
+        }
 
-        return response()->json(['ok' => true], Response::HTTP_CREATED);
+        // 3) Altrimenti 404 coerente
+        abort(404, 'File non trovato.');
     }
 
     /**

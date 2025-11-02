@@ -392,6 +392,12 @@ Route::middleware([
         ->name('media.destroy')
         ->middleware('permission:media.delete');
 
+    /*
+    | Open media (generico) — valida ownership nel controller
+    */
+    Route::get('/media/{media}/open', [RentalMediaController::class, 'open'])
+        ->name('media.open');
+
 // ------------------------- Assegnazioni -------------------------
     /*
     | Elenco assegnazioni veicolo→renter

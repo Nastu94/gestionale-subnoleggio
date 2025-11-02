@@ -8,7 +8,7 @@
                 <li class="flex items-center justify-between bg-base-200 rounded p-2">
                     <div class="text-sm">{{ $m->file_name }} · {{ $m->created_at->format('d/m/Y H:i') }}</div>
                     <div class="flex gap-2">
-                        <a class="btn btn-xs" href="{{ $m->getUrl('preview') ?: $m->getUrl() }}" target="_blank">Apri</a>
+                        <a class="btn btn-xs" href="{{ $m->getUrl() ?: $m->getUrl('preview') }}" target="_blank">Apri</a>
                         <form method="POST" action="{{ route('media.destroy', $m) }}">
                             @csrf @method('DELETE')
                             <button class="btn btn-error btn-xs">Elimina</button>

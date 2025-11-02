@@ -86,10 +86,10 @@
                         </div>
                         <div class="flex gap-2">
                             {{-- Apri (usa preview se disponibile) --}}
-                            <a href="{{ $m->getUrl('preview') ?: $m->getUrl() }}" target="_blank"
-                               class="btn btn-sm shadow-none
-                                      !bg-neutral !text-neutral-content !border-neutral
-                                      hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-neutral/30">
+                            <a href="{{ route('media.open', $m) }}" target="_blank"
+                                class="btn btn-sm shadow-none
+                                    !bg-neutral !text-neutral-content !border-neutral
+                                    hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-neutral/30">
                                 Apri
                             </a>
                             <form method="POST" action="{{ route('media.destroy', $m) }}">
