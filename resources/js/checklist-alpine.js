@@ -65,7 +65,7 @@ document.addEventListener('alpine:init', () => {
       if (this.loading) return;
       const form = e.target;
 
-      if (!window.confirm('Eliminare questa foto? L’operazione non è reversibile.')) return;
+      if (!window.confirm('Eliminare questo file? L’operazione non è reversibile.')) return;
 
       this.loading = true;
       try {
