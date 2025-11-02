@@ -65,13 +65,12 @@ class RentalController extends Controller
         }
 
         // Se vuoi imporre la firma: contratti firmati su Rental e su Checklist(pickup)
-        $requireSigned = (bool) config('rentals.require_signed_on_checkout', false);
-        if ($requireSigned) {
-            $signedOnRental   = $rental->getMedia('signatures')->isNotEmpty();
-            $signedOnChecklist= $pickup->getMedia('signatures')->isNotEmpty();
-            if (!$signedOnRental || !$signedOnChecklist) {
-                return response()->json(['ok' => false, 'message' => 'Contratto firmato assente (Rental o Checklist).'], Response::HTTP_UNPROCESSABLE_ENTITY);
-            }
+        $signedOnRental   = $rental->getMedia('signatures')->isNotEmpty();
+        $signedOnChecklist= $pickup->getMedia('checklist_pickup_signed')->isNotEmpty();
+        if (!$signedOnChecklist) {
+            return response()->json(['ok' => false, 'message' => 'Checklist pickup firmata assente.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } else if (!$signedOnRental) {
+            return response()->json(['ok' => false, 'message' => 'Contratto firmato assente.'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         // Transizione di stato
@@ -248,6 +247,7 @@ class RentalController extends Controller
 
         // Registra pagamento
         DB::transaction(function () use ($request, $rental) {
+            $rental->status = 'reserved';
             $rental->payment_recorded = true;
             $rental->payment_recorded_at = now();
             $rental->payment_method = $request->input('payment_method');

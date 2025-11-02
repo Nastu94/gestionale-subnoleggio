@@ -185,6 +185,9 @@ class RentalMediaController extends Controller
                 ->toMediaCollection($collection);
 
             // Applica LOCK persistente (Opzione B)
+            $checklist->signed_by_customer = true;
+            $checklist->signed_by_operator = true;
+            $checklist->signature_media_uuid = $media->uuid;
             $checklist->locked_at         = now();
             $checklist->locked_by_user_id = $request->user()->id ?? null;
             $checklist->locked_reason     = 'customer_signed_pdf';

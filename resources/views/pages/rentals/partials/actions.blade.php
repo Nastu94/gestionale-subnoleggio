@@ -24,12 +24,12 @@
         x-on:submit.prevent="submit($el)">
         @csrf
         {{-- Checkout: primary pieno --}}
-        <button class="btn btn-primary btn-block shadow-none
+        <button
+            class="btn btn-primary btn-block shadow-none
                     !bg-primary !text-primary-content !border-primary
                     hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30
                     disabled:opacity-50 disabled:cursor-not-allowed"
-                @disabled(!in_array($rental->status,['draft','reserved']))
-                x-bind:disabled="loading">
+            :disabled="loading || !canCheckout()">
             <span x-show="!loading">Checkout</span>
             <span x-show="loading" class="loading loading-spinner loading-sm"></span>
         </button>
@@ -39,12 +39,12 @@
     <form method="POST" action="{{ route('rentals.inuse', $rental) }}" data-phase="in_use" class="space-y-2" x-on:submit.prevent="submit($el)">
         @csrf
         {{-- Passa a In-use: info pieno (via, niente outline) --}}
-        <button class="btn btn-info btn-block shadow-none
+        <button
+            class="btn btn-info btn-block shadow-none
                     !bg-info !text-info-content !border-info
                     hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-info/30
                     disabled:opacity-50 disabled:cursor-not-allowed"
-                @disabled($rental->status!=='checked_out')
-                x-bind:disabled="loading">
+            :disabled="loading || !canInuse()">
             <span x-show="!loading">Passa a In-use</span>
             <span x-show="loading" class="loading loading-spinner loading-sm"></span>
         </button>
@@ -54,12 +54,12 @@
     <form method="POST" action="{{ route('rentals.checkin', $rental) }}" data-phase="checked_in" class="space-y-2" x-on:submit.prevent="submit($el)">
         @csrf
         {{-- Check-in: accent pieno --}}
-        <button class="btn btn-accent btn-block shadow-none
+        <button
+            class="btn btn-accent btn-block shadow-none
                     !bg-accent !text-accent-content !border-accent
                     hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-accent/30
                     disabled:opacity-50 disabled:cursor-not-allowed"
-                @disabled(!in_array($rental->status,['checked_out','in_use']))
-                x-bind:disabled="loading">
+            :disabled="loading || !canCheckin()">
             <span x-show="!loading">Check-in</span>
             <span x-show="loading" class="loading loading-spinner loading-sm"></span>
         </button>
@@ -69,12 +69,12 @@
     <form method="POST" action="{{ route('rentals.close', $rental) }}" data-phase="closed" class="space-y-2" x-on:submit.prevent="submit($el)">
         @csrf
         {{-- Chiudi: success pieno --}}
-        <button class="btn btn-success btn-block shadow-none
+        <button
+            class="btn btn-success btn-block shadow-none
                     !bg-success !text-success-content !border-success
                     hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-success/30
                     disabled:opacity-50 disabled:cursor-not-allowed"
-                @disabled($rental->status!=='checked_in')
-                x-bind:disabled="loading">
+            :disabled="loading || !canClose()">
             <span x-show="!loading">Chiudi</span>
             <span x-show="loading" class="loading loading-spinner loading-sm"></span>
         </button>
@@ -85,12 +85,12 @@
         <form method="POST" action="{{ route('rentals.cancel', $rental) }}" data-phase="cancelled" x-on:submit.prevent="submit($el)">
             @csrf
             {{-- Cancella: error pieno --}}
-            <button class="btn btn-error btn-block shadow-none
+            <button
+                class="btn btn-error btn-block shadow-none
                         !bg-error !text-error-content !border-error
                         hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-error/30
                         disabled:opacity-50 disabled:cursor-not-allowed"
-                    @disabled(!in_array($rental->status,['draft','reserved']))
-                    x-bind:disabled="loading">
+                :disabled="loading || !canCancel()">
                 <span x-show="!loading">Cancella</span>
                 <span x-show="loading" class="loading loading-spinner loading-sm"></span>
             </button>
@@ -100,12 +100,12 @@
         <form method="POST" action="{{ route('rentals.noshow', $rental) }}" data-phase="no_show" x-on:submit.prevent="submit($el)">
             @csrf
             {{-- No-show: warning pieno --}}
-            <button class="btn btn-warning btn-block shadow-none
+            <button
+                class="btn btn-warning btn-block shadow-none
                         !bg-warning !text-warning-content !border-warning
                         hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-warning/30
                         disabled:opacity-50 disabled:cursor-not-allowed"
-                    @disabled($rental->status!=='reserved')
-                    x-bind:disabled="loading">
+                :disabled="loading || !canNoShow()">
                 <span x-show="!loading">No-show</span>
                 <span x-show="loading" class="loading loading-spinner loading-sm"></span>
             </button>
@@ -221,42 +221,41 @@ document.addEventListener('alpine:init', () => {
     Alpine.data('rentalActions', () => ({
         loading: false,
 
-        // Mappa "fase" → etichetta leggibile (non cambiamo i tuoi stati)
+        // stato corrente (iniettato dal server in modo sicuro)
+        phase: @js($rental->status),
+
+        // etichette “umane” (invariato)
         phaseLabels: {
             checked_out: 'Check-out (veicolo consegnato)',
             in_use:      'In uso',
             checked_in:  'Check-in (veicolo rientrato)',
             closed:      'Chiusura contratto',
             cancelled:   'Annullamento',
-            canceled:    'Annullamento', // eventuale variante
+            canceled:    'Annullamento',
             no_show:     'No-show',
         },
+        phaseLabel(key) { return this.phaseLabels[key] ?? key.replace(/_/g, ' ') },
 
-        // Ritorna l’etichetta umana; fallback: sostituisce underscore con spazio
-        phaseLabel(key) { return this.phaseLabels[key] ?? key.replace(/_/g, ' '); },
+        // === helper per abilitare/disabilitare i pulsanti ===
+        canCheckout() { return ['draft','reserved'].includes(this.phase) },
+        canInuse()    { return this.phase === 'checked_out' },
+        canCheckin()  { return ['checked_out','in_use'].includes(this.phase) },
+        canClose()    { return this.phase === 'checked_in' },
+        canCancel()   { return ['draft','reserved'].includes(this.phase) },
+        canNoShow()   { return this.phase === 'reserved' },
 
-        /**
-         * submit(formEl)
-         * - Invia il form via fetch() come POST AJAX.
-         * - Imposta Accept: application/json per ottenere JSON dai controller.
-         * - Mostra toast globali usando l'evento window "toast" che il layout ascolta.
-         * - Aggiorna il componente Livewire (v3 e fallback v2).
-         */
         async submit(formEl) {
             if (this.loading) return;
-            // Conferma con testo umano
             const phase   = formEl.dataset.phase || null;
             const human   = phase ? this.phaseLabel(phase) : null;
-            const message = human
-                ? `Vuoi passare alla fase ${human}?`
-                : 'Confermi l’operazione?';
+            const message = human ? `Vuoi passare alla fase ${human}?` : 'Confermi l’operazione?';
             if (!window.confirm(message)) return;
             this.loading = true;
 
             try {
                 const token =
-                    formEl.querySelector('input[name=_token]')?.value ||
-                    document.querySelector('meta[name=csrf-token]')?.content;
+                formEl.querySelector('input[name=_token]')?.value ||
+                document.querySelector('meta[name=csrf-token]')?.content;
 
                 const res = await fetch(formEl.action, {
                     method: 'POST',
@@ -270,30 +269,27 @@ document.addEventListener('alpine:init', () => {
                 });
 
                 let data = null;
-                try { data = await res.clone().json(); } catch (_) { /* risposta non JSON */ }
+                try { data = await res.clone().json(); } catch (_) {}
 
-                // Esito negativo (HTTP non ok o payload {ok:false})
                 if (!res.ok || (data && data.ok === false)) {
-                    const message =
+                    const msg =
                         (data && (data.message || data.error)) ||
                         (res.status === 419 ? 'Sessione scaduta. Ricarica la pagina.' :
-                         res.status === 403 ? 'Permesso negato.' :
-                         res.status === 422 ? 'Dati non validi o prerequisiti mancanti.' :
-                         'Operazione non riuscita.');
-                    window.dispatchEvent(new CustomEvent('toast', { detail: { type: 'error', message } }));
+                        res.status === 403 ? 'Permesso negato.' :
+                        res.status === 422 ? 'Dati non validi o prerequisiti mancanti.' :
+                        'Operazione non riuscita.');
+                    window.dispatchEvent(new CustomEvent('toast', { detail: { type: 'error', message: msg }}));
                     return;
                 }
 
-                // Esito positivo
-                const statusText = data?.status ? `: ${data.status}` : '';
-                window.dispatchEvent(new CustomEvent('toast', {
-                    detail: { type: 'success', message: `Stato aggiornato${statusText}` }
-                }));
+                // aggiorna lo stato locale così i :disabled reagiscono subito
+                if (data?.status) this.phase = data.status;
 
-                // Refresh Livewire (v3) + fallback (v2)
+                window.dispatchEvent(new CustomEvent('toast', {
+                    detail: { type: 'success', message: `Stato aggiornato${data?.status ? `: ${data.status}` : ''}` }
+                }));
                 try { this.$wire?.$refresh(); } catch(_) {}
                 try { window.Livewire?.emit?.('refresh'); } catch(_) {}
-
             } catch (e) {
                 window.dispatchEvent(new CustomEvent('toast', {
                     detail: { type: 'error', message: 'Errore di rete o risposta non valida.' }

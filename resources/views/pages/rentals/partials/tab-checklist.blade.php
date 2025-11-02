@@ -2,9 +2,11 @@
 @php
     /** @var \App\Models\RentalChecklist|null $checklist */
     $checklist = $rental->checklists->firstWhere('type', $type);
+
+    $isLocked = $checklist?->isLocked() ?? false;
 @endphp
 
-<div class="card shadow">
+<div class="card shadow" x-data x-init="Alpine.store('checklist', { locked: {{ Js::from($isLocked) }} })">
     <div class="card-body space-y-4">
         <div class="flex items-center justify-between">
             <div class="card-title">Checklist {{ strtoupper($type) }}</div>
@@ -57,10 +59,12 @@
                          x-data="uploadSignedChecklist({
                             url: {{ Js::from(route('rental-media.checklist-signed.store', $checklist)) }},
                             locked: {{ Js::from($isLocked) }},
+                            rentalId: {{ Js::from($rental->id) }},
                          })">
 
                         {{-- Carica firmato (pdf/jpg/png) --}}
                         <label class="btn btn-outline shadow-none cursor-pointer"
+                               x-show="!state.locked"
                                :class="{ 'btn-disabled opacity-50': state.locked }">
                             <input type="file" class="hidden"
                                    x-ref="file"
@@ -325,13 +329,15 @@
                                                   action="{{ route('media.destroy', $m) }}"
                                                   class="w-1/2"
                                                   x-data="ajaxDeleteMedia()"
-                                                  x-on:submit.prevent="submit($event)">
+                                                  x-on:submit.prevent="submit($event)"
+                                                  :class="{ 'opacity-50 pointer-events-none': $store.checklist?.locked }">
                                                 @csrf
                                                 @method('DELETE')
                                                 <button type="submit"
                                                         class="btn btn-error btn-sm w-full shadow-none
                                                                !bg-error !text-error-content !border-error
-                                                               hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-error/30">
+                                                               hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-error/30"
+                                                        :disabled="$store.checklist?.locked">
                                                     <span x-show="!loading">Elimina</span>
                                                     <span x-show="loading" class="loading loading-spinner loading-xs"></span>
                                                 </button>
@@ -352,7 +358,10 @@
             </div>
 
             {{-- Upload foto con select "Tipo" (odometer/fuel/exterior) --}}
-            <div class="mt-4 rounded-xl border p-4">
+            <div class="mt-4 rounded-xl border p-4" x-show="!state.locked"
+                 x-data="{ state: $store.checklist }"
+                 x-cloak
+                 x-transition>
                 <form x-data="checklistUpload()" x-on:submit.prevent="send($el)"
                       class="grid sm:grid-cols-3 gap-3 items-end"
                       data-photos-store="{{ route('checklists.media.photos.store', $checklist) }}">

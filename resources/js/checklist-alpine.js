@@ -1,12 +1,12 @@
 // resources/js/checklist-alpine.js
-
 document.addEventListener('alpine:init', () => {
-  /**
-   * x-data="uploadSignedChecklist({ url, locked })"
-   * Gestisce upload PDF/JPG/PNG firmato + lock.
-   */
+  // Store condiviso per stato checklist
+  if (!Alpine.store('checklist')) {
+    Alpine.store('checklist', { locked: false });
+  }
+
+  // -- Upload firmato --
   Alpine.data('uploadSignedChecklist', (cfg) => ({
-    // Manteniamo i nomi usati nel markup
     state: { locked: !!cfg.locked, loading: false },
 
     async send(input) {
@@ -23,9 +23,9 @@ document.addEventListener('alpine:init', () => {
       }
 
       const form = new FormData();
-      form.append('file', file);
       const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       if (csrf) form.append('_token', csrf);
+      form.append('file', file);
 
       this.state.loading = true;
       try {
@@ -38,11 +38,14 @@ document.addEventListener('alpine:init', () => {
           return;
         }
 
+        // Lock immediato su tutta la UI
         this.state.locked = true;
+        try { Alpine.store('checklist').locked = true; } catch {}
         window.dispatchEvent(new CustomEvent('toast', { detail:{ type:'success', message:'Checklist firmata caricata. Checklist bloccata.' }}));
 
-        try { window.Livewire?.emit?.('refresh'); } catch {}
-      } catch (_) {
+        // Notifica Livewire per ricaricare i dati lato server
+        try { window.Livewire?.dispatch?.('checklist-signed-uploaded', { rentalId: cfg.rentalId ?? null }); } catch {}
+      } catch {
         window.dispatchEvent(new CustomEvent('toast', { detail:{ type:'error', message:'Errore di rete.' }}));
       } finally {
         this.state.loading = false;
@@ -51,14 +54,14 @@ document.addEventListener('alpine:init', () => {
     },
   }));
 
-  /**
-   * x-data="ajaxDeleteMedia()"
-   * Cancella media rispettando @method('DELETE').
-   */
+  // -- Delete media --
   Alpine.data('ajaxDeleteMedia', () => ({
     loading: false,
 
     async submit(e) {
+      // Blocca se checklist lockata
+      if (Alpine.store('checklist')?.locked) return;
+
       if (this.loading) return;
       const form = e.target;
 
@@ -67,27 +70,28 @@ document.addEventListener('alpine:init', () => {
       this.loading = true;
       try {
         const res = await fetch(form.action, {
-          method: 'POST', // il form contiene @method('DELETE')
+          method: 'POST', // @method('DELETE') nel form
           headers: { 'Accept':'application/json', 'X-Requested-With':'XMLHttpRequest' },
           body: new FormData(form),
           credentials: 'same-origin',
         });
 
         let data = null;
-        try { data = await res.clone().json(); } catch(_) {}
+        try { data = await res.clone().json(); } catch {}
 
         if (!res.ok || (data && data.ok === false)) {
           const msg = (data && (data.message || data.error))
             || (res.status === 419 ? 'Sessione scaduta. Ricarica la pagina.'
             :  res.status === 403 ? 'Permesso negato.'
+            :  res.status === 423 ? 'Checklist bloccata: non puoi eliminare foto.'
             : 'Eliminazione non riuscita.');
           window.dispatchEvent(new CustomEvent('toast', { detail:{ type:'error', message: msg }}));
           return;
         }
 
         window.dispatchEvent(new CustomEvent('toast', { detail:{ type:'success', message:'Foto eliminata.' }}));
-        try { window.Livewire?.emit?.('refresh'); } catch(_) {}
-      } catch (_) {
+        try { window.Livewire?.dispatch?.('checklist-media-updated'); } catch {}
+      } catch {
         window.dispatchEvent(new CustomEvent('toast', { detail:{ type:'error', message:'Errore di rete.' }}));
       } finally {
         this.loading = false;
@@ -95,16 +99,13 @@ document.addEventListener('alpine:init', () => {
     },
   }));
 
-  /**
-   * x-data="checklistUpload()"
-   * Upload foto con select "kind".
-   * L’endpoint lo prendo dal markup: data-photos-store="..."
-   */
+  // -- Upload foto --
   Alpine.data('checklistUpload', () => ({
     sending: false,
 
     async send(form) {
       if (this.sending) return;
+      if (Alpine.store('checklist')?.locked) return; // blocca se lockata
       this.sending = true;
 
       try {
@@ -117,7 +118,7 @@ document.addEventListener('alpine:init', () => {
         });
 
         let data = null;
-        try { data = await res.clone().json(); } catch(_) {}
+        try { data = await res.clone().json(); } catch {}
 
         if (!res.ok || (data && data.ok === false)) {
           const msg = (data && (data.message || data.error)) || 'Upload non riuscito.';
@@ -126,9 +127,9 @@ document.addEventListener('alpine:init', () => {
         }
 
         window.dispatchEvent(new CustomEvent('toast', { detail: { type: 'success', message: 'Foto caricata.' }}));
-        try { window.Livewire?.emit?.('refresh'); } catch(_) {}
+        try { window.Livewire?.dispatch?.('checklist-media-updated'); } catch {}
         form.reset();
-      } catch (_) {
+      } catch {
         window.dispatchEvent(new CustomEvent('toast', { detail: { type: 'error', message: 'Errore di rete.' }}));
       } finally {
         this.sending = false;

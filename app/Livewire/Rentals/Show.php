@@ -3,6 +3,7 @@
 namespace App\Livewire\Rentals;
 
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
 use Livewire\Component;
 use App\Models\Rental;
 use Illuminate\Contracts\View\View;
@@ -67,6 +68,31 @@ class Show extends Component
             report($e);
             $this->dispatch('toast', type: 'error', message: 'Errore durante la generazione del contratto.');
         }
+    }
+
+    /** ✅ Arriva da JS quando viene caricata la checklist firmata */
+    #[On('checklist-signed-uploaded')]
+    public function onChecklistSignedUploaded(array $payload = []): void
+    {
+        // Se vuoi, filtra per rentalId (utile con più istanze aperte)
+        if (isset($payload['rentalId']) && (int)$payload['rentalId'] !== (int)$this->rental->id) {
+            return;
+        }
+
+        $this->rental->refresh();
+        $this->rental->load(['checklists.media']);
+
+        // se stai visualizzando già la checklist, rimani lì; altrimenti non cambio tab
+        $this->dispatch('$refresh');
+    }
+
+    /** ✅ Arriva da JS quando si carica/elimina una foto */
+    #[On('checklist-media-updated')]
+    public function onChecklistMediaUpdated(): void
+    {
+        $this->rental->refresh();
+        $this->rental->load(['checklists.media']);
+        $this->dispatch('$refresh');
     }
 
     public function render(): View
