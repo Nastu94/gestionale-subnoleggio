@@ -147,6 +147,7 @@ Route::middleware([
 
     // Elimina foto (stessi permessi)
     Route::delete('/vehicles/{vehicle}/photos/{media}', [VehiclePhotoController::class, 'destroy'])
+        ->whereNumber('media')
         ->name('vehicles.photos.destroy')
         ->middleware('permission:vehicles.update|vehicles.create');
 
@@ -368,6 +369,10 @@ Route::middleware([
         ->name('checklists.media.photos.store')
         ->middleware('permission:media.attach.checklist_photo');
 
+    // Elenco foto associate a un danno (JSON) – visibile solo a chi può caricare foto sul danno
+    Route::get('/rental-damages/{damage}/media/photos', [RentalMediaController::class, 'indexDamagePhotos'])
+        ->name('damages.media.photos.index');
+
     /*
     | Foto danno → RentalDamage->photos
     | Permesso: media.attach.damage_photo
@@ -389,6 +394,7 @@ Route::middleware([
     | Permesso: media.delete
     */
     Route::delete('/media/{media}', [RentalMediaController::class, 'destroy'])
+        ->whereNumber('media')
         ->name('media.destroy')
         ->middleware('permission:media.delete');
 
@@ -396,6 +402,7 @@ Route::middleware([
     | Open media (generico) — valida ownership nel controller
     */
     Route::get('/media/{media}/open', [RentalMediaController::class, 'open'])
+        ->whereNumber('media')
         ->name('media.open');
 
 // ------------------------- Assegnazioni -------------------------

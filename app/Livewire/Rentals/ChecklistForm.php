@@ -8,6 +8,9 @@ use App\Models\RentalDamage;
 use App\Models\VehicleDamage;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Throwable;
 use Illuminate\Support\Arr;
 use Livewire\Component;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -137,16 +140,17 @@ class ChecklistForm extends Component
             $this->checklist            = $existing->checklist_json ?? [];
 
             // ===== Precarica foto 'photos' raggruppate per kind =====
-            $groups = ['odometer' => [], 'fuel' => [], 'exterior' => []];
+            $groups = ['odometer'=>[], 'fuel'=>[], 'exterior'=>[]];
             foreach ($existing->getMedia('photos') as $m) {
-                /** @var \Spatie\MediaLibrary\MediaCollections\Models\Media $m */
-                $kind = $m->getCustomProperty('kind') ?: 'exterior'; // default robusto
+                $kind = $m->getCustomProperty('kind') ?: 'exterior';
                 if (!isset($groups[$kind])) $kind = 'exterior';
+
                 $groups[$kind][] = [
-                    'id'   => (int) $m->id,
-                    'name' => $m->file_name,
-                    'url'  => $m->getUrl(),
-                    'size' => (int) $m->size,
+                    'id'         => (int) $m->id,
+                    'name'       => $m->file_name,
+                    'url'        => $m->getUrl(),
+                    'size'       => (int) $m->size,
+                    'delete_url' => route('media.destroy', $m), // 👈 qui
                 ];
             }
             $this->mediaChecklist = $groups;
@@ -231,98 +235,92 @@ class ChecklistForm extends Component
      */
     public function saveBase(): void
     {
+        $traceId = (string) Str::uuid();
+
+        // 0) Snapshot stato iniziale
+        Log::info('[CHK][saveBase][START]', [
+            'trace_id'   => $traceId,
+            'rental_id'  => $this->rental->id ?? null,
+            'type'       => $this->type,
+            'props'      => [
+                'mileage'              => $this->mileage,
+                'fuel_percent'         => $this->fuel_percent,
+                'cleanliness'          => $this->cleanliness,
+                'signed_by_customer'   => $this->signed_by_customer,
+                'signed_by_operator'   => $this->signed_by_operator,
+                'signature_media_uuid' => $this->signature_media_uuid,
+                'current_vehicle_km'   => $this->current_vehicle_mileage,
+                'checklistId'          => $this->checklistId,
+                'isLocked'             => $this->isLocked,
+            ],
+            'referer'    => request()->headers->get('referer'),
+            'url'        => request()->fullUrl(),
+        ]);
+
+        // 1) Normalizzo UUID firma PRIMA della validazione
+        $rawUuid = $this->signature_media_uuid;
+        $this->signature_media_uuid = $this->normalizeUuid($this->signature_media_uuid);
+        Log::debug('[CHK][saveBase] UUID normalized', [
+            'trace_id'   => $traceId,
+            'raw'        => $rawUuid,
+            'normalized' => $this->signature_media_uuid,
+        ]);
+
+        // 2) Valido
         $data = $this->validate($this->rulesBase());
+        Log::debug('[CHK][saveBase] Validated data', [
+            'trace_id' => $traceId,
+            'data'     => $data,
+        ]);
 
-        DB::transaction(function () use ($data) {
-            $existing = $this->rental->checklists()
-                ->where('type', $this->type)
-                ->lockForUpdate()
-                ->first();
+        // 3) Traccia query SQL del blocco critico
+        DB::enableQueryLog();
+        try {
+            DB::transaction(function () use ($data, $traceId) {
+                $existing = $this->rental->checklists()
+                    ->where('type', $this->type)
+                    ->lockForUpdate()
+                    ->first();
 
-            if ($existing) {
-                $this->authorize('update', $existing);
-
-                if ($existing->isLocked()) {
-                    $this->isLocked    = true;
-                    $this->checklistId = (int) $existing->id;
-                    $this->addError('mileage', __('La checklist è bloccata e non può essere modificata.'));
-                    return;
-                }
-
-                // Update campi base checklist
-                $existing->fill([
-                    'mileage'            => $data['mileage'] ?? null,
-                    'fuel_percent'       => $data['fuel_percent'] ?? 0,
-                    'cleanliness'        => $data['cleanliness'] ?? null,
-                    'signed_by_customer' => (bool) $data['signed_by_customer'],
-                    'signed_by_operator' => (bool) $data['signed_by_operator'],
-                ])->save();
-
-                $this->checklistId = (int) $existing->id;
-                $this->isLocked    = false;
-
-                // === PICKUP: propaga su vehicles + rentals + LOG km ===
-                if ($this->type === 'pickup') {
-                    $veh   = $this->rental->vehicle()->lockForUpdate()->first();
-                    $mOut  = $data['mileage'] ?? null;
-                    $fOut  = $data['fuel_percent'] ?? null;
-
-                    if ($veh && $mOut !== null) {
-                        $old = (int) ($veh->mileage_current ?? 0);
-                        $new = (int) $mOut;
-
-                        // aggiorna veicolo SOLO se cambia
-                        if ($new !== $old) {
-                            $veh->forceFill(['mileage_current' => $new])->save();
-
-                            // log storico km
-                            DB::table('vehicle_mileage_logs')->insert([
-                                'vehicle_id'  => (int) $veh->id,
-                                'mileage_old' => $old,
-                                'mileage_new' => $new,
-                                'changed_by'  => (int) (auth()->id() ?? 0),
-                                'source'      => 'manual', // enum: 'manual','import','api'
-                                'notes'       => 'Aggiornamento nella checklist del noleggio #'.$this->rental->id,
-                                'changed_at'  => now(),
-                                'created_at'  => now(),
-                                'updated_at'  => now(),
-                            ]);
-                        }
-
-                        // riflette l’aggiornamento nel vincolo UI
-                        $this->current_vehicle_mileage = $new;
-                    }
-
-                    // Aggiorna i campi “out” del rental se valorizzati
-                    $updates = [];
-                    if ($mOut !== null) $updates['mileage_out']       = (int) $mOut;
-                    if ($fOut !== null) $updates['fuel_out_percent']  = (int) $fOut;
-                    if ($updates) {
-                        $this->rental->fill($updates)->save();
-                    }
-                }
-            } else {
-                $this->authorize('create', RentalChecklist::class);
-
-                $new = new RentalChecklist([
-                    'rental_id'            => $this->rental->id,
-                    'type'                 => $this->type,
-                    'mileage'              => $data['mileage'] ?? null,
-                    'fuel_percent'         => $data['fuel_percent'] ?? 0,
-                    'cleanliness'          => $data['cleanliness'] ?? null,
-                    'signed_by_customer'   => (bool) $data['signed_by_customer'],
-                    'signed_by_operator'   => (bool) $data['signed_by_operator'],
-                    'signature_media_uuid' => $this->signature_media_uuid,
-                    'checklist_json'       => $this->checklist ?? [],
-                    'created_by'           => auth()->id(),
+                Log::debug('[CHK][saveBase] Existing checklist lookup', [
+                    'trace_id' => $traceId,
+                    'found'    => (bool) $existing,
+                    'id'       => $existing?->id,
+                    'locked'   => $existing?->isLocked(),
                 ]);
-                $new->save();
 
-                $this->checklistId = (int) $new->id;
-                $this->isLocked    = false;
+                if ($existing) {
+                    $this->authorize('update', $existing);
 
-                // === PICKUP: propaga su vehicles + rentals + LOG km ===
-                if ($this->type === 'pickup') {
+                    if ($existing->isLocked()) {
+                        $this->isLocked    = true;
+                        $this->checklistId = (int) $existing->id;
+                        Log::warning('[CHK][saveBase] Checklist is LOCKED (no update)', [
+                            'trace_id'     => $traceId,
+                            'checklist_id' => $this->checklistId,
+                        ]);
+                        $this->addError('mileage', __('La checklist è bloccata e non può essere modificata.'));
+                        return;
+                    }
+
+                    // --- UPDATE ---
+                    $existing->fill([
+                        'mileage'            => $data['mileage'] ?? null,
+                        'fuel_percent'       => $data['fuel_percent'] ?? 0,
+                        'cleanliness'        => $data['cleanliness'] ?? null,
+                        'signed_by_customer' => (bool) $data['signed_by_customer'],
+                        'signed_by_operator' => (bool) $data['signed_by_operator'],
+                    ])->save();
+
+                    $this->checklistId = (int) $existing->id;
+                    $this->isLocked    = false;
+
+                    Log::info('[CHK][saveBase] Checklist UPDATED', [
+                        'trace_id'     => $traceId,
+                        'checklist_id' => $this->checklistId,
+                    ]);
+
+                    // Veicolo/rental updates
                     $veh   = $this->rental->vehicle()->lockForUpdate()->first();
                     $mOut  = $data['mileage'] ?? null;
                     $fOut  = $data['fuel_percent'] ?? null;
@@ -330,54 +328,191 @@ class ChecklistForm extends Component
                     if ($veh && $mOut !== null) {
                         $old = (int) ($veh->mileage_current ?? 0);
                         $new = (int) $mOut;
-
-                        // aggiorna veicolo SOLO se cambia
                         if ($new !== $old) {
                             $veh->forceFill(['mileage_current' => $new])->save();
-
-                            // log storico km
                             DB::table('vehicle_mileage_logs')->insert([
                                 'vehicle_id'  => (int) $veh->id,
                                 'mileage_old' => $old,
                                 'mileage_new' => $new,
                                 'changed_by'  => (int) (auth()->id() ?? 0),
-                                'source'      => 'manual', // enum: 'manual','import','api'
+                                'source'      => 'manual',
                                 'notes'       => 'Aggiornamento nella checklist del noleggio #'.$this->rental->id,
                                 'changed_at'  => now(),
                                 'created_at'  => now(),
                                 'updated_at'  => now(),
                             ]);
+                            Log::debug('[CHK][saveBase] Vehicle km updated', [
+                                'trace_id'    => $traceId,
+                                'vehicle_id'  => $veh->id,
+                                'km_old'      => $old,
+                                'km_new'      => $new,
+                            ]);
                         }
-
-                        // riflette l’aggiornamento nel vincolo UI
                         $this->current_vehicle_mileage = $new;
                     }
 
-                    // Aggiorna i campi “out” del rental se valorizzati
-                    $updates = [];
-                    if ($mOut !== null) $updates['mileage_out']       = (int) $mOut;
-                    if ($fOut !== null) $updates['fuel_out_percent']  = (int) $fOut;
-                    if ($updates) {
-                        $this->rental->fill($updates)->save();
+                    if ($this->type === 'pickup') {
+                        $updates = [];
+                        if ($mOut !== null) $updates['mileage_out']      = (int) $mOut;
+                        if ($fOut !== null) $updates['fuel_out_percent'] = (int) $fOut;
+                        if ($updates) {
+                            $this->rental->fill($updates)->save();
+                            Log::debug('[CHK][saveBase] Rental OUT fields updated', [
+                                'trace_id'  => $traceId,
+                                'rental_id' => $this->rental->id,
+                                'updates'   => $updates,
+                            ]);
+                        }
+                    } else {
+                        $updates = [];
+                        if ($mOut !== null) $updates['mileage_in']      = (int) $mOut;
+                        if ($fOut !== null) $updates['fuel_in_percent'] = (int) $fOut;
+                        if ($updates) {
+                            $this->rental->fill($updates)->save();
+                            Log::debug('[CHK][saveBase] Rental IN fields updated', [
+                                'trace_id'  => $traceId,
+                                'rental_id' => $this->rental->id,
+                                'updates'   => $updates,
+                            ]);
+                        }
+                    }
+                } else {
+                    // --- CREATE ---
+                    $this->authorize('create', \App\Models\RentalChecklist::class);
+
+                    $new = new \App\Models\RentalChecklist([
+                        'rental_id'            => $this->rental->id,
+                        'type'                 => $this->type,
+                        'mileage'              => $data['mileage'] ?? null,
+                        'fuel_percent'         => $data['fuel_percent'] ?? 0,
+                        'cleanliness'          => $data['cleanliness'] ?? null,
+                        'signed_by_customer'   => (bool) $data['signed_by_customer'],
+                        'signed_by_operator'   => (bool) $data['signed_by_operator'],
+                        'signature_media_uuid' => $this->normalizeUuid($data['signature_media_uuid'] ?? null),
+                        'checklist_json'       => $this->checklist ?? [],
+                        'created_by'           => auth()->id(),
+                    ]);
+                    $new->save();
+
+                    $this->checklistId = (int) $new->id;
+                    $this->isLocked    = false;
+
+                    Log::info('[CHK][saveBase] Checklist CREATED', [
+                        'trace_id'     => $traceId,
+                        'checklist_id' => $this->checklistId,
+                    ]);
+
+                    // Veicolo/rental updates (come sopra)
+                    $veh   = $this->rental->vehicle()->lockForUpdate()->first();
+                    $mOut  = $data['mileage'] ?? null;
+                    $fOut  = $data['fuel_percent'] ?? null;
+
+                    if ($veh && $mOut !== null) {
+                        $old = (int) ($veh->mileage_current ?? 0);
+                        $newKm = (int) $mOut;
+                        if ($newKm !== $old) {
+                            $veh->forceFill(['mileage_current' => $newKm])->save();
+                            DB::table('vehicle_mileage_logs')->insert([
+                                'vehicle_id'  => (int) $veh->id,
+                                'mileage_old' => $old,
+                                'mileage_new' => $newKm,
+                                'changed_by'  => (int) (auth()->id() ?? 0),
+                                'source'      => 'manual',
+                                'notes'       => 'Aggiornamento nella checklist del noleggio #'.$this->rental->id,
+                                'changed_at'  => now(),
+                                'created_at'  => now(),
+                                'updated_at'  => now(),
+                            ]);
+                            Log::debug('[CHK][saveBase] Vehicle km updated (create)', [
+                                'trace_id'    => $traceId,
+                                'vehicle_id'  => $veh->id,
+                                'km_old'      => $old,
+                                'km_new'      => $newKm,
+                            ]);
+                        }
+                        $this->current_vehicle_mileage = $newKm;
+                    }
+
+                    if ($this->type === 'pickup') {
+                        $updates = [];
+                        if ($mOut !== null) $updates['mileage_out']      = (int) $mOut;
+                        if ($fOut !== null) $updates['fuel_out_percent'] = (int) $fOut;
+                        if ($updates) {
+                            $this->rental->fill($updates)->save();
+                            Log::debug('[CHK][saveBase] Rental OUT fields updated (create)', [
+                                'trace_id'  => $traceId,
+                                'rental_id' => $this->rental->id,
+                                'updates'   => $updates,
+                            ]);
+                        }
                     }
                 }
+            });
+
+            // 4) Stato PDF ricalcolato
+            $this->refreshPdfState();
+            Log::debug('[CHK][saveBase] PDF state after save', [
+                'trace_id'     => $traceId,
+                'last_pdf_url' => $this->last_pdf_url,
+                'pdf_dirty'    => $this->pdf_dirty,
+            ]);
+
+            // 5) Eventi browser/UI
+            if ($this->checklistId && !$this->isLocked) {
+                $this->dispatch('checklist-base-saved', checklistId: $this->checklistId, locked: false, type: $this->type);
+                Log::debug('[CHK][dispatch] checklist-base-saved', ['trace_id' => $traceId]);
             }
-        });
+            if ($this->checklistId && $this->isLocked) {
+                $this->dispatch('checklist-locked', checklistId: $this->checklistId, locked: true);
+                Log::debug('[CHK][dispatch] checklist-locked', ['trace_id' => $traceId]);
+            }
 
-        // Notifiche/abilitazioni tab
-        if ($this->checklistId && !$this->isLocked) {
-            $this->dispatch('checklist-base-saved', checklistId: $this->checklistId, locked: false, type: $this->type);
-        }
-        if ($this->checklistId && $this->isLocked) {
-            $this->dispatch('checklist-locked', checklistId: $this->checklistId, locked: true);
-        }
+            $this->dispatch('toast',
+                type: $this->isLocked ? 'warning' : 'success',
+                message: $this->isLocked ? __('Checklist bloccata: nessuna modifica applicata.') : __('Dati base salvati.'),
+                duration: 3000
+            );
 
-        // Recalcola subito lo stato PDF (vedi punto 2)
-        $this->refreshPdfState();
-        $this->dispatch('toast', type: $this->isLocked ? 'warning' : 'success',
-            message: $this->isLocked ? __('Checklist bloccata: nessuna modifica applicata.') : __('Dati base salvati.'),
-            duration: 3000
-        );
+            Log::info('[CHK][saveBase][END_OK]', [
+                'trace_id'     => $traceId,
+                'checklist_id' => $this->checklistId,
+                'isLocked'     => $this->isLocked,
+            ]);
+        } catch (Throwable $e) {
+            Log::error('[CHK][saveBase][EXCEPTION]', [
+                'trace_id' => $traceId,
+                'error'    => $e->getMessage(),
+                'class'    => get_class($e),
+                'file'     => $e->getFile(),
+                'line'     => $e->getLine(),
+                'trace'    => $e->getTraceAsString(),
+            ]);
+            throw $e; // lascia che Laravel gestisca come prima
+        } finally {
+            $queries = DB::getQueryLog();
+            DB::disableQueryLog();
+
+            // NB: limitiamo i dettagli del binding per non esplodere i log
+            Log::debug('[CHK][saveBase][SQL]', [
+                'trace_id' => $traceId,
+                'count'    => count($queries),
+                'queries'  => array_map(function ($q) {
+                    return [
+                        'sql'      => $q['query'] ?? null,
+                        'time_ms'  => $q['time']  ?? null,
+                    ];
+                }, $queries),
+            ]);
+        }
+    }
+
+    /** Normalizza "undefined"/vuoti a null prima di validare/salvare */
+    protected function normalizeUuid(?string $v): ?string
+    {
+        if ($v === null) return null;
+        $v = trim((string)$v);
+        if ($v === '' || strtolower($v) === 'undefined' || strtolower($v) === 'null') return null;
+        return $v;
     }
 
     // =========================================================================
@@ -621,6 +756,30 @@ class ChecklistForm extends Component
         $this->refreshPdfState();
 
         $this->dispatch('toast', type:'success', message:__('Danni salvati.'), duration:3000);
+        $this->broadcastDamagesUpdated();
+    }
+
+    /**
+     * Invia al browser la lista danni persistita (solo id/area/severity),
+     * così la select "Foto danni" si aggiorna senza ricaricare la pagina.
+     */
+    protected function broadcastDamagesUpdated(): void
+    {
+        $items = RentalDamage::query()
+            ->where('rental_id', $this->rental->id)
+            ->where('phase', $this->type)
+            ->orderBy('id')
+            ->get(['id','area','severity'])
+            ->map(fn ($d) => [
+                'id'       => (int) $d->id,
+                'area'     => (string) ($d->area ?? ''),
+                'severity' => (string) ($d->severity ?? ''),
+            ])
+            ->values()
+            ->all();
+
+        // Evento browser → intercettato da Alpine nella sezione Media
+        $this->dispatch('damages-updated', items: $items);
     }
 
     // ================== PDF: helper/compute ==================

@@ -154,6 +154,33 @@ public function storeSignedContract(Request $request, Rental $rental)
     }
 
     /**
+     * Lista foto del Danno (JSON).
+     * Collection: RentalDamage -> photos
+     * Autorizzazione: riuso la stessa policy dell'upload per coerenza.
+     */
+    public function indexDamagePhotos(Request $request, RentalDamage $damage)
+    {
+        $this->authorize('uploadPhoto', $damage);
+
+        // Se checklist padre è locked: consultazione ok, ma non si potrà eliminare lato UI.
+        $items = $damage->getMedia('photos')->map(function ($m) {
+            return [
+                'id'         => (int) $m->id,
+                'uuid'       => $m->uuid,
+                'url'        => $m->getUrl(),
+                'name'       => $m->file_name,
+                'size'       => (int) $m->size,
+                'delete_url' => route('media.destroy', $m), // usata dalla tabella per "Elimina"
+            ];
+        })->values()->all();
+
+        return response()->json([
+            'ok'    => true,
+            'items' => $items,
+        ]);
+    }
+
+    /**
      * Upload foto su Danno.
      * Collection: RentalDamage -> photos
      * Regole:

@@ -45,16 +45,16 @@ class RentalDamage extends Model implements SpatieHasMedia
         if ($media && !Str::startsWith($media->mime_type, 'image/')) return;
 
         $this->addMediaConversion('thumb')
-            ->fit(Fit::crop, 256, 256)
+            ->fit(Fit::Crop, 256, 256)
             ->nonQueued();
 
         $this->addMediaConversion('preview')
-            ->fit(Fit::max, 1600, 1600)
+            ->fit(Fit::Max, 1600, 1600)
             ->keepOriginalImageFormat()
             ->nonQueued();
 
         $this->addMediaConversion('hd')
-            ->fit(Fit::max, 2048, 2048)
+            ->fit(Fit::Max, 2048, 2048)
             ->keepOriginalImageFormat()
             ->performOnCollections('photos')
             ->nonQueued();

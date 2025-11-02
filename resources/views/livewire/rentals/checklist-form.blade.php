@@ -128,38 +128,48 @@
     {{-- ========== TAB 2: Checklist ========== --}}
     <section x-show="state.active === 'checklist'" class="max-w-full">
         <form wire:submit.prevent="saveChecklist" class="space-y-8">
+            @csrf
 
-            {{-- DOCUMENTI --}}
-            <div>
-                <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">
-                    {{ __('Documenti') }}
-                </h3>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <label class="inline-flex items-center">
-                        <input type="checkbox" wire:model="checklist.documents.id_card"
-                            :disabled="state.isLocked"
-                            class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-800">
-                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">{{ __('Carta d’identità acquisita') }}</span>
-                    </label>
+            {{-- DOCUMENTI: mostrali solo in pickup (in return non servono) --}}
+            @if($type === 'pickup')
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">
+                        {{ __('Documenti') }}
+                    </h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label class="inline-flex items-center">
+                            <input type="checkbox" wire:model="checklist.documents.id_card"
+                                :disabled="state.isLocked"
+                                class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-800">
+                            <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                                {{ __('Carta d’identità acquisita') }}
+                            </span>
+                        </label>
 
-                    <label class="inline-flex items-center">
-                        <input type="checkbox" wire:model="checklist.documents.driver_license"
-                            :disabled="state.isLocked"
-                            class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-800">
-                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">{{ __('Patente acquisita') }}</span>
-                    </label>
+                        <label class="inline-flex items-center">
+                            <input type="checkbox" wire:model="checklist.documents.driver_license"
+                                :disabled="state.isLocked"
+                                class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-800">
+                            <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                                {{ __('Patente acquisita') }}
+                            </span>
+                        </label>
 
-                    <label class="inline-flex items-center">
-                        <input type="checkbox" wire:model="checklist.documents.contract_copy"
-                            :disabled="state.isLocked"
-                            class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-800">
-                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">{{ __('Copia contratto consegnata') }}</span>
-                    </label>
+                        <label class="inline-flex items-center">
+                            <input type="checkbox" wire:model="checklist.documents.contract_copy"
+                                :disabled="state.isLocked"
+                                class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-800">
+                            <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                                {{ __('Copia contratto consegnata') }}
+                            </span>
+                        </label>
+                    </div>
+
+                    @error('checklist.documents.id_card') <p class="text-sm text-red-600 mt-1">{{ $message }}</p> @enderror
+                    @error('checklist.documents.driver_license') <p class="text-sm text-red-600 mt-1">{{ $message }}</p> @enderror
+                    @error('checklist.documents.contract_copy') <p class="text-sm text-red-600 mt-1">{{ $message }}</p> @enderror
                 </div>
-                @error('checklist.documents.id_card') <p class="text-sm text-red-600 mt-1">{{ $message }}</p> @enderror
-                @error('checklist.documents.driver_license') <p class="text-sm text-red-600 mt-1">{{ $message }}</p> @enderror
-                @error('checklist.documents.contract_copy') <p class="text-sm text-red-600 mt-1">{{ $message }}</p> @enderror
-            </div>
+            @endif
 
             {{-- DOTAZIONI / SICUREZZA --}}
             <div>
@@ -285,14 +295,18 @@
                 </template>
             </h3>
 
-            {{-- Aggiungi danno disabilitato (sempre) --}}
+            {{-- Aggiungi danno: attivo solo in return, con checklist esistente e non locked --}}
             <button type="button"
-                    :disabled="state.isLocked || !state.hasChecklistId"
                     x-show="!damagesReadonly"
-                    class="btn btn-outline shadow-none px-3
-                        border-gray-300 text-gray-400 cursor-not-allowed">
+                    :disabled="state.isLocked || !state.hasChecklistId"
+                    @click="$wire.addDamageRow()"
+                    class="btn shadow-none px-3"
+                    :class="(state.isLocked || !state.hasChecklistId)
+                        ? 'btn-outline border-gray-300 text-gray-400 cursor-not-allowed'
+                        : 'btn-primary !bg-primary !text-primary-content !border-primary hover:brightness-95'">
                 + {{ __('Aggiungi danno') }}
             </button>
+
         </div>
 
         {{-- Lista blocchi danno --}}
@@ -347,14 +361,19 @@
                                 class="mt-1 block w-full rounded-md border-gray-200 dark:border-gray-700 dark:bg-gray-900/40 text-sm text-gray-600 dark:text-gray-300" />
                         </div>
 
-                        {{-- Azioni riga: "Rimuovi" disabilitato --}}
+                        {{-- Azioni riga: "Rimuovi" attivo solo in return, non locked --}}
                         <div class="flex items-end justify-end">
                             <button type="button"
-                                    disabled
-                                    class="btn btn-outline px-3 py-1.5 rounded-md border border-gray-300 text-gray-400 cursor-not-allowed">
+                                    :disabled="state.isLocked || damagesReadonly"
+                                    @click="$wire.removeDamageRow({{ $i }})"
+                                    class="btn px-3 py-1.5 rounded-md"
+                                    :class="(state.isLocked || damagesReadonly)
+                                        ? 'btn-outline border-gray-300 text-gray-400 cursor-not-allowed'
+                                        : 'btn-outline border-rose-300 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20'">
                                 {{ __('Rimuovi') }}
                             </button>
                         </div>
+
                     </div>
 
                     {{-- Descrizione --}}
@@ -371,8 +390,11 @@
                     </div>
                 </div>
             @empty
-                <div class="p-4 rounded-md bg-gray-50 dark:bg-gray-900/40 text-sm text-gray-600 dark:text-gray-300">
+                <div x-show="damagesReadonly" class="p-4 rounded-md bg-gray-50 dark:bg-gray-900/40 text-sm text-gray-600 dark:text-gray-300">
                     {{ __('Nessun danno pregresso aperto per questo veicolo.') }}
+                </div>
+                <div x-show="!damagesReadonly" class="p-4 rounded-md bg-gray-50 dark:bg-gray-900/40 text-sm text-gray-600 dark:text-gray-300">
+                    {{ __('Nessun danno segnalato. Usa il pulsante "Aggiungi danno" per crearne uno.') }}
                 </div>
             @endforelse
         </div>
@@ -437,15 +459,19 @@
         </div>
 
         <div x-data="checklistMedia({
-            checklistId: @js($checklistId),
-            rentalId:    @js($rental->id),
-            locked:      @js($isLocked),
-            initial:     @js($mediaChecklist),
-            routes: {
-                uploadChecklistPhoto: {{ Js::from(route('checklists.media.photos.store', $checklistId ?? 0)) }},
-                deleteMedia:          {{ Js::from(route('media.destroy', 0)) }},
-            },
-        })">
+                checklistId: @js($checklistId),
+                rentalId:    @js($rental->id),
+                locked:      @js($isLocked),
+                initial:     @js($mediaChecklist),
+                damages:     @js($damages),
+                routes: {
+                    uploadChecklistPhoto: {{ Js::from(route('checklists.media.photos.store', $checklistId ?? 0)) }},
+                    deleteMedia:          {{ Js::from(route('media.destroy', 0)) }},
+                    uploadDamagePhoto:    {{ Js::from(route('damages.media.photos.store', 0)) }},
+                    indexDamagePhotos:    {{ Js::from(route('damages.media.photos.index', 0)) }},
+                },
+            })"
+            wire:key="media-block-{{ $checklistId ?? 'new' }}">
 
             <template x-if="!state.checklistId">
                 <div class="p-4 rounded-md bg-yellow-50 text-yellow-800 text-sm mb-4">
@@ -630,6 +656,89 @@
                         </table>
                     </div>
                 </div>
+
+                {{-- Gruppo: Foto Danni (solo in return) --}}
+                @if($type === 'return')
+                    <div class="rounded-md border border-gray-200 dark:border-gray-700 p-4 mb-6">
+                        <div x-show="(state.damages?.length || 0) > 0" class="flex grid items-center justify-between">
+                            <div class="flex grid gap-1">
+                                <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
+                                    {{ __('Foto danni') }}
+                                </h3>
+                                <p class="text-sm text-gray-500 mt-1">
+                                    {{ __('Seleziona un danno e carica una o più foto. Il contatore si aggiorna automaticamente.') }}
+                                </p>
+                            </div>
+
+                            {{-- Selettore danno + upload --}}
+                            <div class="flex items-center gap-2">
+                                {{-- Select danno: etichetta “Area · Gravità” oppure “Danno #ID” --}}
+                                <select x-model.number="state.selectedDamageId" 
+                                        :disabled="state.locked || !state.checklistId || (state.damages?.length || 0) === 0"
+                                        class="mt-1 block rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 text-sm">
+                                    <option value="">{{ __('Seleziona danno…') }}</option>
+                                    <template x-for="d in state.damages" :key="d.id">
+                                        <option :value="d.id" x-text="d.label"></option>
+                                    </template>
+                                </select>
+
+                                <input type="file" x-ref="fileDamage" accept="image/jpeg,image/png"
+                                    :disabled="state.locked || !state.checklistId || !state.selectedDamageId"
+                                    class="text-sm" />
+
+                                <button type="button"
+                                        @click="uploadDamage($refs.fileDamage)"
+                                        :disabled="state.locked || !state.checklistId || !state.selectedDamageId"
+                                        class="btn btn-outline shadow-none px-3
+                                            border-gray-300 text-gray-700 hover:bg-gray-50
+                                            disabled:opacity-50 disabled:cursor-not-allowed">
+                                    {{ __('Carica') }}
+                                </button>
+                            </div>
+                            {{-- mini-tabella foto del danno selezionato --}}
+                            <div class="mt-3 overflow-x-auto" 
+                                x-show="Number.isInteger(state.selectedDamageId) && state.selectedDamageId > 0">
+                                <table class="w-full text-sm">
+                                    <thead>
+                                        <tr class="text-left text-gray-500">
+                                            <th class="py-1 pr-2">ID</th>
+                                            <th class="py-1 pr-2">{{ __('Nome') }}</th>
+                                            <th class="py-1 pr-2">{{ __('Dimensione') }}</th>
+                                            <th class="py-1 pr-2">{{ __('Azioni') }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template x-for="m in state.damagePhotos" :key="m.id">
+                                            <tr class="border-t border-gray-200 dark:border-gray-700">
+                                                <td class="py-1 pr-2" x-text="m.id"></td>
+                                                <td class="py-1 pr-2" x-text="m.name"></td>
+                                                <td class="py-1 pr-2"><span x-text="formatBytes(m.size)"></span></td>
+                                                <td class="py-1 pr-2">
+                                                    <a :href="m.url" target="_blank" class="underline text-primary mr-2">{{ __('Apri') }}</a>
+                                                    <button type="button"
+                                                            @click="destroyDamagePhoto(m.id)"
+                                                            :disabled="state.locked"
+                                                            class="text-rose-600 hover:underline disabled:opacity-50">
+                                                        {{ __('Elimina') }}
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                        <tr x-show="state.damagePhotos.length === 0">
+                                            <td colspan="4" class="py-2 text-gray-500">{{ __('Nessuna foto caricata per questo danno.') }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {{-- Nota quando non ci sono danni (fallback puramente informativo) --}}
+                        <div x-show="(state.damages?.length || 0) === 0"
+                            class="mt-3 p-3 rounded bg-yellow-50 text-yellow-800 text-sm">
+                            {{ __('Aggiungi prima almeno un danno nella tab “Danni” per caricare le foto.') }}
+                        </div>
+                    </div>
+                @endif
             </div>
         </div>
     </section>
@@ -681,19 +790,122 @@ document.addEventListener('alpine:init', () => {
         },
     }));
     Alpine.data('checklistMedia', (cfg) => ({
+        // ===========================
+        // Stato locale del pannello
+        // ===========================
         state: {
             checklistId: cfg.checklistId,
-            rentalId: cfg.rentalId,
-            locked: cfg.locked,
+            rentalId:    cfg.rentalId,
+            locked:      cfg.locked,
+
+            // Foto checklist (gruppi)
             photos: {
                 odometer: cfg.initial?.odometer || [],
                 fuel:     cfg.initial?.fuel     || [],
                 exterior: cfg.initial?.exterior || [],
             },
+
+            // Danni per la select (solo return): { id, label }
+            damages: (Array.isArray(cfg.damages) ? cfg.damages : [])
+                .filter(d => Number.isInteger(d?.id))
+                .map(d => ({
+                    id: d.id,
+                    // Etichetta comoda "Area · Gravità" o fallback "Danno #ID"
+                    label: [d.area || null, d.severity || null].filter(Boolean).join(' · ')
+                           || `Danno #${d.id}`
+                })),
+
+            // Danno attualmente selezionato (per upload/lista foto danni)
+            selectedDamageId: null,
+
+            // Lista foto del danno selezionato (mini-tabella)
+            damagePhotos: [],
         },
 
+        // ===========================
+        // Lifecycle / watchers
+        // ===========================
+        init() {
+            // Quando cambio danno carico la lista foto relativa
+            this.$watch('state.selectedDamageId', (id) => {
+                if (Number.isInteger(id) && id > 0) {
+                    this.fetchDamagePhotos(id);
+                } else {
+                    this.state.damagePhotos = [];
+                }
+            });
+
+            // quando Livewire salva la base, propaga l'ID alla sezione media
+            window.addEventListener('checklist-base-saved', (e) => {
+                const id = Number(e?.detail?.checklistId) || null;
+                if (id) this.state.checklistId = id;
+                this.state.locked = !!e?.detail?.locked;
+            });
+
+            // se la checklist viene bloccata (firma), riflettilo anche qui
+            window.addEventListener('checklist-locked', (e) => {
+                const id = Number(e?.detail?.checklistId) || null;
+                if (id) this.state.checklistId = id;
+                this.state.locked = true;
+            });
+
+            window.addEventListener('damages-updated', (e) => {
+                const list = Array.isArray(e?.detail?.items) ? e.detail.items : [];
+                const currentIds = new Set(list.map(d => Number(d.id)));
+
+                // Ricostruisci le opzioni della select
+                this.state.damages = list.map(d => ({
+                    id: Number(d.id),
+                    label: [d.area || null, d.severity || null].filter(Boolean).join(' · ') || `Danno #${d.id}`,
+                }));
+
+                // Se il danno selezionato non esiste più, resetta selezione e tabella
+                if (!currentIds.has(Number(this.state.selectedDamageId))) {
+                    this.state.selectedDamageId = null;
+                    this.state.damagePhotos = [];
+                }
+            });
+        },
+
+        // ===========================
+        // Helper URL dinamici
+        // ===========================
+        /** URL upload foto checklist (già in cfg.routes.uploadChecklistPhoto) */
+        checklistUploadUrl() {
+            let base = String(cfg.routes?.uploadChecklistPhoto || '');
+            const id = Number(this.state.checklistId) || 0;
+            if (base.endsWith('/0')) return base.slice(0, -2) + '/' + id;
+            return base.replace(/\/0(\b|\/|$)/, '/' + id + '$1');
+        },
+
+        /** URL upload foto Danno: sostituisce '/0' con l'ID */
+        damageUploadUrl(damageId) {
+            let base = String(cfg.routes?.uploadDamagePhoto || '');
+            if (base.endsWith('/0')) return base.slice(0, -2) + '/' + damageId;
+            return base.replace(/\/0(\b|\/|$)/, '/' + damageId + '$1');
+        },
+
+        /** URL index foto Danno: sostituisce '/0' con l'ID */
+        damageIndexUrl(damageId) {
+            let base = String(cfg.routes?.indexDamagePhotos || '');
+            if (base.endsWith('/0')) return base.slice(0, -2) + '/' + damageId;
+            return base.replace(/\/0(\b|\/|$)/, '/' + damageId + '$1');
+        },
+
+        /** URL delete media generico: sostituisce '/0' con il mediaId */
+        deleteUrl(mediaId) {
+            let base = String(cfg.routes?.deleteMedia || '');
+            if (base.endsWith('/0')) return base.slice(0, -2) + '/' + mediaId;
+            return base.replace(/\/0(\b|\/|$)/, '/' + mediaId + '$1');
+        },
+
+        // ===========================
+        // Upload foto CHECKLIST (odometer|fuel|exterior)
+        // ===========================
         async upload(kind, fileInput) {
+            // Blocca se locked o senza checklist
             if (this.state.locked || !this.state.checklistId) return;
+
             const file = fileInput?.files?.[0];
             if (!file) {
                 this.toast('warning', '{{ __("Seleziona un file da caricare.") }}');
@@ -706,27 +918,32 @@ document.addEventListener('alpine:init', () => {
             form.append('_token', document.querySelector('meta[name="csrf-token"]').getAttribute('content'));
 
             try {
-                const res = await fetch(cfg.routes.uploadChecklistPhoto, {
+                const res = await fetch(this.checklistUploadUrl(), {
                     method: 'POST',
                     body: form,
                     headers: { 'Accept': 'application/json' },
                 });
-
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({}));
                     throw new Error(err.message || 'Upload fallito');
                 }
 
                 const data = await res.json();
-                // Push nella tabella del gruppo
+
+                // Garantisce esistenza dell'array gruppo
+                if (!this.state.photos) this.state.photos = {};
+                if (!Array.isArray(this.state.photos[kind])) this.state.photos[kind] = [];
+
+                // Inserisce nuovo record includendo delete_url calcolato
                 this.state.photos[kind].push({
-                    id: data.media_id,
+                    id:   data.media_id,
                     name: data.name ?? file.name,
-                    url: data.url,
+                    url:  data.url,
                     size: data.size ?? file.size,
+                    delete_url: this.deleteUrl(data.media_id),
                 });
 
-                // Reset input
+                // Reset input + toast
                 fileInput.value = '';
                 this.toast('success', '{{ __("Foto caricata.") }}');
             } catch (e) {
@@ -734,32 +951,142 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        // ===========================
+        // Delete foto CHECKLIST
+        // ===========================
         async destroy(mediaId, kind) {
             if (this.state.locked) return;
 
-            const url = cfg.routes.deleteMedia.replace(/0$/, String(mediaId));
+            // Guard robusto sugli array
+            const list = (this.state.photos && Array.isArray(this.state.photos[kind]))
+                ? this.state.photos[kind]
+                : null;
+
+            if (!list) {
+                return;
+            }
+
+            const item = list.find(x => Number(x.id) === Number(mediaId));
+            const del  = item?.delete_url ?? this.deleteUrl(mediaId);
+            if (!del) {
+                this.toast('error', 'URL eliminazione non disponibile.');
+                return;
+            }
+
             try {
-                const res = await fetch(url, {
+                const res = await fetch(del, {
                     method: 'DELETE',
                     headers: {
                         'Accept': 'application/json',
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
                     },
                 });
-
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({}));
                     throw new Error(err.message || 'Eliminazione fallita');
                 }
 
-                // Rimuovi dalla lista locale
-                this.state.photos[kind] = this.state.photos[kind].filter(x => x.id !== mediaId);
+                // Rimuovi localmente
+                this.state.photos[kind] = list.filter(x => Number(x.id) !== Number(mediaId));
                 this.toast('success', '{{ __("Foto eliminata.") }}');
             } catch (e) {
                 this.toast('error', e.message || 'Errore di rete');
             }
         },
 
+        // ===========================
+        // Upload / Lista / Delete foto DANNI
+        // ===========================
+        async uploadDamage(fileInput) {
+            if (this.state.locked || !this.state.checklistId) return;
+
+            const damageId = Number(this.state.selectedDamageId);
+            if (!Number.isInteger(damageId) || damageId <= 0) {
+                this.toast('warning', '{{ __("Seleziona un danno.") }}');
+                return;
+            }
+
+            const file = fileInput?.files?.[0];
+            if (!file) {
+                this.toast('warning', '{{ __("Seleziona un file da caricare.") }}');
+                return;
+            }
+
+            const form = new FormData();
+            form.append('file', file);
+
+            try {
+                const res = await fetch(this.damageUploadUrl(damageId), {
+                    method: 'POST',
+                    body: form,
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    },
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.message || 'Upload fallito');
+                }
+
+                // Aggiorna UI
+                fileInput.value = '';
+                this.toast('success', '{{ __("Foto caricata al danno.") }}');
+
+                // Ricarica lista foto del danno selezionato
+                await this.fetchDamagePhotos(damageId);
+            } catch (e) {
+                this.toast('error', e.message || 'Errore di rete');
+            }
+        },
+
+        async fetchDamagePhotos(damageId) {
+            try {
+                const res = await fetch(this.damageIndexUrl(damageId), {
+                    headers: { 'Accept': 'application/json' },
+                });
+                if (!res.ok) throw new Error('Caricamento elenco foto fallito');
+                const data = await res.json();
+                this.state.damagePhotos = Array.isArray(data.items) ? data.items : [];
+            } catch (e) {
+                this.state.damagePhotos = [];
+                this.toast('error', e.message || 'Errore nel recupero foto danno');
+            }
+        },
+
+        async destroyDamagePhoto(mediaId) {
+            if (this.state.locked) return;
+
+            const rows = Array.isArray(this.state.damagePhotos) ? this.state.damagePhotos : [];
+            const row  = rows.find(x => Number(x.id) === Number(mediaId));
+            if (!row || !row.delete_url) {
+                this.toast('error', 'URL eliminazione non disponibile.');
+                return;
+            }
+
+            try {
+                const res = await fetch(row.delete_url, {
+                    method: 'DELETE',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    },
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.message || 'Eliminazione fallita');
+                }
+
+                this.state.damagePhotos = rows.filter(x => Number(x.id) !== Number(mediaId));
+                this.toast('success', '{{ __("Foto eliminata.") }}');
+            } catch (e) {
+                this.toast('error', e.message || 'Errore di rete');
+            }
+        },
+
+        // ===========================
+        // Utility UI
+        // ===========================
         formatBytes(b) {
             if (!b && b !== 0) return '';
             const u = ['B','KB','MB','GB']; let i = 0; let n = b;

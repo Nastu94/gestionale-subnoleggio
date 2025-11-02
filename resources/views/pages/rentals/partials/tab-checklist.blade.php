@@ -128,34 +128,45 @@
                 $raw = $checklist->checklist_json;
                 if (is_string($raw)) { $decoded = json_decode($raw, true); $raw = is_array($decoded) ? $decoded : []; }
                 elseif (!is_array($raw)) { $raw = []; }
+                /**
+                * Gruppi di dettaglio per il riepilogo.
+                * - In 'return' NON mostriamo 'documents' (acquisiti in pickup).
+                * - Manteniamo l'ordine: Vehicle → (Documents) → Equipment.
+                */
+                $groups = [];
 
-                $groups = [
-                    'vehicle' => [
-                        'label' => 'Veicolo',
-                        'map' => [
-                            'horn_ok'       => 'Clacson funzionante',
-                            'tires_ok'      => 'Pneumatici in ordine',
-                            'brakes_ok'     => 'Freni funzionanti',
-                            'lights_ok'     => 'Luci funzionanti',
-                            'windshield_ok' => 'Parabrezza in ordine',
-                        ],
+                // Veicolo (sempre visibile)
+                $groups['vehicle'] = [
+                    'label' => 'Veicolo',
+                    'map' => [
+                        'horn_ok'       => 'Clacson funzionante',
+                        'tires_ok'      => 'Pneumatici in ordine',
+                        'brakes_ok'     => 'Freni funzionanti',
+                        'lights_ok'     => 'Luci funzionanti',
+                        'windshield_ok' => 'Parabrezza in ordine',
                     ],
-                    'documents' => [
+                ];
+
+                // Documenti: SOLO in pickup
+                if ($type === 'pickup') {
+                    $groups['documents'] = [
                         'label' => 'Documenti',
                         'map' => [
                             'id_card'        => 'Documento identità',
                             'contract_copy'  => 'Copia contratto',
                             'driver_license' => 'Patente di guida',
                         ],
-                    ],
-                    'equipment' => [
-                        'label' => 'Dotazioni',
-                        'map' => [
-                            'jack'         => 'Cric',
-                            'vest'         => 'Gilet alta visibilità',
-                            'triangle'     => 'Triangolo',
-                            'spare_wheel'  => 'Ruotino / Ruota di scorta',
-                        ],
+                    ];
+                }
+
+                // Dotazioni (sempre visibile)
+                $groups['equipment'] = [
+                    'label' => 'Dotazioni',
+                    'map' => [
+                        'jack'         => 'Cric',
+                        'vest'         => 'Gilet alta visibilità',
+                        'triangle'     => 'Triangolo',
+                        'spare_wheel'  => 'Ruotino / Ruota di scorta',
                     ],
                 ];
 
