@@ -23,7 +23,9 @@
             * Usiamo solo dati già presenti su $rental e relative relazioni.
             * NB: tutti gli "optional()" evitano errori se alcune relazioni non sono caricate.
             */
-            $attachmentsCount   = method_exists($rental,'getMedia') ? $rental->getMedia('documents')->count() : 0;
+            $docCollections = ['documents','id_card','driver_license','privacy','other'];
+
+            $attachmentsCount = $rental->media()->whereIn('collection_name', $docCollections)->count();
             $contractGenerated  = method_exists($rental,'getMedia') ? $rental->getMedia('contract')->count()  : 0;
             $contractSigned     = method_exists($rental,'getMedia') ? $rental->getMedia('signatures')->count(): 0;
             $damagesCount       = $rental->damages?->count() ?? 0;
@@ -180,4 +182,18 @@
             </div>
         </div>
     </aside>
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.store('rental', {
+                status: @js($rental->status),     // es. "draft" | "checked_out" | ... | "closed"
+                get isClosed() { return this.status === 'closed'; },
+
+                // opzionale: helper generico per “read-only”
+                get isReadOnly() { return this.isClosed; },
+
+                setStatus(s) { this.status = s; } // per sincronizzare dopo le azioni AJAX
+            });
+        });
+    </script>
+
 </div>

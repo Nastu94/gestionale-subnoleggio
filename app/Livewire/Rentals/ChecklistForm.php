@@ -445,6 +445,18 @@ class ChecklistForm extends Component
                                 'updates'   => $updates,
                             ]);
                         }
+                    } else {
+                        $updates = [];
+                        if ($mOut !== null) $updates['mileage_in']      = (int) $mOut;
+                        if ($fOut !== null) $updates['fuel_in_percent'] = (int) $fOut;
+                        if ($updates) {
+                            $this->rental->fill($updates)->save();
+                            Log::debug('[CHK][saveBase] Rental IN fields updated', [
+                                'trace_id'  => $traceId,
+                                'rental_id' => $this->rental->id,
+                                'updates'   => $updates,
+                            ]);
+                        }
                     }
                 }
             });

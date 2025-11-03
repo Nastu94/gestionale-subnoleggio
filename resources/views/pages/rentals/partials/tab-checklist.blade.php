@@ -64,6 +64,7 @@
 
                         {{-- Carica firmato (pdf/jpg/png) --}}
                         <label class="btn btn-outline shadow-none cursor-pointer"
+                                x-cloak
                                x-show="!state.locked"
                                :class="{ 'btn-disabled opacity-50': state.locked }">
                             <input type="file" class="hidden"
@@ -99,7 +100,10 @@
                                     'type'     => $type,
                                     'replaces' => $checklist->id,
                                 ]) }}"
-                               class="btn btn-accent shadow-none
+                                x-cloak
+                                :class="{ 'opacity-50 pointer-events-none': $store.rental.isClosed }"
+                                :disabled="$store.rental.isClosed || loading"
+                                class="btn btn-accent shadow-none
                                       !bg-accent !text-accent-content !border-accent
                                       hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-accent/30">
                                 Nuova checklist (sostitutiva)

@@ -58,11 +58,15 @@
                             {{-- Elimina (per ora submit classico; l’AJAX lo faremo nella sezione Allegati) --}}
                             <form method="POST" action="{{ route('media.destroy', $m) }}"
                                     x-data="ajaxDeleteMedia()"
-                                    x-on:submit.prevent="submit($event)">
+                                    x-cloak
+                                    x-on:submit.prevent="submit($event)"
+                                    :class="{ 'opacity-50 pointer-events-none': $store.rental.isClosed }">
                                 @csrf @method('DELETE')
-                                <button class="btn btn-sm shadow-none px-2
-                                               !bg-error !text-error-content !border-error
-                                               hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-error/30">
+                                <button 
+                                    :disabled="$store.rental.isClosed || loading"
+                                    class="btn btn-sm shadow-none px-2
+                                        !bg-error !text-error-content !border-error
+                                        hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-error/30">
                                     Elimina
                                 </button>
                             </form>
@@ -96,7 +100,8 @@
                             </a>
                             <form method="POST" action="{{ route('media.destroy', $m) }}"
                                     x-data="ajaxDeleteMedia()"
-                                    x-on:submit.prevent="submit($event)">
+                                    x-on:submit.prevent="submit($event)"
+                                    :class="{ 'opacity-50 pointer-events-none': $store.rental.isClosed }">
                                 @csrf @method('DELETE')
                                 <button class="btn btn-sm shadow-none px-2
                                                !bg-error !text-error-content !border-error

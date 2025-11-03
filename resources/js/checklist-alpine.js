@@ -136,4 +136,21 @@ document.addEventListener('alpine:init', () => {
       }
     },
   }));
+  
+  
+  Alpine.data('damageGallery', () => ({
+      open: false,
+      src: '',
+      alt: '',
+      openPreview(url, altText = '') {
+          this.src = url;
+          this.alt = altText || '';
+          this.open = true;
+      },
+      close() {
+          this.open = false;
+          this.src = '';
+          this.alt = '';
+      },
+  }));
 });
