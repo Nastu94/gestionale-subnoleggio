@@ -116,6 +116,10 @@
     <br>
 
     {{-- DOCUMENTI --}}
+    @if($checklist->type === 'pickup')
+        <div class="strip mb-6">
+            Nota: i documenti elencati si riferiscono a quelli acquisiti al momento del ritiro del veicolo.
+        </div>
     <h2 class="mb-2">Documenti</h2>
     <table class="mb-6">
         <tr>
@@ -131,6 +135,7 @@
             <td class="center">{{ $yes($documents['contract_copy'] ?? false) }}</td>
         </tr>
     </table>
+    @endif
 
     <br>
 

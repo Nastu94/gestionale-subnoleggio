@@ -29,7 +29,7 @@
             'label' => 'Contratto firmato (Rental)',
             'desc'  => $m->file_name,
             'icon'  => '✍️',
-            'url'   => $m->getUrl('preview') ?: $m->getUrl(),
+            'url'   => $m->getUrl() ?: $m->getUrl('preview'),
         ];
     }
     if ($pickup) {
@@ -39,7 +39,7 @@
                 'label' => 'Contratto firmato (Checklist pickup)',
                 'desc'  => $m->file_name,
                 'icon'  => '✍️',
-                'url'   => $m->getUrl('preview') ?: $m->getUrl(),
+                'url'   => $m->getUrl() ?: $m->getUrl('preview'),
             ];
         }
     }

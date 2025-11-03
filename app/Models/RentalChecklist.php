@@ -150,6 +150,16 @@ class RentalChecklist extends Model implements SpatieHasMedia
             ? 'checklist_return_signed'
             : 'checklist_pickup_signed';
     }
+    
+    // accessor per usare $checklist->signedPdf in Blade
+    public function getSignedPdfAttribute(): ?Media
+    {
+        try {
+            return $this->getMedia($this->signedCollectionName())->first();
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
 
     /* ==========================
        Media Library (Spatie)

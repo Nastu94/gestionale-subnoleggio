@@ -49,37 +49,37 @@ class RentalMediaController extends Controller
      *  - Rental -> signatures
      *  - Checklist(PICKUP) -> signatures
      */
-public function storeSignedContract(Request $request, Rental $rental)
-{
-    $this->authorize('contractUploadSigned', $rental);
-    $this->authorize('uploadMedia', $rental);
+    public function storeSignedContract(Request $request, Rental $rental)
+    {
+        $this->authorize('contractUploadSigned', $rental);
+        $this->authorize('uploadMedia', $rental);
 
-    $request->validate([
-        'file' => ['required','file','mimetypes:application/pdf,image/jpeg,image/png','max:20480'],
-    ]);
+        $request->validate([
+            'file' => ['required','file','mimetypes:application/pdf,image/jpeg,image/png','max:20480'],
+        ]);
 
-    $pickup = $rental->checklists()->where('type','pickup')->first();
+        $pickup = $rental->checklists()->where('type','pickup')->first();
 
-    try {
-        // 1) Salvo UNA volta sul Rental
-        $mediaRental = $rental->addMediaFromRequest('file')
-            ->usingName('rental-contract-signed')
-            ->toMediaCollection('signatures'); // se è singleFile(), sostituisce in sicurezza
+        try {
+            // 1) Salvo UNA volta sul Rental
+            $mediaRental = $rental->addMediaFromRequest('file')
+                ->usingName('rental-contract-signed')
+                ->toMediaCollection('signatures'); // se è singleFile(), sostituisce in sicurezza
 
-        // 2) Duplico sulla checklist senza riusare l'UploadedFile
-        if ($pickup) {
-            $mediaRental->copy($pickup, 'signatures');
+            // 2) Duplico sulla checklist senza riusare l'UploadedFile
+            if ($pickup) {
+                $mediaRental->copy($pickup, 'signatures');
+            }
+
+            return response()->json(['ok' => true], \Symfony\Component\HttpFoundation\Response::HTTP_CREATED);
+        } catch (\Throwable $e) {
+            // rollback “manuale” del file/record appena creato, così non restano cartelle vuote
+            if (isset($mediaRental)) {
+                try { $mediaRental->delete(); } catch (\Throwable $ignore) {}
+            }
+            throw $e;
         }
-
-        return response()->json(['ok' => true], \Symfony\Component\HttpFoundation\Response::HTTP_CREATED);
-    } catch (\Throwable $e) {
-        // rollback “manuale” del file/record appena creato, così non restano cartelle vuote
-        if (isset($mediaRental)) {
-            try { $mediaRental->delete(); } catch (\Throwable $ignore) {}
-        }
-        throw $e;
     }
-}
 
     /**
      * Apertura/visualizzazione inline di un Media (PDF/immagine).
