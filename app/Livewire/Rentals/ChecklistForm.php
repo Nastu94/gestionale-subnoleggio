@@ -742,7 +742,6 @@ class ChecklistForm extends Component
                     /** @var RentalDamage $d */
                     $d = $existing->get($id);
                     $d->fill($data)->save();
-                    $keepIds[] = (int) $d->id;
                 } else {
                     $d = new RentalDamage(array_merge($data, [
                         'rental_id'  => $this->rental->id,
@@ -750,26 +749,91 @@ class ChecklistForm extends Component
                         'created_by' => auth()->id(),
                     ]));
                     $d->save();
-                    $keepIds[] = (int) $d->id;
 
                     // Aggiorna l’ID nella riga UI
                     $this->damages[$i]['id'] = (int) $d->id;
                 }
+
+                $keepIds[] = (int) $d->id;
+
+                // ⬅️ Sync su vehicle_damages SOLO in return
+                if ($this->type === 'return') {
+                    $this->ensureVehicleDamageFrom($d);
+                }
             }
 
-            // Cancella i danni rimossi in UI
+            // Cancella i danni rimossi in UI (non chiudiamo automaticamente i vehicle_damages: resta storico)
             foreach ($existing as $id => $d) {
                 if (!in_array((int) $id, $keepIds, true)) {
                     $d->delete();
                 }
             }
         });
+
         // Recalcola subito lo stato PDF
         $this->refreshPdfState();
 
         $this->dispatch('toast', type:'success', message:__('Danni salvati.'), duration:3000);
         $this->broadcastDamagesUpdated();
     }
+
+    /**
+     * Crea/aggiorna un VehicleDamage “aperto” per il veicolo corrente,
+     * usando (vehicle_id, source='rental', area, descrizione) come firma morbida.
+     * - Se esiste, aggiorna last_rental_damage_id e (se peggiore) la severity.
+     * - Se non esiste, crea un nuovo record aperto.
+     */
+    protected function ensureVehicleDamageFrom(RentalDamage $d): void
+    {
+        $vehicleId = (int) ($this->rental->vehicle_id ?? 0);
+        if (!$vehicleId) return;
+
+        $area = trim((string) $d->area);
+        $desc = trim((string) ($d->description ?? ''));
+        $sev  = (string) $d->severity ?: 'low';
+
+        $q = VehicleDamage::query()
+            ->where('vehicle_id', $vehicleId)
+            ->where('source', 'rental')
+            ->where('is_open', true)
+            ->where('area', $area);
+
+        if ($desc !== '') {
+            $q->whereRaw('LOWER(TRIM(description)) = ?', [mb_strtolower($desc)]);
+        } else {
+            $q->whereNull('description');
+        }
+
+        /** @var VehicleDamage|null $vd */
+        $vd = $q->first();
+
+        if ($vd) {
+            // aggiorna severity solo se peggiora
+            $order = ['low' => 0, 'medium' => 1, 'high' => 2];
+            $newSev = (isset($order[$sev]) && isset($order[$vd->severity]) && $order[$sev] > $order[$vd->severity])
+                ? $sev
+                : ($vd->severity ?? $sev);
+
+            $vd->fill([
+                'severity'               => $newSev,
+                'last_rental_damage_id'  => $d->id,
+            ])->save();
+            return;
+        }
+
+        VehicleDamage::create([
+            'vehicle_id'              => $vehicleId,
+            'first_rental_damage_id'  => $d->id,
+            'last_rental_damage_id'   => $d->id,
+            'source'                  => 'rental',
+            'area'                    => $area ?: null,
+            'severity'                => $sev,
+            'description'             => $desc ?: null,
+            'is_open'                 => true,
+            'created_by'              => auth()->id(),
+        ]);
+    }
+
 
     /**
      * Invia al browser la lista danni persistita (solo id/area/severity),
