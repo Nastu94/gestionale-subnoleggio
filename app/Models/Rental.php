@@ -29,8 +29,7 @@ class Rental extends Model implements SpatieHasMedia
         'planned_pickup_at','planned_return_at','actual_pickup_at','actual_return_at',
         'pickup_location_id','return_location_id','status',
         'mileage_out','mileage_in','fuel_out_percent','fuel_in_percent',
-        'notes','created_by', 'payment_recorded','payment_recorded_at','payment_method',
-        'payment_reference','payment_notes', 'amount',
+        'notes','created_by', 'amount', 'admin_fee_percent', 'admin_fee_amount',
     ];
 
     protected $casts = [
@@ -61,6 +60,62 @@ class Rental extends Model implements SpatieHasMedia
     // Helper per accesso diretto alle due checklist canoniche
     public function pickupChecklist()  { return $this->hasOne(RentalChecklist::class)->where('type','pickup'); }
     public function returnChecklist()  { return $this->hasOne(RentalChecklist::class)->where('type','return'); }
+
+    /**
+     * Righe economiche del noleggio.
+     */
+    public function charges(): HasMany
+    {
+        return $this->hasMany(RentalCharge::class);
+    }
+
+    /**
+     * Righe commissionabili (utility per query pulite).
+     */
+    public function commissionableCharges(): HasMany
+    {
+        return $this->charges()->where('is_commissionable', true);
+    }
+
+    /**
+     * Totale lordo delle righe (IVA inclusa) – somma amount di TUTTE le righe non soft-deleted.
+     * Accessor "virtuale" → $rental->charges_total
+     */
+    public function getChargesTotalAttribute(): string
+    {
+        $sum = (float) $this->charges()->sum('amount');
+        return number_format($sum, 2, '.', '');
+    }
+
+    /**
+     * Totale commissionabile (Tᶜ) – somma amount delle sole righe commissionabili.
+     * Accessor "virtuale" → $rental->commissionable_total
+     */
+    public function getCommissionableTotalAttribute(): string
+    {
+        $sum = (float) $this->commissionableCharges()->sum('amount');
+        return number_format($sum, 2, '.', '');
+    }
+
+    /**
+     * Totale righe SALDATE (per avere un colpo d’occhio su quanto incassato a riga).
+     * Accessor "virtuale" → $rental->charges_paid_total
+     */
+    public function getChargesPaidTotalAttribute(): string
+    {
+        $sum = (float) $this->charges()->where('payment_recorded', true)->sum('amount');
+        return number_format($sum, 2, '.', '');
+    }
+
+    /**
+     * Totale righe NON saldate (utile per capire scoperto residuo lato riga).
+     * Accessor "virtuale" → $rental->charges_unpaid_total
+     */
+    public function getChargesUnpaidTotalAttribute(): string
+    {
+        $sum = (float) $this->charges()->where('payment_recorded', false)->sum('amount');
+        return number_format($sum, 2, '.', '');
+    }
 
     // Scope: per organizzazione Renter
     public function scopeForOrganization($q, int $orgId) { return $q->where('organization_id', $orgId); }

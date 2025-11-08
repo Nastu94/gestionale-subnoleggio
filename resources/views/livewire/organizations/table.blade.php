@@ -138,6 +138,17 @@
                                     <i class="fas fa-pencil-alt mr-1"></i> Modifica
                                 </button>
 
+                                {{-- azioni riga organization --}}
+                                @if(auth()->user()->hasRole('admin'))
+                                    <button
+                                        type="button"
+                                        class="text-xs hover:text-indigo-600"
+                                        x-on:click="Livewire.dispatch('org-fees:open', { organizationId: {{ $row->id }} })"
+                                    >
+                                        <i class="fas fa-percent mr-1"></i>Tassazione
+                                    </button>
+                                @endif
+
                                 {{-- Elimina RENTER (come da UX precedente) --}}
                                 <form
                                     action="{{ route('organizations.destroy', $row->id) }}"

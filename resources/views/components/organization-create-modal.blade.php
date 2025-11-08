@@ -37,10 +37,12 @@
                 {{-- Caso B: Creo solo user su renter esistente (mode=create & ho form.id) --}}
                 <template x-if="mode === 'create' && form.id">
                     <div>
+                        {{-- Importante: essendo l'input di display disabilitato, inviamo un hidden con l'id --}}
                         <input type="hidden" name="organization_id" x-bind:value="form.id" />
                         <label class="block text-xs text-gray-600 dark:text-gray-300">Renter selezionato</label>
                         <input type="text" x-model="form.name" disabled
-                            class="mt-1 block w-full px-3 py-2 border rounded-md bg-gray-100 dark:bg-gray-700/60 text-sm text-gray-700 dark:text-gray-300" />
+                            class="mt-1 block w-full px-3 py-2 border rounded-md
+                                    bg-gray-100 dark:bg-gray-700/60 text-sm text-gray-700 dark:text-gray-300" />
                         <p class="text-[11px] text-gray-500 mt-1">Verrà creato un nuovo utente per questo renter.</p>
                     </div>
                 </template>
@@ -49,8 +51,17 @@
                 <template x-if="!(mode === 'create' && form.id)">
                     <div>
                         <label class="block text-xs text-gray-600 dark:text-gray-300">Nome renter</label>
-                        <input name="name" x-model="form.name" type="text" :required="mode==='create'"
-                            class="mt-1 block w-full px-3 py-2 border rounded-md bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100" />
+                        <input
+                            name="name"
+                            x-model="form.name"
+                            type="text"
+                            :required="mode === 'create'"     {{-- in create è obbligatorio --}}
+                            :readonly="mode === 'edit'"        {{-- in edit è SOLA LETTURA --}}
+                            class="mt-1 block w-full px-3 py-2 border rounded-md
+                                bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100"
+                            :class="mode === 'edit' ? 'bg-gray-100 dark:bg-gray-700/60 cursor-not-allowed' : ''"
+                            aria-readonly="true"
+                        />
                         @error('name') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
                     </div>
                 </template>

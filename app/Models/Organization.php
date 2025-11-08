@@ -42,6 +42,12 @@ class Organization extends Model
     // Rentals creati da questa org (renter)
     public function rentals()          { return $this->hasMany(Rental::class); }
 
+    /** Fee admin storicizzate per questo renter. */
+    public function fees(): HasMany
+    {
+        return $this->hasMany(OrganizationFee::class);
+    }
+
     // --- Helper ---
     public function isAdmin(): bool  { return $this->type === 'admin'; }
     public function isRenter(): bool { return $this->type === 'renter'; }

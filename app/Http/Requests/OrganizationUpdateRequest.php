@@ -33,20 +33,21 @@ class OrganizationUpdateRequest extends FormRequest
         return [
             // ORGANIZATION
             'name' => [
-                'required','string','min:2','max:150',
+                'required','sometimes','string','min:2','max:150',
                 Rule::unique('organizations','name')
                     ->where(fn($q) => $q->where('type','renter'))
                     ->ignore($org?->id),
+                Rule::in([$org?->name]),
             ],
 
             // USER (tutti opzionali; aggiorniamo solo quelli presenti)
-            'user_id'    => ['nullable','integer','exists:users,id'],
-            'user_name'  => ['nullable','string','min:2','max:150'],
+            'user_id'    => ['required','integer','exists:users,id'],
+            'user_name'  => ['required','string','min:2','max:150'],
             'user_email' => [
-                'nullable','email','max:255',
+                'required','email','max:255',
                 Rule::unique('users','email')->ignore($userId),
             ],
-            'user_password' => ['nullable','confirmed', Password::defaults()],
+            'user_password' => ['required','confirmed', Password::defaults()],
         ];
     }
 
@@ -59,6 +60,7 @@ class OrganizationUpdateRequest extends FormRequest
         return [
             'name.required' => 'Il nome del renter è obbligatorio.',
             'name.unique'   => 'Esiste già un renter con questo nome.',
+            'name.in' => 'Il nome del renter non è modificabile.',
 
             'user_email.email'  => 'Formato email non valido.',
             'user_email.unique' => 'Esiste già un utente con questa email.',

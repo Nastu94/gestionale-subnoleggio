@@ -86,4 +86,8 @@
             </div>
         </div>
     </div>
+
+    {{-- Pannello gestione commissioni (singola istanza pagina) --}}
+    <livewire:organizations.fees />
+
 </x-app-layout>

@@ -161,10 +161,7 @@ class OrganizationController extends Controller
 
         try {
             DB::transaction(function () use ($organization, $data) {
-                // 1) Aggiorna Organization
-                $organization->update(['name' => $data['name']]);
-
-                // 2) Trova/aggiorna User principale (se campi utente presenti)
+                // Trova/aggiorna User principale (se campi utente presenti)
                 $hasUserFields = isset($data['user_name']) || isset($data['user_email']) || isset($data['user_password']);
 
                 if ($hasUserFields) {
