@@ -14,6 +14,7 @@ use App\Models\VehicleDocument;
 use App\Models\VehiclePricelist;
 use App\Models\RentalChecklist;
 use App\Models\RentalDamage;
+use App\Models\VehicleDamage;
 use App\Policies\CustomerPolicy;
 use App\Policies\LocationPolicy;
 use App\Policies\RentalPolicy;
@@ -24,6 +25,7 @@ use App\Policies\VehicleDocumentPolicy;
 use App\Policies\VehiclePricelistPolicy;
 use App\Policies\RentalChecklistPolicy;
 use App\Policies\RentalDamagePolicy;
+use App\Policies\VehicleDamagePolicy;
 
 /**
  * AuthServiceProvider
@@ -56,6 +58,7 @@ class AuthServiceProvider extends ServiceProvider
         Vehicle::class             => VehiclePolicy::class,
         VehicleDocument::class     => VehicleDocumentPolicy::class,
         VehiclePricelist::class    => VehiclePricelistPolicy::class,
+        VehicleDamage::class       => VehicleDamagePolicy::class,
     ];
 
     /**

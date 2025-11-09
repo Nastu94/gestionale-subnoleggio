@@ -23,6 +23,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'vehicle_documents.viewAny', 'vehicle_documents.view', 'vehicle_documents.create', 'vehicle_documents.update', 'vehicle_documents.delete', 'vehicle_documents.manage',
             'vehicle_pricing.viewAny', 'vehicle_pricing.view', 'vehicle_pricing.create', 'vehicle_pricing.update', 'vehicle_pricing.delete',
             'vehicle_pricing.publish', 'vehicle_pricing.archive',
+            'vehicle_damages.viewAny', 'vehicle_damages.view', 'vehicle_damages.create', 'vehicle_damages.update', 
+            'vehicle_damages.close', 'vehicle_damages.delete', 'vehicle_damages.reopen',
 
             // Assignments
             'assignments.viewAny', 'assignments.view', 'assignments.create', 'assignments.update', 'assignments.delete',
@@ -76,6 +78,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'vehicle_pricing.viewAny','vehicle_pricing.view','vehicle_pricing.create','vehicle_pricing.update', 'vehicle_pricing.delete',
             'vehicle_pricing.publish', 'vehicle_pricing.archive',
             'vehicle_documents.viewAny','vehicle_documents.view', 'vehicle_documents.update',
+            'vehicle_damages.viewAny', 'vehicle_damages.view', 'vehicle_damages.create', 'vehicle_damages.update', 
+            'vehicle_damages.close', 'vehicle_damages.delete', 'vehicle_damages.reopen',
 
             'assignments.viewAny','assignments.view',
 

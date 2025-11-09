@@ -149,7 +149,7 @@
 
                                     {{-- Pagamento registrato --}}
                                     <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full
-                                                {{ $r->payment_recorded ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300'
+                                                {{ $r->base_payment_at ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300'
                                                                         : 'bg-gray-100 text-gray-700 ring-1 ring-gray-300' }}">
                                         € <span>Pagamento</span>
                                     </span>
@@ -271,7 +271,7 @@
                                         @endif
                                     </span>
                                     <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full
-                                                {{ $r->payment_recorded ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300'
+                                                {{ $r->base_payment_at ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300'
                                                                         : 'bg-gray-100 text-gray-700 ring-1 ring-gray-300' }}">
                                         € <span>Pagamento</span>
                                     </span>

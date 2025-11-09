@@ -6,6 +6,7 @@ use Livewire\Component;
 use Livewire\WithPagination;
 use App\Models\Rental;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Database\Eloquent\Builder;
 
 class RentalsBoard extends Component
@@ -81,22 +82,33 @@ class RentalsBoard extends Component
         });
     }
 
+    /** Restringi visibilità in base al ruolo utente */
+    protected function restrictToViewer(Builder $q): Builder {
+        $u = Auth::user();
+        if ($u->hasAnyRole(['admin','super-admin'])) return $q;
+        if ($u->hasRole('renter') && $u->renter_id)   return $q->where('renter_id', $u->renter_id);
+        if ($u->hasRole('sub-renter') && $u->sub_renter_id) return $q->where('sub_renter_id', $u->sub_renter_id);
+        return $q->where('organization_id', $u->id);
+    }
+
     /** KPI per stato: rispettare ricerca + stato, con parentesi corrette */
-    public function getKpisProperty(): array
-    {
-        $base = Rental::query()->whereNull('deleted_at');
-
-        // Applica ricerca UNA VOLTA sola per coerenza numerica tra KPI e lista
-        $base = $this->applySearch(clone $base);
-
+    public function getKpisProperty(): array {
+        $base = $this->restrictToViewer(
+            $this->applySearch(Rental::query()->whereNull('deleted_at'))
+        );
         $states = ['draft','reserved','checked_out','in_use','checked_in','closed','cancelled','no_show'];
-
         $out = [];
-        foreach ($states as $s) {
-            $out[$s] = (clone $base)->where('status', $s)->count();
-        }
-
+        foreach ($states as $s) $out[$s] = (clone $base)->where('status',$s)->count();
         return $out;
+    }
+
+    /** Query base per righe: stato selezionato + ricerca + restrizione ruolo */
+    protected function baseRowsQuery(): Builder {
+        $q = Rental::query()->whereNull('deleted_at');
+        if ($this->state) $q->where('status', $this->state);
+        $q = $this->applySearch($q);
+        $q = $this->restrictToViewer($q);
+        return $q->with(['customer','vehicle'])->orderByDesc('id');
     }
 
     /** Lista righe: stato selezionato + ricerca, con parentesi corrette */
@@ -129,15 +141,7 @@ class RentalsBoard extends Component
 
     public function render(): View
     {
-        $query = Rental::query()
-            ->with(['customer','vehicle'])
-            ->when($this->state, fn($qb) => $qb->where('status', $this->state))
-            ->when($this->q, fn($qb) => $qb
-                ->where('id', 'like', '%'.$this->q.'%')
-                ->orWhereHas('customer', fn($qq) => $qq->where('name','like','%'.$this->q.'%'))
-            )
-            ->orderByDesc('id');
-
+        $query = $this->baseRowsQuery();
         $rows = $this->view === 'table'
             ? $query->paginate(15)
             : $query->limit(200)->get();

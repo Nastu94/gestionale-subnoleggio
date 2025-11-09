@@ -58,9 +58,16 @@ class Vehicle extends Model implements SpatieHasMedia
     {
         $this
             ->addMediaCollection('vehicle_photos')
-            ->useDisk(config('filesystems.default', 'public')) // di default "public"
+            ->useDisk(config('filesystems.default', 'public'))
             ->acceptsMimeTypes(['image/jpeg','image/png','image/webp'])
-            ->withResponsiveImages(); // opzionale, utile sui cover
+            ->withResponsiveImages();
+
+        // ⬇️ NUOVA collection per foto legate a uno specifico danno del veicolo
+        $this
+            ->addMediaCollection('vehicle_damage_photos')
+            ->useDisk(config('filesystems.default', 'public'))
+            ->acceptsMimeTypes(['image/jpeg','image/png','image/webp'])
+            ->withResponsiveImages();
     }
 
     /**

@@ -32,6 +32,7 @@ class RentalDamage extends Model implements SpatieHasMedia
 
     public function rental()  { return $this->belongsTo(Rental::class); }
     public function creator() { return $this->belongsTo(User::class, 'created_by'); }
+    public function vehicleDamages() { return $this->hasMany(VehicleDamage::class, 'first_rental_damage_id'); }
 
     /** Foto specifiche del danno. */
     public function registerMediaCollections(): void
