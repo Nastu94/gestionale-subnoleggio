@@ -1,6 +1,7 @@
 {{-- resources/views/pages/rentals/partials/actions.blade.php --}}
 {{-- Azioni sul noleggio + Modale registrazione pagamento --}}
 <div
+    wire:ignore
     x-data="rentalActions({
         phase: @js($rental->status),
         flags: {
@@ -43,7 +44,7 @@
                       !bg-primary !text-primary-content !border-primary
                       hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30
                       disabled:opacity-50 disabled:cursor-not-allowed"
-                :disabled="loading || !canCheckout()">
+                :disabled="loading || !canCheckout">
             <span x-show="!loading">Checkout</span>
             <span x-show="loading" class="loading loading-spinner loading-sm"></span>
         </button>
@@ -56,7 +57,7 @@
                       !bg-info !text-info-content !border-info
                       hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-info/30
                       disabled:opacity-50 disabled:cursor-not-allowed"
-                :disabled="loading || !canInuse()">
+                :disabled="loading || !canInuse">
             <span x-show="!loading">Passa a In-use</span>
             <span x-show="loading" class="loading loading-spinner loading-sm"></span>
         </button>
@@ -69,7 +70,7 @@
                       !bg-accent !text-accent-content !border-accent
                       hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-accent/30
                       disabled:opacity-50 disabled:cursor-not-allowed"
-                :disabled="loading || !canCheckin()">
+                :disabled="loading || !canCheckin">
             <span x-show="!loading">Check-in</span>
             <span x-show="loading" class="loading loading-spinner loading-sm"></span>
         </button>
@@ -82,7 +83,7 @@
                       !bg-success !text-success-content !border-success
                       hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-success/30
                       disabled:opacity-50 disabled:cursor-not-allowed"
-                :disabled="loading || !canClose()">
+                :disabled="loading || !canClose">
             <span x-show="!loading">Chiudi</span>
             <span x-show="loading" class="loading loading-spinner loading-sm"></span>
         </button>
@@ -96,7 +97,7 @@
                           !bg-error !text-error-content !border-error
                           hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-error/30
                           disabled:opacity-50 disabled:cursor-not-allowed"
-                    :disabled="loading || !canCancel()">
+                    :disabled="loading || !canCancel">
                 <span x-show="!loading">Cancella</span>
                 <span x-show="loading" class="loading loading-spinner loading-sm"></span>
             </button>
@@ -109,7 +110,7 @@
                           !bg-warning !text-warning-content !border-warning
                           hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-warning/30
                           disabled:opacity-50 disabled:cursor-not-allowed"
-                    :disabled="loading || !canNoShow()">
+                    :disabled="loading || !canNoShow">
                 <span x-show="!loading">No-show</span>
                 <span x-show="loading" class="loading loading-spinner loading-sm"></span>
             </button>
@@ -230,16 +231,16 @@ document.addEventListener('alpine:init', () => {
     phaseLabel(k){ return this.phaseLabels[k] ?? k.replace(/_/g,' ') },
 
     // Abilitazioni
-    canCheckout(){ return ['draft','reserved'].includes(this.phase) && !!this.flags.hasBasePayment },
-    canInuse(){    return this.phase === 'checked_out' },
-    canCheckin(){  return ['checked_out','in_use'].includes(this.phase) },
-canClose(){
-  if (this.phase !== 'checked_in') return false;
-  const needOverage = this.overage.ready && Number(this.overage.amount) > 0;
-  return !needOverage || !!this.flags.hasOveragePayment;
-},
-    canCancel(){ return ['draft','reserved'].includes(this.phase) },
-    canNoShow(){ return this.phase === 'reserved' },
+    get canCheckout(){ return ['draft','reserved'].includes(this.phase) && !!this.flags.hasBasePayment },
+    get canInuse(){    return this.phase === 'checked_out' },
+    get canCheckin(){  return ['checked_out','in_use'].includes(this.phase) },
+    get canClose(){
+      if (this.phase !== 'checked_in') return false;
+      const needOverage = this.overage.ready && Number(this.overage.amount) > 0;
+      return !needOverage || !!this.flags.hasOveragePayment;
+    },
+    get canCancel(){ return ['draft','reserved'].includes(this.phase) },
+    get canNoShow(){ return this.phase === 'reserved' },
 
     async init(){
       if (this.overageUrl) await this.fetchOverage();
@@ -271,6 +272,7 @@ canClose(){
         });
 
         let data=null; try{ data=await res.clone().json(); }catch(_){}
+        console.log('[STATE]', { oldPhase: this.phase, newPhase: data?.status, flags: data?.flags });
 
         if (!res.ok || data?.ok===false) {
           const msg = (data && (data.message||data.error)) || 'Operazione non riuscita.';
@@ -292,37 +294,35 @@ canClose(){
         window.dispatchEvent(new CustomEvent('toast', {
           detail:{type:'success', message:`Stato aggiornato${data?.status?`: ${data.status}`:''}`}
         }));
-        try{ this.$wire?.$refresh(); }catch(_){}
-        try{ window.Livewire?.emit?.('refresh'); }catch(_){}
       } finally {
         this.loading = false;
       }
     },
 
-async fetchOverage(){
-  try {
-    const res  = await fetch(this.overageUrl, { headers:{ 'Accept':'application/json' } });
-    const data = await res.json();
+    async fetchOverage(){
+      try {
+        const res  = await fetch(this.overageUrl, { headers:{ 'Accept':'application/json' } });
+        const data = await res.json();
 
-    if (!data.ok || !data.has_data) {
-      this.overage = { ready:true, amount:0, cents:0 };
-      window.__distanceOverageDue = 0;
-    } else {
-      const amt = Number(data.amount || 0);
-      this.overage = { ready:true, amount: amt, cents: Number(data.cents || 0) };
-      window.__distanceOverageDue = amt;
-    }
+        if (!data.ok || !data.has_data) {
+          this.overage = { ready:true, amount:0, cents:0 };
+          window.__distanceOverageDue = 0;
+        } else {
+          const amt = Number(data.amount || 0);
+          this.overage = { ready:true, amount: amt, cents: Number(data.cents || 0) };
+          window.__distanceOverageDue = amt;
+        }
 
-    // Fonte backend per "già pagato"
-    if (typeof data.has_payment !== 'undefined') {
-      this.flags.hasOveragePayment = !!data.has_payment;
-      window.__hasDistanceOveragePayment = this.flags.hasOveragePayment;
-    }
-  } catch(_) {
-    this.overage = { ready:true, amount:0, cents:0 };
-    window.__distanceOverageDue = 0;
-  }
-},
+        // Fonte backend per "già pagato"
+        if (typeof data.has_payment !== 'undefined') {
+          this.flags.hasOveragePayment = !!data.has_payment;
+          window.__hasDistanceOveragePayment = this.flags.hasOveragePayment;
+        }
+      } catch(_) {
+        this.overage = { ready:true, amount:0, cents:0 };
+        window.__distanceOverageDue = 0;
+      }
+    },
 
     formatEuro(v){ return Number(v??0).toLocaleString('it-IT',{style:'currency',currency:'EUR'}) },
   }));

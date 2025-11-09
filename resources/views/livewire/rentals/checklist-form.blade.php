@@ -471,6 +471,7 @@
                     indexDamagePhotos:    {{ Js::from(route('damages.media.photos.index', 0)) }},
                 },
             })"
+            wire:ignore
             wire:key="media-block-{{ $checklistId ?? 'new' }}">
 
             <template x-if="!state.checklistId">
@@ -987,7 +988,14 @@ document.addEventListener('alpine:init', () => {
                 }
 
                 // Rimuovi localmente
-                this.state.photos[kind] = list.filter(x => Number(x.id) !== Number(mediaId));
+                const arr = this.state.photos[kind] || [];
+                const idx = arr.findIndex(x => Number(x.id) === Number(mediaId));
+                if (idx > -1) {
+                    arr.splice(idx, 1);
+                    this.state.photos = { ...this.state.photos, 
+                        [kind]: [...arr],
+                    };
+                }
                 this.toast('success', '{{ __("Foto eliminata.") }}');
             } catch (e) {
                 this.toast('error', e.message || 'Errore di rete');
