@@ -292,6 +292,14 @@ Route::middleware([
         ->middleware('permission:rentals.update');
 
     /*
+    | Aggiungi addebito extra "distance overage"
+    | Permesso: rentals.update
+    */
+    Route::get('/rentals/{rental}/distance-overage', [RentalController::class, 'distanceOverage'])
+    ->name('rentals.distance_overage')
+    ->middleware(['permission:rentals.update']);
+
+    /*
     | Checkout → checked_out
     | Permesso: rentals.checkout
     */

@@ -5,20 +5,17 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Relations\HasOne; 
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
 // Spatie Media Library
 use Spatie\MediaLibrary\HasMedia as SpatieHasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
 use Illuminate\Support\Str;
-use Spatie\Image\Enums\Fit; 
+use Spatie\Image\Enums\Fit;
 
-/**
- * Modello: Rental
- * - Sub-noleggio (Renter → Cliente)
- * - include pianificate ed effettive, stato, denormalizzazioni km/fuel.
- */
 class Rental extends Model implements SpatieHasMedia
 {
     use HasFactory, SoftDeletes;
@@ -29,7 +26,9 @@ class Rental extends Model implements SpatieHasMedia
         'planned_pickup_at','planned_return_at','actual_pickup_at','actual_return_at',
         'pickup_location_id','return_location_id','status',
         'mileage_out','mileage_in','fuel_out_percent','fuel_in_percent',
-        'notes','created_by', 'amount', 'admin_fee_percent', 'admin_fee_amount',
+        'notes','created_by',
+        // facoltativi/denormalizzati se li usi:
+        'amount','admin_fee_percent','admin_fee_amount',
     ];
 
     protected $casts = [
@@ -37,14 +36,15 @@ class Rental extends Model implements SpatieHasMedia
         'planned_return_at' => 'datetime',
         'actual_pickup_at'  => 'datetime',
         'actual_return_at'  => 'datetime',
-        'payment_recorded_at' => 'datetime',
         'mileage_out'       => 'integer',
         'mileage_in'        => 'integer',
         'fuel_out_percent'  => 'integer',
         'fuel_in_percent'   => 'integer',
     ];
 
-    // --- Relazioni ---
+    // -------------------------
+    // Relazioni base
+    // -------------------------
     public function organization()     { return $this->belongsTo(Organization::class); }
     public function vehicle()          { return $this->belongsTo(Vehicle::class); }
     public function assignment()       { return $this->belongsTo(VehicleAssignment::class); }
@@ -53,79 +53,140 @@ class Rental extends Model implements SpatieHasMedia
     public function returnLocation()   { return $this->belongsTo(Location::class, 'return_location_id'); }
     public function creator()          { return $this->belongsTo(User::class, 'created_by'); }
 
-    public function checklists()       { return $this->hasMany(RentalChecklist::class); }
-    public function photos()           { return $this->hasMany(RentalPhoto::class); }
-    public function damages()          { return $this->hasMany(RentalDamage::class); }
+    public function checklists(): HasMany
+    {
+        return $this->hasMany(RentalChecklist::class);
+    }
+
+    public function photos(): HasMany
+    {
+        return $this->hasMany(RentalPhoto::class);
+    }
+
+    public function damages(): HasMany
+    {
+        return $this->hasMany(RentalDamage::class);
+    }
 
     // Helper per accesso diretto alle due checklist canoniche
-    public function pickupChecklist()  { return $this->hasOne(RentalChecklist::class)->where('type','pickup'); }
-    public function returnChecklist()  { return $this->hasOne(RentalChecklist::class)->where('type','return'); }
+    public function pickupChecklist(): HasOne
+    {
+        return $this->hasOne(RentalChecklist::class)->where('type', 'pickup');
+    }
 
-    /**
-     * Righe economiche del noleggio.
-     */
+    public function returnChecklist(): HasOne
+    {
+        return $this->hasOne(RentalChecklist::class)->where('type', 'return');
+    }
+
+    // -------------------------
+    // Righe economiche (pagamenti eseguiti)
+    // -------------------------
     public function charges(): HasMany
     {
         return $this->hasMany(RentalCharge::class);
     }
 
-    /**
-     * Righe commissionabili (utility per query pulite).
-     */
     public function commissionableCharges(): HasMany
     {
         return $this->charges()->where('is_commissionable', true);
     }
 
-    /**
-     * Totale lordo delle righe (IVA inclusa) – somma amount di TUTTE le righe non soft-deleted.
-     * Accessor "virtuale" → $rental->charges_total
-     */
+    // -------------------------
+    // Accessor aggregati utili
+    // -------------------------
     public function getChargesTotalAttribute(): string
     {
         $sum = (float) $this->charges()->sum('amount');
         return number_format($sum, 2, '.', '');
     }
 
-    /**
-     * Totale commissionabile (Tᶜ) – somma amount delle sole righe commissionabili.
-     * Accessor "virtuale" → $rental->commissionable_total
-     */
     public function getCommissionableTotalAttribute(): string
     {
         $sum = (float) $this->commissionableCharges()->sum('amount');
         return number_format($sum, 2, '.', '');
     }
 
-    /**
-     * Totale righe SALDATE (per avere un colpo d’occhio su quanto incassato a riga).
-     * Accessor "virtuale" → $rental->charges_paid_total
-     */
     public function getChargesPaidTotalAttribute(): string
     {
         $sum = (float) $this->charges()->where('payment_recorded', true)->sum('amount');
         return number_format($sum, 2, '.', '');
     }
 
-    /**
-     * Totale righe NON saldate (utile per capire scoperto residuo lato riga).
-     * Accessor "virtuale" → $rental->charges_unpaid_total
-     */
-    public function getChargesUnpaidTotalAttribute(): string
+    // -------------------------
+    // Gate/flag per la UX (checkout/close)
+    // -------------------------
+
+    /** True se esiste almeno una riga pagata di tipo BASE */
+    public function getHasBasePaymentAttribute(): bool
     {
-        $sum = (float) $this->charges()->where('payment_recorded', false)->sum('amount');
-        return number_format($sum, 2, '.', '');
+        return $this->charges()
+            ->ofKind(RentalCharge::KIND_BASE)
+            ->paid()
+            ->exists();
     }
 
-    // Scope: per organizzazione Renter
-    public function scopeForOrganization($q, int $orgId) { return $q->where('organization_id', $orgId); }
+    public function getBasePaymentAtAttribute(): ?Carbon
+    {
+        $row = $this->charges()
+            ->ofKind(RentalCharge::KIND_BASE)
+            ->paid()
+            ->latest('payment_recorded_at')
+            ->first();
 
-    /**
-     * Registrazione delle collection Media Library per Rental.
-     * - contract: PDF generato dal gestionale (versionato).
-     * - signatures: contratti firmati (PDF/immagine).
-     * - documents: altri documenti connessi al noleggio.
-     */
+        return $row?->payment_recorded_at;
+    }
+
+    /** Km eccedenti (se non hai le checklist, cade su mileage_in/out) */
+    public function getDistanceOverageKmAttribute(): int
+    {
+        $pickupKm   = optional($this->pickupChecklist)->odometer ?? $this->mileage_out;
+        $returnKm   = optional($this->returnChecklist)->odometer ?? $this->mileage_in;
+        $includedKm = $this->included_km ?? 0;
+
+        if ($pickupKm === null || $returnKm === null) return 0;
+
+        $delta = (int) $returnKm - (int) $pickupKm - (int) $includedKm;
+        return $delta > 0 ? $delta : 0;
+    }
+
+    /** Serve un pagamento per overage? */
+    public function getNeedsDistanceOveragePaymentAttribute(): bool
+    {
+        return $this->distance_overage_km > 0;
+    }
+
+    /** True se esiste almeno una riga pagata di tipo DISTANCE_OVERAGE */
+    public function getHasDistanceOveragePaymentAttribute(): bool
+    {
+        return $this->charges()
+            ->where('kind', RentalCharge::KIND_DISTANCE_OVERAGE)
+            ->where('payment_recorded', true)
+            ->exists();
+    }
+
+    /** Comodo per la UI: posso fare checkout? */
+    public function getCanCheckoutAttribute(): bool
+    {
+        return in_array($this->status, ['draft','reserved'], true)
+            && $this->has_base_payment;
+    }
+
+    /** Comodo per la UI: posso chiudere? */
+    public function getCanCloseAttribute(): bool
+    {
+        if ($this->status !== 'checked_in') return false;
+
+        // se ci sono km extra, deve esserci la riga di overage
+        if ($this->needs_distance_overage_payment && !$this->has_distance_overage_payment) {
+            return false;
+        }
+        return true;
+    }
+
+    // -------------------------
+    // Media Library
+    // -------------------------
     public function registerMediaCollections(): void
     {
         $this->addMediaCollection('contract')->useDisk(config('filesystems.default'));
@@ -133,29 +194,21 @@ class Rental extends Model implements SpatieHasMedia
         $this->addMediaCollection('documents')->useDisk(config('filesystems.default'));
     }
 
-    /**
-     * Conversioni: utili per 'signatures' (immagini) e 'documents' quando sono immagini.
-     * I PDF non vengono convertiti.
-     */
     public function registerMediaConversions(Media $media = null): void
     {
-        // stop ai PDF/Non-immagini
         if ($media && !Str::startsWith($media->mime_type, 'image/')) {
             return;
         }
 
-        // Miniatura quadrata 256x256 (crop)
         $this->addMediaConversion('thumb')
             ->fit(Fit::Crop, 256, 256)
             ->nonQueued();
 
-        // Anteprima massima 1024px mantenendo proporzioni
         $this->addMediaConversion('preview')
             ->fit(Fit::Max, 1024, 1024)
             ->keepOriginalImageFormat()
             ->nonQueued();
 
-        // Versione HD fino a 1920px per firme/documenti immagine
         $this->addMediaConversion('hd')
             ->fit(Fit::Max, 1920, 1920)
             ->keepOriginalImageFormat()
@@ -163,35 +216,22 @@ class Rental extends Model implements SpatieHasMedia
             ->nonQueued();
     }
 
-    /**
-     * Relazione 1:1 con le coperture del noleggio.
-     * Restituisce null se non esiste ancora una riga su rental_coverages.
-     */
+    // -------------------------
+    // Coperture noleggio (1:1)
+    // -------------------------
     public function coverage(): HasOne
     {
         return $this->hasOne(RentalCoverage::class);
     }
 
-    /**
-     * Helper non invasivo: garantisce l’esistenza della riga coverage (first-or-create).
-     * Utile quando salvi dal form o vuoi accedere in scrittura senza if.
-     */
     public function ensureCoverage(): RentalCoverage
     {
         return $this->coverage()->firstOrCreate([
             'rental_id' => $this->getKey(),
         ], [
-            // default sicuri: rca true, altri false, franchigie null
-            'rca'               => true,
-            'kasko'             => false,
-            'furto_incendio'    => false,
-            'cristalli'         => false,
-            'assistenza'        => false,
-            'franchise_rca'     => null,
-            'franchise_kasko'   => null,
-            'franchise_furto_incendio' => null,
-            'franchise_cristalli' => null,
-            'notes'             => null,
+            'rca' => true, 'kasko' => false, 'furto_incendio' => false, 'cristalli' => false, 'assistenza' => false,
+            'franchise_rca' => null, 'franchise_kasko' => null, 'franchise_furto_incendio' => null, 'franchise_cristalli' => null,
+            'notes' => null,
         ]);
     }
 }

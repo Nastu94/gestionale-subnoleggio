@@ -199,9 +199,11 @@
                 @endif
 
                 <li class="flex items-center justify-between">
-                    <span class="flex items-center gap-2"><span>💳</span> Pagamento registrato</span>
-                    <span class="badge {{ $rental->payment_recorded ? 'badge-success' : 'badge-outline' }}">
-                        {{ $rental->payment_recorded ? optional($rental->payment_recorded_at)->format('d/m/Y') : 'No' }}
+                    <span class="flex items-center gap-2">
+                        <span>💳</span> Pagamento base registrato
+                    </span>
+                    <span class="badge {{ $rental->has_base_payment ? 'badge-success' : 'badge-outline' }}">
+                        {{ $rental->base_payment_at ? $rental->base_payment_at->format('d/m/Y') : 'No' }}
                     </span>
                 </li>
             </ul>

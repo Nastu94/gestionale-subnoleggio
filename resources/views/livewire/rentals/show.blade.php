@@ -1,3 +1,4 @@
+{{-- resources/views/livewire/rentals/show.blade.php --}}
 <div class="grid lg:grid-cols-12 gap-6">
     {{-- Colonna principale --}}
     <div class="lg:col-span-9 space-y-6">

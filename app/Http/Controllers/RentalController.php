@@ -3,7 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Rental;
+use App\Models\RentalCharge;
+use App\Domain\Pricing\VehiclePricingService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
 use PDF; // Assicurati di avere una libreria PDF installata, es. barryvdh/laravel-dompdf
@@ -229,34 +232,121 @@ class RentalController extends Controller
      */
     public function storePayment(Request $request, Rental $rental)
     {
-        $this->authorize('udpate', $rental);
+        $this->authorize('update', $rental);
 
-        $request->validate([
-            'payment_method'    => 'required|string|max:255',
-            'amount'            => 'required|numeric|min:1',
-            'payment_reference' => 'nullable|string|max:255',
-            'payment_notes'     => 'nullable|string|max:1000',
-        ],[
+        $validKinds = [
+            RentalCharge::KIND_BASE,
+            RentalCharge::KIND_DISTANCE_OVERAGE,
+            RentalCharge::KIND_DAMAGE,
+            RentalCharge::KIND_SURCHARGE,
+            RentalCharge::KIND_FINE,
+            RentalCharge::KIND_OTHER,
+        ];
+
+        $data = $request->validate([
+            'kind'              => [
+                'required', 
+                Rule::in($validKinds), 
+                Rule::unique('rental_charges', 'kind')
+                    ->where(fn ($q) => $q->where('rental_id', $rental->id)
+                                        ->whereNull('deleted_at')),
+            ],
+            'amount'            => ['required','numeric','min:0.01'],
+            'payment_method'    => ['required','string','max:255'],
+            'description'       => ['nullable','string','max:255'],
+            'is_commissionable' => ['sometimes','boolean'], // override opzionale
+        ],
+        [
+            'kind.unique' => 'Esiste già un addebito di questo tipo per il noleggio.',
+            'amount.min'  => 'L\'importo deve essere almeno :min.',
+            'amount.required' => 'L\'importo è obbligatorio.',
             'payment_method.required' => 'Il metodo di pagamento è obbligatorio.',
-            'amount.required'         => 'L\'importo del pagamento è obbligatorio.',
-            'amount.numeric'          => 'L\'importo del pagamento deve essere un numero valido.',
-            'amount.min'              => 'L\'importo del pagamento deve essere almeno :min.',
-            'payment_reference.max'   => 'Il riferimento di pagamento non può superare i :max caratteri.',
-            'payment_notes.max'       => 'Le note di pagamento non possono superare i :max caratteri.',
+            'payment_method.string' => 'Il metodo di pagamento deve essere una stringa.',
+            'payment_method.max' => 'Il metodo di pagamento non può superare i :max caratteri.',
         ]);
 
-        // Registra pagamento
-        DB::transaction(function () use ($request, $rental) {
-            $rental->status = 'reserved';
-            $rental->payment_recorded = true;
-            $rental->payment_recorded_at = now();
-            $rental->payment_method = $request->input('payment_method');
-            $rental->amount = $request->input('amount');
-            $rental->payment_reference = $request->input('payment_reference');
-            $rental->payment_notes = $request->input('payment_notes');
-            $rental->save();
+        DB::transaction(function () use ($rental, $data) {
+            // Se non specificato, commissionabile solo per base/overage
+            $isCommissionable = array_key_exists('is_commissionable', $data)
+                ? (bool)$data['is_commissionable']
+                : in_array($data['kind'], [
+                    RentalCharge::KIND_BASE,
+                    RentalCharge::KIND_DISTANCE_OVERAGE,
+                ], true);
+
+            RentalCharge::create([
+                'rental_id'           => $rental->id,
+                'kind'                => $data['kind'],
+                'description'         => $data['description'] ?? null,
+                'amount'              => $data['amount'],
+                'is_commissionable'   => $isCommissionable,
+                'payment_method'      => $data['payment_method'],
+                'payment_recorded'    => true,
+                'payment_recorded_at' => now(),
+                'created_by'          => auth()->id(),
+            ]);
+
+            // Se sto registrando da draft/reserved, resto/torno in reserved
+            if (in_array($rental->status, ['draft','reserved'], true)) {
+                $rental->forceFill(['status' => 'reserved'])->save();
+            }
         });
 
-        return response()->json(['ok' => true, 'message' => 'Pagamento registrato con successo.'], Response::HTTP_OK);
+        // aggiorna flag per la UI
+        $rental->refresh();
+
+        return response()->json([
+            'ok'      => true,
+            'message' => 'Pagamento registrato con successo.',
+            'flags'   => [
+                'has_base_payment'             => $rental->has_base_payment,
+                'needs_distance_overage'       => $rental->needs_distance_overage_payment,
+                'has_distance_overage_payment' => $rental->has_distance_overage_payment,
+            ],
+            'status'  => $rental->status,
+        ], Response::HTTP_OK);
     }
-}   
+
+    /**
+     * Calcola l'addebito per km eccedenti
+     */
+    public function distanceOverage(Rental $rental, VehiclePricingService $svc)
+    {
+        // servono km_in/km_out; se mancano, niente badge
+        if (is_null($rental->mileage_out) || is_null($rental->mileage_in)) {
+            return response()->json([
+                'ok' => true,
+                'has_data' => false,
+                'cents' => 0,
+                'amount' => '0.00',
+            ]);
+        }
+
+        // listino attivo per il renter corrente del veicolo
+        $pl = $svc->findActivePricelistForCurrentRenter($rental->vehicle);
+        if (!$pl) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Nessun listino attivo per il renter corrente.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // giorni reali se disponibili, altrimenti pianificati
+        $pickupAt  = $rental->actual_pickup_at  ?? $rental->planned_pickup_at  ?? now();
+        $returnAt  = $rental->actual_return_at  ?? $rental->planned_return_at  ?? now();
+
+        // km percorsi (min 0)
+        $km = max(0, (int)$rental->mileage_in - (int)$rental->mileage_out);
+
+        $quote  = $svc->quote($pl, $pickupAt, $returnAt, $km);
+        $cents  = (int)($quote['km_extra'] ?? 0);
+        $amount = number_format($cents / 100, 2, '.', '');
+
+        return response()->json([
+            'ok'      => true,
+            'has_data'=> true,
+            'cents'   => $cents,
+            'amount'  => $amount,
+        ]);
+    }
+}
