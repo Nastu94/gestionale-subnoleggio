@@ -57,7 +57,8 @@ class RentalPolicy
     }
     public function close(User $user, Rental $rental): bool
     {
-        return $user->can('rentals.close');
+        // Permesso base a chiudere
+        return $user->can('rentals.close') || $user->can('rentals.close.override');
     }
     public function cancel(User $user, Rental $rental): bool
     {

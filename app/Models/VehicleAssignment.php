@@ -33,5 +33,13 @@ class VehicleAssignment extends Model
     public function rentals()      { return $this->hasMany(Rental::class, 'assignment_id'); }
 
     // Scope: attivi al momento
-    public function scopeActive($q) { return $q->where('status', 'active'); }
+    public function scopeActive($q)
+    {
+        $now = now();
+        return $q->where('status', 'active')
+            ->where('start_at', '<=', $now)
+            ->where(function ($q) use ($now) {
+                $q->whereNull('end_at')->orWhere('end_at', '>', $now);
+            });
+    }
 }

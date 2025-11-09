@@ -115,7 +115,7 @@
                 </div>
                 <div>
                     <dt class="opacity-70">Franchigia Furto e Incendio</dt>
-                    <dd class="font-medium">{{ $rental->coverage->furto_incendio ? ($rental->coverage->franchise_furto_incendio ?? $rental->vehicle->insurance_furto_incendio_cents/100) . ' €' : '—' }}</dd>
+                    <dd class="font-medium">{{ $rental->coverage->furto_incendio ? ($rental->coverage->franchise_furto_incendio ?? $rental->vehicle->insurance_furto_cents/100) . ' €' : '—' }}</dd>
                 </div>
 
                 <div>

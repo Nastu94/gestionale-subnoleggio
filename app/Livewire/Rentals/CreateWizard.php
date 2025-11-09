@@ -137,7 +137,7 @@ class CreateWizard extends Component
 
         // --- VEICOLI ---
         $user   = Auth::user();
-        $orgId  = method_exists($user, 'organization') ? optional($user->organization)->id : ($user->organization_id ?? null);
+        $orgId  = $user->organization_id ?? null;
         $isAdmin = method_exists($user, 'hasRole') ? $user->hasRole('admin') : false;
 
         $vehiclesQ = Vehicle::query();
@@ -152,19 +152,16 @@ class CreateWizard extends Component
          *      adegua i whereHas/whereDoesntHave allo schema reale.
          */
         if ($isAdmin) {
-            // Veicoli senza assegnazione aperta
-            $vehiclesQ->whereDoesntHave('assignments', function ($q) {
-                $q->whereNull('end_at'); // o 'returned_at' a seconda del tuo schema
-            });
+            // Admin: solo veicoli NON assegnati a nessun renter (nessuna assegnazione attiva)
+            $vehiclesQ->whereDoesntHave('assignments', fn($q) => $q->active());
         } else {
+            // Renter: solo veicoli con assegnazione attiva alla sua org
             if ($orgId) {
                 $vehiclesQ->whereHas('assignments', function ($q) use ($orgId) {
-                    $q->whereNull('end_at')      // assegnazione attiva
-                      ->where('organization_id', $orgId);
+                    $q->active()->where('renter_org_id', $orgId);
                 });
             } else {
-                // fallback conservativo: nessun veicolo
-                $vehiclesQ->whereRaw('1=0');
+                $vehiclesQ->whereRaw('1=0'); // nessun veicolo se non c’è org
             }
         }
 

@@ -26,7 +26,7 @@ class Rental extends Model implements SpatieHasMedia
         'planned_pickup_at','planned_return_at','actual_pickup_at','actual_return_at',
         'pickup_location_id','return_location_id','status',
         'mileage_out','mileage_in','fuel_out_percent','fuel_in_percent',
-        'notes','created_by',
+        'notes','created_by', 'closed_at', 'closed_by',
         // facoltativi/denormalizzati se li usi:
         'amount','admin_fee_percent','admin_fee_amount',
     ];
@@ -36,6 +36,8 @@ class Rental extends Model implements SpatieHasMedia
         'planned_return_at' => 'datetime',
         'actual_pickup_at'  => 'datetime',
         'actual_return_at'  => 'datetime',
+        'closed_at'         => 'datetime',
+        'closed_by'         => 'integer',
         'mileage_out'       => 'integer',
         'mileage_in'        => 'integer',
         'fuel_out_percent'  => 'integer',

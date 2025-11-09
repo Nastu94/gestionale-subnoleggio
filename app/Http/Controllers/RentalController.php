@@ -4,7 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Rental;
 use App\Models\RentalCharge;
+use App\Models\RentalChecklist;
 use App\Domain\Pricing\VehiclePricingService;
+use App\Domain\Rentals\Guards\CloseRentalGuard;
+use App\Domain\Fees\AdminFeeResolver;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
@@ -148,39 +151,74 @@ class RentalController extends Controller
      *  - Contratto firmato presente su Rental e su Checklist pickup (se policy attiva)
      *  - (Opzionale) payment_recorded = true
      */
-    public function close(Request $request, Rental $rental)
+    public function close(Request $request, Rental $rental, AdminFeeResolver $fees, CloseRentalGuard $guard)
     {
+        // 1) Permesso
         $this->authorize('close', $rental);
 
-        if ($rental->status !== 'checked_in') {
-            return response()->json(['ok' => false, 'message' => 'Il noleggio deve essere in stato checked_in.'], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
+        // 2) Regole (qui niente config: imposta tu i default/override)
+        $rules = [
+            'require_signed'       => false, // cambia a true se vuoi
+            'require_base_payment' => true,  // nuova logica "charges"
+            'grace_minutes'        => 0,     // ricalcolo snapshot disattivato
+        ];
 
-        // Checklist return presente?
-        $returnChecklist = $rental->checklists()->where('type', 'return')->first();
-        if (!$returnChecklist) {
-            return response()->json(['ok' => false, 'message' => 'Checklist di return mancante.'], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
+        // 3) Verifica regole
+        $res = $guard->check($rental, $rules);
 
-        $requireSignedAtClose = (bool) config('rentals.require_signed_on_close', false);
-        if ($requireSignedAtClose) {
-            $pickup = $rental->checklists()->where('type', 'pickup')->first();
-            $signedOnRental    = $rental->getMedia('signatures')->isNotEmpty();
-            $signedOnChecklist = $pickup ? $pickup->getMedia('signatures')->isNotEmpty() : false;
-            if (!$signedOnRental || !$signedOnChecklist) {
-                return response()->json(['ok' => false, 'message' => 'Contratto firmato assente per la chiusura.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        // Consenti override SOLO se il codice è "snapshot_locked"
+        if (!$res['ok']) {
+            $canOverride = ($res['code'] === 'snapshot_locked') && auth()->user()->can('rentals.close.override');
+            if (!$canOverride) {
+                return response()->json([
+                    'ok' => false, 'code' => $res['code'], 'message' => $res['message'],
+                ], Response::HTTP_UNPROCESSABLE_ENTITY);
             }
         }
 
-        $requirePaymentRecorded = (bool) config('rentals.require_payment_recorded_on_close', false);
-        if ($requirePaymentRecorded && !$rental->payment_recorded) {
-            return response()->json(['ok' => false, 'message' => 'Pagamento non marcato come registrato.'], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
+        // 4) Chiusura + snapshot fee admin (solo se org = renter)
+        DB::transaction(function () use ($rental, $fees) {
+            $isFirstClose = is_null($rental->closed_at);
+            $closedAt     = $isFirstClose ? now() : $rental->closed_at;
 
-        $rental->status = 'closed';
-        $rental->save();
+            $rental->loadMissing('organization');
+            $isRenter = optional($rental->organization)->type === 'renter';
 
-        return response()->json(['ok' => true, 'status' => $rental->status], Response::HTTP_OK);
+            if ($isRenter) {
+                $calc = $fees->calculateForRental($rental, $rental->actual_return_at ?: $closedAt);
+
+                $rental->forceFill([
+                    'admin_fee_percent' => $calc['percent'], // es. float|null
+                    'admin_fee_amount'  => $calc['amount'],  // es. decimal(10,2)
+                    'status'            => 'closed',
+                    'closed_at'         => $closedAt,
+                    'closed_by'         => $isFirstClose ? optional(auth()->user())->id : $rental->closed_by,
+                ])->save();
+            } else {
+                $rental->forceFill([
+                    'status'    => 'closed',
+                    'closed_at' => $closedAt,
+                    'closed_by' => $isFirstClose ? optional(auth()->user())->id : $rental->closed_by,
+                ])->save();
+            }
+        });
+
+        $rental->refresh();
+
+        return response()->json([
+            'ok'     => true,
+            'status' => $rental->status,
+            'flags'  => [
+                'has_base_payment'             => $rental->has_base_payment,
+                'needs_distance_overage'       => $rental->needs_distance_overage_payment,
+                'has_distance_overage_payment' => $rental->has_distance_overage_payment,
+            ],
+            'admin_fee' => [
+                'percent' => $rental->admin_fee_percent,
+                'amount'  => $rental->admin_fee_amount,
+            ],
+            'closed_at' => optional($rental->closed_at)->toIso8601String(),
+        ], Response::HTTP_OK);
     }
 
     /**
@@ -222,7 +260,11 @@ class RentalController extends Controller
      */
     public function createChecklist(Request $request, Rental $rental)
     {
-        $this->authorize('checklist.update', $rental);
+        // 1) Il renter deve poter vedere quel Rental
+        $this->authorize('view', $rental);
+
+        // 2) Deve avere il permesso di creare una checklist
+        $this->authorize('create', RentalChecklist::class);
 
         return view('pages.rentals.checklist.create', compact('rental'));
     }

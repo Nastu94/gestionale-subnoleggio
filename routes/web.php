@@ -276,11 +276,11 @@ Route::middleware([
 // ------------------------- Checklist & Danni -------------------------
     /**
      * Vista create checklist (pickup/return)
-     * Permesso: rentals.checklist.update
+     * Permesso: rental_checklists.update
      */
     Route::get('/rentals/{rental}/checklist/create', [RentalController::class, 'createChecklist'])
         ->name('rental-checklists.create')
-        ->middleware('permission:rentals.checklist.update');
+        ->middleware('permission:rental_checklists.create');
 
 // ------------------------- Rentals: azioni stato -------------------------
     /*
@@ -363,11 +363,11 @@ Route::middleware([
         
     /*
     | Checklist firmata (immagine/PDF) → RentalChecklist->signedPdf
-    | Permesso: media.attach.checklist_signed + rentals.checklist.update
+    | Permesso: media.attach.checklist_signed + rental_checklists.update
     */
     Route::post('/rental-checklists/{checklist}/media/signed', [RentalMediaController::class, 'storeChecklistSigned']) // <-- nuovo endpoint
         ->name('rental-media.checklist-signed.store')
-        ->middleware(['permission:media.attach.checklist_signed','permission:rentals.checklist.update']);
+        ->middleware(['permission:media.attach.checklist_signed','permission:rental_checklists.update']);
 
     /*
     | Foto checklist (pickup/return) → RentalChecklist->photos
