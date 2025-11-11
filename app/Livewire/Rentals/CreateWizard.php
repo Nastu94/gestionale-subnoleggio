@@ -140,7 +140,9 @@ class CreateWizard extends Component
         $orgId  = $user->organization_id ?? null;
         $isAdmin = method_exists($user, 'hasRole') ? $user->hasRole('admin') : false;
 
-        $vehiclesQ = Vehicle::query();
+        $vehiclesQ = Vehicle::query()
+            ->where('is_active', true)
+            ->whereNull('deleted_at');
 
         /**
          * Filtro assegnazioni:

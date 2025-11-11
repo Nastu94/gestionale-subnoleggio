@@ -940,85 +940,83 @@
         </template>
     </div>
 
-{{-- === Sidebar: Foto del danno === --}}
-@if($isDamagePhotosSidebarOpen)
-    <div class="fixed inset-0 z-50">
-        {{-- Backdrop: chiude sidebar al click --}}
-        <div class="fixed inset-0 bg-black/40" wire:click="closeDamagePhotosSidebar"></div>
+    {{-- === Sidebar: Foto del danno === --}}
+    @if($isDamagePhotosSidebarOpen)
+        <div class="fixed inset-0 z-50">
+            {{-- Backdrop: chiude sidebar al click --}}
+            <div class="fixed inset-0 bg-black/40" wire:click="closeDamagePhotosSidebar"></div>
 
-        {{-- Pannello laterale destro --}}
-        <aside class="fixed right-0 top-0 h-full w-full max-w-xl bg-white dark:bg-gray-900 shadow-xl
-                      border-l border-gray-200 dark:border-gray-700 p-4 overflow-y-auto">
-            <div class="flex items-center justify-between gap-3">
-                <div class="min-w-0">
-                    <h3 class="font-semibold text-base truncate">
-                        Foto danno #{{ $damageIdViewing }}
-                    </h3>
-                    @php
-                        $srcMap = [
-                            'rental'     => 'Da noleggio (checklist)',
-                            'manual'     => 'Inserito manualmente',
-                            'inspection' => 'Da ispezione',
-                            'service'    => 'Da officina',
-                        ];
-                        $srcLabel = $srcMap[$viewingDamageSource ?? ''] ?? '—';
-                    @endphp
-                    <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        Origine: <span class="font-medium">{{ $srcLabel }}</span> •
-                        Foto: <span class="font-medium">{{ is_countable($damagePhotos) ? count($damagePhotos) : 0 }}</span>
+            {{-- Pannello laterale destro --}}
+            <aside class="fixed right-0 top-0 h-full w-full max-w-xl bg-white dark:bg-gray-900 shadow-xl
+                        border-l border-gray-200 dark:border-gray-700 p-4 overflow-y-auto">
+                <div class="flex items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <h3 class="font-semibold text-base truncate">
+                            Foto danno #{{ $damageIdViewing }}
+                        </h3>
+                        @php
+                            $srcMap = [
+                                'rental'     => 'Da noleggio (checklist)',
+                                'manual'     => 'Inserito manualmente',
+                                'inspection' => 'Da ispezione',
+                                'service'    => 'Da officina',
+                            ];
+                            $srcLabel = $srcMap[$viewingDamageSource ?? ''] ?? '—';
+                        @endphp
+                        <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Origine: <span class="font-medium">{{ $srcLabel }}</span> •
+                            Foto: <span class="font-medium">{{ is_countable($damagePhotos) ? count($damagePhotos) : 0 }}</span>
+                        </div>
                     </div>
+
+                    <button type="button"
+                            class="rounded border px-3 py-1 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+                            wire:click="closeDamagePhotosSidebar">
+                        Chiudi
+                    </button>
                 </div>
 
-                <button type="button"
-                        class="rounded border px-3 py-1 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
-                        wire:click="closeDamagePhotosSidebar">
-                    Chiudi
-                </button>
-            </div>
+                @if(empty($damagePhotos))
+                    <div class="mt-6 text-sm text-gray-500">
+                        Nessuna foto collegata a questo danno.
+                    </div>
+                @else
+                    <div class="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        @foreach($damagePhotos as $m)
+                            <a wire:key="damage-photo-{{ $m['id'] ?? $loop->index }}"
+                            href="{{ $m['url'] }}"
+                            target="_blank"
+                            class="group block rounded border overflow-hidden hover:shadow transition">
+                                <div class="aspect-[4/3] bg-gray-100 dark:bg-gray-800 overflow-hidden">
+                                    <img src="{{ $m['thumb'] ?? $m['url'] }}"
+                                        alt="{{ $m['file_name'] ?? 'foto-danno' }}"
+                                        class="w-full h-full object-cover"
+                                        loading="lazy" referrerpolicy="no-referrer">
+                                </div>
 
-            @if(empty($damagePhotos))
-                <div class="mt-6 text-sm text-gray-500">
-                    Nessuna foto collegata a questo danno.
-                </div>
-            @else
-                <div class="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    @foreach($damagePhotos as $m)
-                        <a wire:key="damage-photo-{{ $m['id'] ?? $loop->index }}"
-                           href="{{ $m['url'] }}"
-                           target="_blank"
-                           class="group block rounded border overflow-hidden hover:shadow transition">
-                            <div class="aspect-[4/3] bg-gray-100 dark:bg-gray-800 overflow-hidden">
-                                <img src="{{ $m['thumb'] ?? $m['url'] }}"
-                                     alt="{{ $m['file_name'] ?? 'foto-danno' }}"
-                                     class="w-full h-full object-cover"
-                                     loading="lazy" referrerpolicy="no-referrer">
-                            </div>
+                                <div class="px-2 py-1 text-xs flex items-center justify-between gap-2">
+                                    <span class="truncate" title="{{ $m['file_name'] ?? '' }}">
+                                        {{ \Illuminate\Support\Str::limit($m['file_name'] ?? '', 28) }}
+                                    </span>
+                                    @if(!empty($m['created_at']))
+                                        <span class="text-gray-500 whitespace-nowrap">{{ $m['created_at'] }}</span>
+                                    @endif
+                                </div>
 
-                            <div class="px-2 py-1 text-xs flex items-center justify-between gap-2">
-                                <span class="truncate" title="{{ $m['file_name'] ?? '' }}">
-                                    {{ \Illuminate\Support\Str::limit($m['file_name'] ?? '', 28) }}
-                                </span>
-                                @if(!empty($m['created_at']))
-                                    <span class="text-gray-500 whitespace-nowrap">{{ $m['created_at'] }}</span>
-                                @endif
-                            </div>
-
-                            @php
-                                $badge = ($m['origin'] ?? null) === 'rental_damage' ? 'Checklist' : 'Danno veicolo';
-                            @endphp
-                            <div class="px-2 pb-2">
-                                <span class="inline-flex items-center rounded bg-gray-100 dark:bg-gray-800
-                                               text-[10px] uppercase tracking-wide text-gray-600 dark:text-gray-400 px-1.5 py-0.5">
-                                    {{ $badge }}
-                                </span>
-                            </div>
-                        </a>
-                    @endforeach
-                </div>
-            @endif
-        </aside>
-    </div>
-@endif
-
-
+                                @php
+                                    $badge = ($m['origin'] ?? null) === 'rental_damage' ? 'Checklist' : 'Danno veicolo';
+                                @endphp
+                                <div class="px-2 pb-2">
+                                    <span class="inline-flex items-center rounded bg-gray-100 dark:bg-gray-800
+                                                text-[10px] uppercase tracking-wide text-gray-600 dark:text-gray-400 px-1.5 py-0.5">
+                                        {{ $badge }}
+                                    </span>
+                                </div>
+                            </a>
+                        @endforeach
+                    </div>
+                @endif
+            </aside>
+        </div>
+    @endif
 </div>

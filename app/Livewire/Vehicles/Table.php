@@ -423,6 +423,9 @@ class Table extends Component
             'currency'         => 'EUR',
         ]);
 
+        $vehicle->is_active = 0;
+        $vehicle->save();
+
         // pulizia input modal
         $this->maintenanceModalVehicleId = null;
         $this->maintenanceWorkshopInput = '';
@@ -468,6 +471,9 @@ class Table extends Component
             $detail->notes = trim($detail->notes ? ($detail->notes." — ".$notes) : $notes);
         }
         $detail->save();
+
+        $vehicle->is_active = 1;
+        $vehicle->save();
 
         // pulizia input modal
         $this->maintenanceModalVehicleId = null;

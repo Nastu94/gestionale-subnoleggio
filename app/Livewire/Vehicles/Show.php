@@ -417,6 +417,9 @@ class Show extends Component
             'notes'      => $this->maintNotes ? trim($this->maintNotes) : null,
         ]);
 
+        $v->is_active = false;
+        $v->save();
+
         $this->maintWorkshop = null;
         $this->maintNotes = null;
 
@@ -470,6 +473,9 @@ class Show extends Component
                 'currency'   => 'EUR',
             ]
         );
+
+        $v->is_active = true;
+        $v->save();
 
         $this->maintCloseCostEur = null;
         $this->maintNotes = null;
