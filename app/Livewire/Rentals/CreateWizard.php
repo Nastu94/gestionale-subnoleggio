@@ -94,10 +94,58 @@ class CreateWizard extends Component
         'furto_incendio' => null,
     ];
 
+    /**
+     * Inizializza il wizard di creazione noleggio.
+     *
+     * - Carica le opzioni (veicoli, sedi) in base all'utente corrente.
+     * - Se arriviamo dal planner (querystring con vehicle_id / planned_pickup_date/time),
+     *   precompila i campi di step 1:
+     *      - rentalData['vehicle_id']
+     *      - rentalData['planned_pickup_at'] (data + ora)
+     */
     public function mount(): void
     {
+        // 1) Prelettura dei parametri dalla query (clic da planner)
+        $qVehicleId      = request()->integer('vehicle_id');            // es: ?vehicle_id=12
+        $qPickupDate     = request()->input('planned_pickup_date');     // es: ?planned_pickup_date=2025-11-17
+        $qPickupTime     = request()->input('planned_pickup_time');     // es: ?planned_pickup_time=19:00 (solo vista giorno)
+
+        // 2) Carica subito le opzioni (veicoli / sedi) in base all'utente
         $this->loadOptions();
-        $this->refreshCurrentContract();               // se $rentalId è già presente
+
+        // 3) Se il planner ci ha passato un veicolo, lo impostiamo nel form
+        if ($qVehicleId) {
+            $this->rentalData['vehicle_id'] = $qVehicleId;
+
+            // Riutilizziamo la tua logica esistente:
+            // - sede di ritiro di default
+            // - franchigie base dal veicolo
+            $this->updatedRentalDataVehicleId($qVehicleId);
+        }
+
+        // 4) Se il planner ci ha passato un giorno (e opzionalmente un orario) di ritiro,
+        //    precompiliamo il datetime del pickup
+        if (!empty($qPickupDate)) {
+            try {
+                if (!empty($qPickupTime)) {
+                    // Caso vista GIORNO: abbiamo anche l'ora (es. "2025-11-17 19:00")
+                    $pickup = Carbon::parse($qPickupDate . ' ' . $qPickupTime);
+                } else {
+                    // Caso vista SETTIMANA (o fallback): solo data, usiamo un orario di default
+                    $pickup = Carbon::parse($qPickupDate)->setTime(9, 0);
+                }
+
+                // Formato compatibile con <input type="datetime-local">: Y-m-dTH:i
+                $this->rentalData['planned_pickup_at'] = $pickup->format('Y-m-d\TH:i');
+            } catch (\Throwable $e) {
+                // Se la data/ora è malformata non blocchiamo il wizard
+                $this->rentalData['planned_pickup_at'] = null;
+            }
+        }
+
+        // 5) Se esiste già una bozza ($rentalId impostato dall'esterno),
+        //    rileggiamo l'eventuale contratto corrente
+        $this->refreshCurrentContract();
     }
 
     /**
