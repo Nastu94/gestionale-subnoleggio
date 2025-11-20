@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Vehicle;
+use App\Models\VehicleDamage;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Illuminate\Http\UploadedFile;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
@@ -28,6 +30,42 @@ class VehiclePhotoController extends Controller
             ->toMediaCollection('vehicle_photos');
 
         return back()->with('status', 'Foto caricata');
+    }
+
+    /**
+     * Upload foto su Danno manuale/inspection/service.
+     * Salva su Vehicle -> collection: vehicle_damage_photos
+     * con custom_property damage_id = $damage->id
+     */
+    public function storeForManualDamage(Request $request, Vehicle $vehicle, VehicleDamage $damage)
+    {
+
+        // Coerenza: il danno deve appartenere al veicolo e NON essere da rental
+        if ((int)$damage->vehicle_id !== (int)$vehicle->id || $damage->source === 'rental') {
+            return response()->json(['ok'=>false,'message'=>'Danno non valido per upload manuale.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $request->validate([
+            'file' => ['required','file','mimetypes:image/jpeg,image/png,image/webp','max:20480'],
+        ]);
+
+        $media = $vehicle
+            ->addMediaFromRequest('file')
+            ->withCustomProperties(['damage_id' => $damage->id])
+            ->usingName("vehicle-damage-{$damage->id}")
+            ->toMediaCollection('vehicle_damage_photos');
+
+        return response()->json([
+            'ok'         => true,
+            'media_id'   => $media->id,
+            'uuid'       => $media->uuid,
+            'url'        => $media->getUrl(),                              // originale/preview
+            'preview_url'=> $media->hasGeneratedConversion('vd_preview') ? $media->getUrl('vd_preview') : $media->getUrl(),
+            'thumb_url'  => $media->hasGeneratedConversion('vd_thumb')   ? $media->getUrl('vd_thumb')   : $media->getUrl(),
+            'name'       => $media->file_name,
+            'size'       => $media->size,
+            'origin'     => 'vehicle_damage',
+        ], Response::HTTP_CREATED);
     }
 
     /**

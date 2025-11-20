@@ -976,6 +976,55 @@
                     </button>
                 </div>
 
+                {{-- Upload foto (solo danni NON da noleggio) --}}
+                @if($viewingDamageSource !== 'rental')
+                    @php
+                        $vehicleDamageUploadUrl = route('vehicles.damages.media.store', [
+                            'vehicle' => $v->id,
+                            'damage'  => $damageIdViewing,
+                        ]);
+                    @endphp
+
+                    <div class="mt-4 rounded border border-gray-200 dark:border-gray-700 p-3"
+                        x-data="damageUpload({
+                            url: '{{ $vehicleDamageUploadUrl }}',
+                            csrf: '{{ csrf_token() }}',
+                            damageId: {{ (int)$damageIdViewing }},
+                        })">
+
+                        <div class="flex items-center justify-between gap-3">
+                            <div>
+                                <div class="text-sm font-medium">Aggiungi foto</div>
+                                <div class="text-xs text-gray-500">JPEG/PNG/WebP, max 20&nbsp;MB</div>
+                            </div>
+
+                            <label class="inline-flex cursor-pointer items-center rounded bg-indigo-600 px-3 py-1.5 text-white text-sm hover:bg-indigo-700">
+                                <input type="file"
+                                    class="hidden"
+                                    x-ref="file"
+                                    accept="image/jpeg,image/png,image/webp"
+                                    @change="uploadFile">
+                                Carica
+                            </label>
+                        </div>
+
+                        {{-- Barra progresso --}}
+                        <div class="mt-3" x-show="progress > 0">
+                            <div class="h-2 w-full overflow-hidden rounded bg-gray-200 dark:bg-gray-800">
+                                <div class="h-2 bg-indigo-600" :style="`width:${progress}%;`"></div>
+                            </div>
+                            <div class="mt-1 text-xs text-gray-500" x-text="progress + '%'"></div>
+                        </div>
+
+                        {{-- Errori --}}
+                        <p class="mt-2 text-xs text-rose-600" x-show="error" x-text="error"></p>
+                    </div>
+                @else
+                    <div class="mt-4 rounded border border-gray-200 dark:border-gray-700 p-3 text-xs text-gray-600">
+                        Le foto dei danni da noleggio si caricano dalla checklist del noleggio.
+                    </div>
+                @endif
+
                 @if(empty($damagePhotos))
                     <div class="mt-6 text-sm text-gray-500">
                         Nessuna foto collegata a questo danno.
@@ -1020,3 +1069,100 @@
         </div>
     @endif
 </div>
+@once
+@push('scripts')
+<script>
+    // Factory Alpine globale per l'uploader dei danni manuali
+    window.damageUpload = function ({ url, csrf, damageId }) {
+        return {
+            file: null,
+            progress: 0,
+            busy: false,
+            error: null,
+            success: null,
+            damageId: damageId || null,
+
+            setFile(e) {
+                this.error = null;
+                const f = e?.target?.files?.[0] || null;
+                this.file = f;
+            },
+
+            // ALIAS: scatta al change e avvia subito l’upload
+            uploadFile(event) {
+                this.setFile(event);
+                if (this.file) this.send();
+            },
+            upload() { this.send(); }, // nel caso in futuro avessi un bottone separato
+
+            send() {
+                this.error = this.success = null;
+                if (!this.file) { this.error = 'Seleziona un file.'; return; }
+
+                const okTypes = ['image/jpeg','image/png','image/webp'];
+                if (!okTypes.includes(this.file.type)) { this.error = 'Formato non supportato.'; return; }
+                if (this.file.size > 20 * 1024 * 1024) { this.error = 'File troppo grande (max 20MB).'; return; }
+
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', url, true);
+                xhr.responseType = 'json'; // evita “errore di parsing risposta”
+                xhr.setRequestHeader('Accept', 'application/json');
+                xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+                const token = csrf || document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+                if (token) xhr.setRequestHeader('X-CSRF-TOKEN', token);
+
+                this.busy = true; this.progress = 1;
+
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                    this.progress = Math.min(99, Math.round((e.loaded / e.total) * 100));
+                    }
+                };
+
+                xhr.onreadystatechange = () => {
+                    if (xhr.readyState !== 4) return;
+                    this.progress = 100;
+
+                    const data = xhr.response ?? (() => {
+                        try { return JSON.parse(xhr.responseText || '{}'); } catch { return {}; }
+                    })();
+
+                    if (xhr.status >= 200 && xhr.status < 300 && data && data.ok) {
+                        this.success = 'Foto caricata.';
+
+                        // Aggiorna immediatamente la griglia Livewire senza refresh
+                        if (typeof this.$wire !== 'undefined' && this.damageId) {
+                            this.$wire.appendDamagePhotoFromAjax(this.damageId, {
+                                media_id:   data.media_id,
+                                url:        data.url,
+                                preview_url:data.preview_url || data.url,
+                                thumb_url:  data.thumb_url   || data.url,
+                                name:       data.name,
+                                origin:     data.origin || 'vehicle_damage',
+                            });
+                        }
+
+                        // Toast
+                        window.dispatchEvent(new CustomEvent('toast', { detail: { type: 'success', message: 'Foto caricata.' }}));
+                        this.file = null;
+                    } else {
+                        const msg = (data && data.message) ? data.message : `Errore HTTP ${xhr.status}`;
+                        this.error = msg;
+                        window.dispatchEvent(new CustomEvent('toast', { detail: { type: 'error', message: msg }}));
+                    }
+
+                    this.busy = false;
+                    setTimeout(() => { this.success = null; }, 2500);
+                };
+
+                const form = new FormData();
+                form.append('file', this.file);
+                xhr.send(form);
+            },
+        }
+    };
+</script>
+@endpush
+@endonce
+

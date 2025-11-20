@@ -151,6 +151,11 @@ Route::middleware([
         ->name('vehicles.photos.destroy')
         ->middleware('permission:vehicles.update|vehicles.create');
 
+    //Aggiungi foto danno veicolo
+    Route::post('/vehicles/{vehicle}/damages/{damage}/media', [VehiclePhotoController::class, 'storeForManualDamage'])
+        ->name('vehicles.damages.media.store')
+        ->middleware('permission:vehicles.update|vehicles.create');
+
 // ------------------------- Sedi -------------------------
     /*
     | Elenco sedi

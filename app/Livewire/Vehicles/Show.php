@@ -878,6 +878,32 @@ class Show extends Component
         ];
     }
 
+    /** Appende immediatamente una foto alla sidebar (post-AJAX) */
+    public function appendDamagePhotoFromAjax(int $damageId, array $p): void
+    {
+        // Mostriamo la foto solo se la sidebar sta mostrando proprio quel danno
+        if ($this->damageIdViewing !== $damageId) {
+            return;
+        }
+
+        // Normalizza il payload (usa le conversioni se ci sono, altrimenti l’originale)
+        $item = [
+            'id'             => $p['media_id'] ?? null,
+            'thumb'          => $p['thumb_url']   ?? $p['preview_url'] ?? $p['url'] ?? null,
+            'url'            => $p['preview_url'] ?? $p['url'] ?? null,
+            'file_name'      => $p['name']        ?? ('media-'.($p['media_id'] ?? '')),
+            'origin'         => $p['origin']      ?? 'vehicle_damage',
+            'created_at'     => now()->format('d/m/Y H:i'),
+            'created_at_iso' => now()->toISOString(),
+        ];
+
+        // Prepend, rimuovi eventuali duplicati per id, e riallinea gli indici
+        $this->damagePhotos = collect([$item, ...$this->damagePhotos])
+            ->unique(fn ($x) => $x['id'] ?? spl_object_id((object)$x))
+            ->values()
+            ->all();
+    }
+
     /* =============================== Render =============================== */
 
     public function render()
