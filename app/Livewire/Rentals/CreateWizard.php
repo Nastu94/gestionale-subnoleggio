@@ -412,7 +412,9 @@ class CreateWizard extends Component
             // Non blocchiamo la creazione bozza: amount resta quello precedente (o 0 di default)
         }
 
-        $rental->status = 'draft';
+        if($rental->status === 'draft' || $rental->status === null) {
+            $rental->status = 'draft';
+        }
         $rental->save();
         $this->rentalId = $rental->id;
         
@@ -451,12 +453,23 @@ class CreateWizard extends Component
         }
 
         if ($this->step === 2) {
-            // se ha selezionato o creato un cliente, controlla overlap sul cliente
-            if ($this->customer_id) {
-                $this->assertCustomerNoOverlap();
+
+            // ✅ Vincolo di flusso: non puoi arrivare allo step 3 senza aver associato un cliente
+            if (!$this->customer_id) {
+                $this->dispatch('toast', type: 'error', message: 'Seleziona o crea un cliente prima di procedere.');
+
+                // Livewire: blocca l'avanzamento e mostra errore sul campo logico "customer_id"
+                throw ValidationException::withMessages([
+                    'customer_id' => 'Devi selezionare o creare un cliente per procedere allo step 3.',
+                ]);
             }
+
+            // se ha selezionato o creato un cliente, controlla overlap sul cliente
+            $this->assertCustomerNoOverlap();
+
             // ✅ BLOCCO patente: deve coprire tutto il periodo fino alla riconsegna
             $this->assertDriverLicenseValidThroughReturn();
+
             // salva comunque per avere stato coerente
             $this->saveDraft();
         }
@@ -539,6 +552,15 @@ class CreateWizard extends Component
                 $this->franchise ?? null,
                 (int)($this->expectedKm ?? 0)
             );
+
+            /**
+             * ✅ Dopo generazione contratto: la bozza diventa "reserved"
+             * Non forziamo altri stati: se non è draft, non tocchiamo nulla.
+             */
+            if ($rental->status === 'draft') {
+                $rental->status = 'reserved';
+                $rental->save();
+            }
 
             // Ricarica stato contratto per mostrare "Apri" e disabilitare "Genera"
             $this->refreshCurrentContract();

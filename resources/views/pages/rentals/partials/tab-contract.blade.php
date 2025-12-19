@@ -3,6 +3,7 @@
 @php
     $hasGenerated = method_exists($rental,'getMedia') && $rental->getMedia('contract')->isNotEmpty();
     $hasSigned    = method_exists($rental,'getMedia') && $rental->getMedia('signatures')->isNotEmpty();
+    $hasCustomer  = !empty($rental->customer_id);
 @endphp
 
 <div class="card shadow">
@@ -19,19 +20,29 @@
         {{-- CTA: mostra solo se NON c'è un contratto generato --}}
         @if(!$hasGenerated)
             <div class="flex justify-end">
-                <button
-                    class="btn btn-primary shadow-none
-                        !bg-primary !text-primary-content !border-primary
-                        hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30
-                        disabled:opacity-50 disabled:cursor-not-allowed"
-                    wire:click="generateContract"
-                    wire:loading.attr="disabled"
-                    wire:target="generateContract"
-                    title="Genera una nuova versione del contratto (PDF)"
-                >
-                    <span wire:loading.remove wire:target="generateContract">Genera contratto (PDF)</span>
-                    <span wire:loading wire:target="generateContract" class="loading loading-spinner loading-sm"></span>
-                </button>
+                @if($hasCustomer)
+                    {{-- ✅ Mostra il pulsante solo con cliente presente --}}
+                    <button
+                        class="btn btn-primary shadow-none
+                            !bg-primary !text-primary-content !border-primary
+                            hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30
+                            disabled:opacity-50 disabled:cursor-not-allowed"
+                        wire:click="generateContract"
+                        wire:loading.attr="disabled"
+                        wire:target="generateContract"
+                        title="Genera una nuova versione del contratto (PDF)"
+                    >
+                        <span wire:loading.remove wire:target="generateContract">Genera contratto (PDF)</span>
+                        <span wire:loading wire:target="generateContract" class="loading loading-spinner loading-sm"></span>
+                    </button>
+                @else
+                    {{-- 🚫 Nessun cliente: niente pulsante (evitiamo contratti “orfani”) --}}
+                    <div class="alert alert-warning shadow-sm">
+                        <span class="text-sm">
+                            Associa prima un cliente al noleggio per poter generare il contratto.
+                        </span>
+                    </div>
+                @endif
             </div>
         @endif
 

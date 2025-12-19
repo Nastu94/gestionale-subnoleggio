@@ -16,9 +16,6 @@ class CustomerPolicy
 
     public function view(User $user, Customer $customer): bool
     {
-        if ($user->organization->isRenter()) {
-            return $customer->organization_id === $user->organization_id && $user->can('customers.view');
-        }
         return $user->can('customers.view');
     }
 

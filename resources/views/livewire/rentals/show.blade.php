@@ -17,6 +17,20 @@
                 'cancelled'   => 'badge-error',
             ][$rental->status] ?? 'badge-ghost';
 
+            $statusLabel = [
+                'draft'       => 'Bozza',
+                'reserved'    => 'Prenotato',
+                'in_use'      => 'In uso',
+                'checked_in'  => 'Rientrato',
+                'closed'      => 'Chiuso',
+                'cancelled'   => 'Annullato',
+
+                // ♻️ compat/legacy
+                'canceled'    => 'Annullato',
+                'no_show'     => 'Annullato',
+                'checked_out' => 'In uso',
+            ][$rental->status] ?? str_replace('_',' ', $rental->status);
+
             /**
             * Contatori leggeri per micro-indicatori nelle tab.
             * Usiamo solo dati già presenti su $rental e relative relazioni.
@@ -61,7 +75,7 @@
                 <div>
                     <h1 class="text-xl md:text-2xl font-semibold flex items-center gap-2">
                         Noleggio {{ $rental->reference ?? ('#'.$rental->id) }}
-                        <span class="badge {{ $statusBadgeClass }}">{{ str_replace('_',' ', $rental->status) }}</span>
+                        <span class="badge {{ $statusBadgeClass }}">{{ $statusLabel }}</span>
                     </h1>
                     <p class="opacity-70 text-xs md:text-sm mt-1 flex flex-wrap gap-x-3 gap-y-1">
                         {{-- Date pianificate --}}

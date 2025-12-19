@@ -229,7 +229,7 @@ document.addEventListener('alpine:init', () => {
     phaseLabel(k){ return this.phaseLabels[k] ?? k.replace(/_/g,' ') },
 
     // Abilitazioni bottoni
-    get canInuse(){    return ['draft', 'checked_out'].includes(this.phase) },
+    get canInuse(){    return ['draft', 'checked_out', 'reserved'].includes(this.phase) },
     get canCheckin(){  return ['checked_out','in_use'].includes(this.phase) },
     get canClose(){
       if (this.phase !== 'checked_in') return false;

@@ -72,11 +72,6 @@ class Table extends Component
         $like = $term ? "%{$term}%" : null;
 
         $query = Customer::query()
-            // Scope tenant per renter (se hai un helper isRenter sull'organizzazione)
-            ->when(
-                $user->organization && method_exists($user->organization, 'isRenter') && $user->organization->isRenter(),
-                fn (Builder $q) => $q->where('organization_id', $orgId)
-            )
             // Ricerca multi-campo
             ->when($term, function (Builder $q) use ($like) {
                 $q->where(function (Builder $w) use ($like) {
