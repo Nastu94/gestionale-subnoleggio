@@ -360,18 +360,6 @@ class RentalController extends Controller
             'payment_method.max' => 'Il metodo di pagamento non può superare i :max caratteri.',
         ]);
 
-        // La UI invia "payment_notes" e "payment_reference": li riconduciamo qui.
-        $description = $data['description'] ?? $data['payment_notes'] ?? null;
-
-        // Se c'è un riferimento, lo includiamo in modo compatto (senza superare 255 char).
-        if (!empty($data['payment_reference'])) {
-            $prefix = 'Rif: ' . trim((string) $data['payment_reference']);
-            $description = $description ? ($prefix . ' | ' . $description) : $prefix;
-
-            // Safety: tronca a 255 per rispettare la validazione/colonna.
-            $description = mb_substr($description, 0, 255);
-        }
-
         DB::transaction(function () use ($rental, $data) {
             // Se non specificato, commissionabile solo per base/overage
             $isCommissionable = array_key_exists('is_commissionable', $data)
@@ -379,12 +367,12 @@ class RentalController extends Controller
                 : in_array($data['kind'], [
                     RentalCharge::KIND_BASE,
                     RentalCharge::KIND_DISTANCE_OVERAGE,
-                ], true);
+                ], true) && $rental->assignment_id !== null;
 
             RentalCharge::create([
                 'rental_id'           => $rental->id,
                 'kind'                => $data['kind'],
-                'description'         => $description,
+                'description'         => $data['description'] ?? $data['payment_notes'] ?? null,
                 'amount'              => $data['amount'],
                 'is_commissionable'   => $isCommissionable,
                 'payment_method'      => $data['payment_method'],

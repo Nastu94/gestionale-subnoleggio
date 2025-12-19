@@ -107,6 +107,7 @@
         '{{ route('rentals.record_payment', $rental) }}',
         {{ (float)($rental->amount ?? 0) }},
         {
+            hasBasePayment: @js($rental->has_base_payment),
             kinds: [
                 {val:'base',              label:'Quota base (contratto)'},
                 {val:'distance_overage',  label:'Km extra'},
@@ -117,6 +118,7 @@
             ],
         }
     )"
+    x-init="init()"
     x-on:open-payment-modal.window="openModal($event.detail)"
 >
     <template x-teleport="body">
@@ -124,80 +126,80 @@
              role="dialog" aria-modal="true" aria-labelledby="payment-modal-title" @keydown.escape.prevent.stop="close()">
             <div class="absolute inset-0" @click="close()"></div>
 
-<div x-show="open" x-transition.scale
-     class="relative bg-base-100 rounded-lg shadow-xl w-full sm:max-w-lg max-h-[85vh] flex flex-col">
+            <div x-show="open" x-transition.scale
+                class="relative bg-base-100 rounded-lg shadow-xl w-full sm:max-w-lg max-h-[85vh] flex flex-col">
 
-  <!-- Header -->
-  <div class="px-6 pt-6 pb-3 sticky top-0 bg-base-100/95 backdrop-blur supports-[backdrop-filter]:bg-base-100/80">
-    <h2 id="payment-modal-title" class="text-lg font-semibold">Registra Pagamento</h2>
-    <button type="button" class="absolute right-2 top-2 btn btn-ghost btn-xs" @click="close()">✕</button>
-  </div>
+              <!-- Header -->
+              <div class="px-6 pt-6 pb-3 sticky top-0 bg-base-100/95 backdrop-blur supports-[backdrop-filter]:bg-base-100/80">
+                <h2 id="payment-modal-title" class="text-lg font-semibold">Registra Pagamento</h2>
+                <button type="button" class="absolute right-2 top-2 btn btn-ghost btn-xs" @click="close()">✕</button>
+              </div>
 
-  <!-- Body (scrollable) -->
-  <div class="px-6 pb-2 overflow-y-auto">
-    <form x-on:submit.prevent="submit()" class="space-y-4">
-      @csrf
-      <!-- Tipo -->
-      <div>
-        <label class="label"><span class="label-text">Tipo</span></label>
-        <select x-model="kind" name="kind"
-                class="mt-1 w-full rounded-md border-gray-300 shadow-sm appearance-none pr-8 focus:border-indigo-500 focus:ring-indigo-500" required
-                @change="onKindChange()">
-          <option value="" disabled>Seleziona tipo</option>
-          <template x-for="k in kinds" :key="k.val">
-            <option :value="k.val" x-text="k.label"></option>
-          </template>
-        </select>
-      </div>
+              <!-- Body (scrollable) -->
+              <div class="px-6 pb-2 overflow-y-auto">
+                <form x-on:submit.prevent="submit()" class="space-y-4">
+                  @csrf
+                  <!-- Tipo -->
+                  <div>
+                    <label class="label"><span class="label-text">Tipo</span></label>
+                    <select x-model="kind" name="kind"
+                            class="mt-1 w-full rounded-md border-gray-300 shadow-sm appearance-none pr-8 focus:border-indigo-500 focus:ring-indigo-500" required
+                            @change="onKindChange()">
+                      <option value="" disabled>Seleziona tipo</option>
+                      <template x-for="k in kinds" :key="k.val">
+                        <option :value="k.val" x-text="k.label"></option>
+                      </template>
+                    </select>
+                  </div>
 
-      <!-- Importo -->
-      <div>
-        <label class="label"><span class="label-text">Importo</span></label>
-        <input type="number" step="0.01" min="0" x-model.number="amount" name="amount"
-               class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" required>
-        <p class="text-xs text-gray-500 mt-1" x-show="kind === 'distance_overage' && distanceOverageDue > 0">
-          Valore precompilato dai km extra.
-        </p>
-      </div>
+                  <!-- Importo -->
+                  <div>
+                    <label class="label"><span class="label-text">Importo</span></label>
+                    <input type="number" step="0.01" min="0" x-model.number="amount" name="amount"
+                          class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" required>
+                    <p class="text-xs text-gray-500 mt-1" x-show="kind === 'distance_overage' && distanceOverageDue > 0">
+                      Valore precompilato dai km extra.
+                    </p>
+                  </div>
 
-      <!-- Metodo -->
-      <div>
-        <label class="label"><span class="label-text">Metodo di Pagamento</span></label>
-        <select x-model="payment_method" name="payment_method"
-                class="mt-1 w-full rounded-md border-gray-300 shadow-sm pr-8 focus:border-indigo-500 focus:ring-indigo-500" required>
-          <option value="" disabled>Seleziona metodo</option>
-          <option value="cash">Contanti</option>
-          <option value="pos">Carta di Credito</option>
-          <option value="bank_transfer">Bonifico Bancario</option>
-          <option value="other">Altro</option>
-        </select>
-      </div>
+                  <!-- Metodo -->
+                  <div>
+                    <label class="label"><span class="label-text">Metodo di Pagamento</span></label>
+                    <select x-model="payment_method" name="payment_method"
+                            class="mt-1 w-full rounded-md border-gray-300 shadow-sm pr-8 focus:border-indigo-500 focus:ring-indigo-500" required>
+                      <option value="" disabled>Seleziona metodo</option>
+                      <option value="cash">Contanti</option>
+                      <option value="pos">Carta di Credito</option>
+                      <option value="bank_transfer">Bonifico Bancario</option>
+                      <option value="other">Altro</option>
+                    </select>
+                  </div>
 
-      <!-- Note / Riferimento -->
-      <div>
-        <label class="label"><span class="label-text">Note</span></label>
-        <textarea x-model.trim="payment_notes" name="payment_notes" rows="3"
-                  class="block w-full rounded-md border px-3 py-2 text-sm"></textarea>
-      </div>
-      <div>
-        <label class="label"><span class="label-text">Riferimento</span></label>
-        <input type="text" x-model.trim="payment_reference" name="payment_reference"
-               class="block w-full rounded-md border px-3 py-2 text-sm">
-      </div>
-    </form>
-  </div>
+                  <!-- Note / Riferimento -->
+                  <div>
+                    <label class="label"><span class="label-text">Note</span></label>
+                    <textarea x-model.trim="payment_notes" name="payment_notes" rows="3"
+                              class="block w-full rounded-md border px-3 py-2 text-sm"></textarea>
+                  </div>
+                  <div>
+                    <label class="label"><span class="label-text">Riferimento</span></label>
+                    <input type="text" x-model.trim="payment_reference" name="payment_reference"
+                          class="block w-full rounded-md border px-3 py-2 text-sm">
+                  </div>
+                </form>
+              </div>
 
-  <!-- Footer (sticky) -->
-  <div class="px-6 py-4 border-t sticky bottom-0 bg-base-100/95 backdrop-blur supports-[backdrop-filter]:bg-base-100/80">
-    <div class="flex justify-end gap-3">
-      <button type="button" class="btn btn-neutral px-2" @click="close()" :disabled="loading">Annulla</button>
-      <button type="button" class="btn btn-primary px-2" @click="submit()" :disabled="loading">
-        <span x-show="!loading">Registra</span>
-        <span x-show="loading" class="loading loading-spinner loading-sm"></span>
-      </button>
-    </div>
-  </div>
-</div>
+              <!-- Footer (sticky) -->
+              <div class="px-6 py-4 border-t sticky bottom-0 bg-base-100/95 backdrop-blur supports-[backdrop-filter]:bg-base-100/80">
+                <div class="flex justify-end gap-3">
+                  <button type="button" class="btn btn-neutral px-2" @click="close()" :disabled="loading">Annulla</button>
+                  <button type="button" class="btn btn-primary px-2" @click="submit()" :disabled="loading">
+                    <span x-show="!loading">Registra</span>
+                    <span x-show="loading" class="loading loading-spinner loading-sm"></span>
+                  </button>
+                </div>
+              </div>
+            </div>
 
         </div>
     </template>
@@ -344,20 +346,57 @@ document.addEventListener('alpine:init', () => {
     const kindsFromArgs = Array.isArray(arg3?.kinds) ? arg3.kinds
                         : (Array.isArray(arg1?.kinds) ? arg1.kinds : null);
 
+    const initialHasBasePayment =
+      !!(arg3?.hasBasePayment ?? arg1?.hasBasePayment ?? false);
+
     return {
       open:false,
       loading:false,
-      amount: defaultAmount,
+      amount: 0,
       kind:'',
       payment_method:'',
       payment_notes:'',
       payment_reference:'',
       description:'', // retro-compat
 
-      kinds: kindsFromArgs || defaultKinds,
+      kindsAll: kindsFromArgs || defaultKinds,
+      kinds: [],
+      hasBasePayment: initialHasBasePayment,
       distanceOverageDue: 0,
 
+      // applica filtro “niente quota base se già pagata”
+      applyKindsFilter(){
+        this.kinds = this.kindsAll.filter(k => {
+          if (k.val === 'base') return !this.hasBasePayment;
+          return true;
+        });
+
+        // Se per qualche motivo eri su "base" e diventa pagata, resetto
+        if (this.hasBasePayment && this.kind === 'base') {
+          this.kind = '';
+        }
+      },
+
+      init(){
+        // filtro iniziale
+        this.applyKindsFilter();
+
+        // ascolta aggiornamenti da backend (dopo storePayment)
+        window.addEventListener('rental-flags-updated', (e) => {
+          const f = e.detail || {};
+          if ('has_base_payment' in f) {
+            this.hasBasePayment = !!f.has_base_payment;
+            this.applyKindsFilter();
+          }
+        });
+      },
+
       openModal(detail = null){
+        // sempre riallineo i kinds allo stato corrente
+        this.kind = '';
+        this.amount = 0;
+        this.applyKindsFilter();
+
         const due = (detail && typeof detail.distanceOverage !== 'undefined')
           ? Number(detail.distanceOverage || 0)
           : Number(window.__distanceOverageDue || 0);
@@ -366,22 +405,39 @@ document.addEventListener('alpine:init', () => {
         this.open = true;
 
         const alreadyPaid = !!window.__hasDistanceOveragePayment;
+
+        // 1) Se ci sono km extra da pagare e non risultano pagati => precompilo km extra
         if (due > 0 && !alreadyPaid) {
           this.kind = 'distance_overage';
           this.amount = due.toFixed(2);
-        } else if (!this.kind) {
+          return;
+        }
+
+        // 2) Default “base” SOLO se ancora disponibile (non pagata)
+        if (!this.kind && !this.hasBasePayment) {
           this.kind = 'base';
-          // non forziamo amount: lasciamo l’ammontare di default o vuoto
+          // ✅ nuovo: prefill esplicito della quota base (modificabile)
+          this.amount = Number(defaultAmount || 0);
         }
       },
 
       close(){ this.open=false; this.loading=false; },
 
       onKindChange(){
+        // km extra => precompila importo dovuto (non modificabile)
         if (this.kind === 'distance_overage') {
           const due = Number(window.__distanceOverageDue || this.distanceOverageDue || 0);
           if (due > 0) this.amount = due.toFixed(2);
+          return;
         }
+
+        // quota base => ripristina importo base (sempre modificabile dall’input)
+        if (this.kind === 'base') {
+          this.amount = Number(defaultAmount || 0);
+        }
+
+        // altri tipi: importo vuoto
+        this.amount = 0;
       },
 
       async submit(){

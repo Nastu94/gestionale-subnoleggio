@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use App\Models\{Rental, Customer, Vehicle, Location, VehicleAssignment}; // Location esiste nel tuo schema (dalle query)
 use App\Services\Contracts\GenerateRentalContract;
+use App\Domain\Pricing\VehiclePricingService;
 use Illuminate\Database\Eloquent\Builder;
 
 class CreateWizard extends Component
@@ -367,6 +368,50 @@ class CreateWizard extends Component
         if ($this->customer_id) {
             $rental->customer_id = $this->customer_id;
         }
+
+        /**
+         * 💶 Denormalizzazione importo base del noleggio su rentals.amount
+         * - Serve per precompilare il modale "Quota base" senza inserimento manuale.
+         * - Usiamo VehiclePricingService::quote() e prendiamo solo 'total' (in centesimi).
+         * - Se manca listino o dati, NON blocchiamo il wizard: lasciamo amount invariato.
+         */
+        try {
+            if ($rental->vehicle_id && $rental->planned_pickup_at && $rental->planned_return_at) {
+
+                // Recupero veicolo (serve per trovare il listino attivo del renter corrente)
+                $vehicle = Vehicle::query()->find($rental->vehicle_id);
+
+                if ($vehicle) {
+                    /** @var VehiclePricingService $pricing */
+                    $pricing = app(VehiclePricingService::class);
+
+                    // Listino attivo per il renter corrente
+                    $pl = $pricing->findActivePricelistForCurrentRenter($vehicle);
+
+                    if ($pl) {
+                        // Km previsti: se la property non è ancora impostata, fallback a 0
+                        $expectedKm = (int) ($this->expectedKm ?? 0);
+
+                        // Preventivo: total è in cents
+                        $quote = $pricing->quote(
+                            $pl,
+                            $rental->planned_pickup_at,
+                            $rental->planned_return_at,
+                            $expectedKm
+                        );
+
+                        $totalCents = (int) ($quote['total'] ?? 0);
+
+                        // Salviamo in euro su campo DECIMAL(10,2)
+                        $rental->amount = round($totalCents / 100, 2);
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            report($e);
+            // Non blocchiamo la creazione bozza: amount resta quello precedente (o 0 di default)
+        }
+
         $rental->status = 'draft';
         $rental->save();
         $this->rentalId = $rental->id;
