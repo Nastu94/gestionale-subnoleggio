@@ -72,24 +72,20 @@ class RentalsBoard extends Component
     public array $stateLabels = [
         'draft'       => 'Bozze',
         'reserved'    => 'Prenotati',
-        'checked_out' => 'Consegnati',
         'in_use'      => 'In uso',
         'checked_in'  => 'Rientrati',
         'closed'      => 'Chiusi',
         'cancelled'   => 'Cancellati',
-        'no_show'     => 'No-show',
     ];
 
     /** Classi colore (card KPI / badge) per stato */
     public array $stateColors = [
         'draft'       => 'bg-gray-100 border-gray-300 text-gray-800',
         'reserved'    => 'bg-blue-100 border-blue-300 text-blue-900',
-        'checked_out' => 'bg-amber-100 border-amber-300 text-amber-900',
         'in_use'      => 'bg-slate-100 border-slate-300 text-slate-900',
         'checked_in'  => 'bg-indigo-100 border-indigo-300 text-indigo-900',
         'closed'      => 'bg-green-100 border-green-300 text-green-900',
         'cancelled'   => 'bg-rose-100 border-rose-300 text-rose-900',
-        'no_show'     => 'bg-rose-100 border-rose-300 text-rose-900',
     ];
 
     protected $queryString = [
@@ -130,7 +126,7 @@ class RentalsBoard extends Component
     /** Ordine colonne/pulsanti KPI */
     public function getStatesProperty(): array
     {
-        return ['draft','reserved','checked_out','in_use','checked_in','closed','cancelled','no_show'];
+        return ['draft','reserved','in_use','checked_in','closed','cancelled'];
     }
 
     /** Ricerca riutilizzabile su id e cliente */
@@ -170,7 +166,7 @@ class RentalsBoard extends Component
         $base = $this->restrictToViewer(
             $this->applySearch(Rental::query()->whereNull('deleted_at'))
         );
-        $states = ['draft','reserved','checked_out','in_use','checked_in','closed','cancelled','no_show'];
+        $states = ['draft','reserved','in_use','checked_in','closed','cancelled'];
         $out = [];
         foreach ($states as $s) $out[$s] = (clone $base)->where('status', $s)->count();
         return $out;

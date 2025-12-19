@@ -81,11 +81,14 @@ class RentalController extends Controller
 
         // Transizione di stato
         DB::transaction(function () use ($rental) {
-            $rental->status = 'checked_out';
+            // ✅ Eliminato "checked_out": se il veicolo esce, è già "in_use"
+            $rental->status = 'in_use';
+
             // Se mantieni i timestamp operativi:
             if (empty($rental->actual_pickup_at)) {
                 $rental->actual_pickup_at = now();
             }
+
             $rental->save();
         });
 
@@ -99,12 +102,48 @@ class RentalController extends Controller
     {
         $this->authorize('inuse', $rental);
 
-        if ($rental->status !== 'checked_out') {
+        // Verifiche di business (mvp)
+        $pickup = $rental->checklists()->where('type', 'pickup')->first();
+        if (!$pickup) {
+            return response()->json(['ok' => false, 'message' => 'Checklist di pickup mancante.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // Contratto presente su Rental
+        $hasContract = $rental->getMedia('contract')->isNotEmpty();
+        if (!$hasContract) {
+            return response()->json(['ok' => false, 'message' => 'Contratto non presente sul rental.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // Se vuoi imporre la firma: contratti firmati su Rental e su Checklist(pickup)
+        $signedOnRental = $rental->getMedia('signatures')->isNotEmpty();
+
+        /**
+         * ✅ Maggiore copertura: la firma pickup può essere salvata in collection diverse in base al flusso.
+         * - "checklist_pickup_signed" (specifica pickup)
+         * - "signatures" (generico)
+         */
+        $signedOnChecklist = $pickup->getMedia('checklist_pickup_signed')->isNotEmpty()
+            || $pickup->getMedia('signatures')->isNotEmpty();
+
+        if (!$signedOnChecklist) {
+            return response()->json(['ok' => false, 'message' => 'Checklist pickup firmata assente.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } else if (!$signedOnRental) {
+            return response()->json(['ok' => false, 'message' => 'Contratto firmato assente.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        if (!in_array($rental->status, ['draft', 'checked_out'], true)) {
             return response()->json(['ok' => false, 'message' => 'Stato non valido per passare a in_use.'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $rental->status = 'in_use';
-        $rental->save();
+        DB::transaction(function () use ($rental) {
+            $rental->status = 'in_use';
+
+            if (empty($rental->actual_pickup_at)) {
+                $rental->actual_pickup_at = now();
+            }
+
+            $rental->save();
+        });
 
         return response()->json(['ok' => true, 'status' => $rental->status], Response::HTTP_OK);
     }
@@ -118,6 +157,13 @@ class RentalController extends Controller
     public function checkin(Request $request, Rental $rental)
     {
         $this->authorize('checkin', $rental);
+
+        if (!in_array($rental->status, ['in_use', 'checked_out'], true)) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Stato non valido per effettuare il check-in.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
 
         $returnChecklist = $rental->checklists()->where('type', 'return')->first();
         if (!$returnChecklist) {
@@ -239,17 +285,22 @@ class RentalController extends Controller
     }
 
     /**
-     * Transizione: reserved → no_show
+     * Transizione: reserved/draft → cancelled (ex no_show)
+     * Nota: lo stato "no_show" viene eliminato e ricondotto a "cancelled".
      */
     public function noshow(Request $request, Rental $rental)
     {
         $this->authorize('noshow', $rental);
 
-        if ($rental->status !== 'draft') {
-            return response()->json(['ok' => false, 'message' => 'No-show consentito solo da draft.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        // ✅ Consenti solo dai casi “pre-uso”
+        if (!in_array($rental->status, ['draft', 'reserved'], true)) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'No-show (ora annullamento) consentito solo da draft/reserved.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $rental->status = 'no_show';
+        $rental->status = 'cancelled';
         $rental->save();
 
         return response()->json(['ok' => true, 'status' => $rental->status], Response::HTTP_OK);
@@ -295,6 +346,8 @@ class RentalController extends Controller
             ],
             'amount'            => ['required','numeric','min:0.01'],
             'payment_method'    => ['required','string','max:255'],
+            'payment_notes'     => ['nullable','string','max:255'], // note dal modale (UI)
+            'payment_reference' => ['nullable','string','max:255'], // riferimento dal modale (UI)
             'description'       => ['nullable','string','max:255'],
             'is_commissionable' => ['sometimes','boolean'], // override opzionale
         ],
@@ -306,6 +359,18 @@ class RentalController extends Controller
             'payment_method.string' => 'Il metodo di pagamento deve essere una stringa.',
             'payment_method.max' => 'Il metodo di pagamento non può superare i :max caratteri.',
         ]);
+
+        // La UI invia "payment_notes" e "payment_reference": li riconduciamo qui.
+        $description = $data['description'] ?? $data['payment_notes'] ?? null;
+
+        // Se c'è un riferimento, lo includiamo in modo compatto (senza superare 255 char).
+        if (!empty($data['payment_reference'])) {
+            $prefix = 'Rif: ' . trim((string) $data['payment_reference']);
+            $description = $description ? ($prefix . ' | ' . $description) : $prefix;
+
+            // Safety: tronca a 255 per rispettare la validazione/colonna.
+            $description = mb_substr($description, 0, 255);
+        }
 
         DB::transaction(function () use ($rental, $data) {
             // Se non specificato, commissionabile solo per base/overage
@@ -319,7 +384,7 @@ class RentalController extends Controller
             RentalCharge::create([
                 'rental_id'           => $rental->id,
                 'kind'                => $data['kind'],
-                'description'         => $data['description'] ?? null,
+                'description'         => $description,
                 'amount'              => $data['amount'],
                 'is_commissionable'   => $isCommissionable,
                 'payment_method'      => $data['payment_method'],
@@ -327,11 +392,6 @@ class RentalController extends Controller
                 'payment_recorded_at' => now(),
                 'created_by'          => auth()->id(),
             ]);
-
-            // Se sto registrando da draft/reserved, resto/torno in reserved
-            if (in_array($rental->status, ['draft','reserved'], true)) {
-                $rental->forceFill(['status' => 'reserved'])->save();
-            }
         });
 
         // aggiorna flag per la UI
@@ -351,16 +411,27 @@ class RentalController extends Controller
 
     /**
      * Calcola l'addebito per km eccedenti
+     * - Ritorna anche "has_payment" per allineare UI/JS e prevenire codice morto.
      */
     public function distanceOverage(Rental $rental, VehiclePricingService $svc)
     {
+        /**
+         * ✅ Fonte unica backend: "overage pagato?"
+         * Usato dalla UI per:
+         * - badge km extra
+         * - abilitazione chiusura
+         * - pre-compilazioni modale
+         */
+        $hasPayment = (bool) $rental->has_distance_overage_payment;
+
         // servono km_in/km_out; se mancano, niente badge
         if (is_null($rental->mileage_out) || is_null($rental->mileage_in)) {
             return response()->json([
-                'ok' => true,
-                'has_data' => false,
-                'cents' => 0,
-                'amount' => '0.00',
+                'ok'          => true,
+                'has_data'    => false,
+                'cents'       => 0,
+                'amount'      => '0.00',
+                'has_payment' => $hasPayment, // ✅ sempre presente
             ]);
         }
 
@@ -368,8 +439,9 @@ class RentalController extends Controller
         $pl = $svc->findActivePricelistForCurrentRenter($rental->vehicle);
         if (!$pl) {
             return response()->json([
-                'ok' => false,
-                'message' => 'Nessun listino attivo per il renter corrente.',
+                'ok'          => false,
+                'message'     => 'Nessun listino attivo per il renter corrente.',
+                'has_payment' => $hasPayment, // ✅ coerente anche in errore
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
@@ -378,17 +450,18 @@ class RentalController extends Controller
         $returnAt  = $rental->actual_return_at  ?? $rental->planned_return_at  ?? now();
 
         // km percorsi (min 0)
-        $km = max(0, (int)$rental->mileage_in - (int)$rental->mileage_out);
+        $km = max(0, (int) $rental->mileage_in - (int) $rental->mileage_out);
 
         $quote  = $svc->quote($pl, $pickupAt, $returnAt, $km);
-        $cents  = (int)($quote['km_extra'] ?? 0);
+        $cents  = (int) ($quote['km_extra'] ?? 0);
         $amount = number_format($cents / 100, 2, '.', '');
 
         return response()->json([
-            'ok'      => true,
-            'has_data'=> true,
-            'cents'   => $cents,
-            'amount'  => $amount,
+            'ok'          => true,
+            'has_data'    => true,
+            'cents'       => $cents,
+            'amount'      => $amount,
+            'has_payment' => $hasPayment, // ✅ sempre presente
         ]);
     }
 }

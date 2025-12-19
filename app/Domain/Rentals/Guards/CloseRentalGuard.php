@@ -33,8 +33,20 @@ class CloseRentalGuard
         // 3) Firma richiesta?
         if ($rules['require_signed'] === true) {
             $pickup = $rental->checklists()->where('type','pickup')->first();
-            $signedOnRental    = $rental->getMedia('signatures')->isNotEmpty();
-            $signedOnChecklist = $pickup ? $pickup->getMedia('signatures')->isNotEmpty() : false;
+
+            // Firma su Rental (collection standard)
+            $signedOnRental = $rental->getMedia('signatures')->isNotEmpty();
+
+            // ✅ Maggiore copertura: in base ai test/flow la firma pickup può finire su collection diverse
+            // - "signatures" (generico)
+            // - "checklist_pickup_signed" (specifico pickup)
+            $signedOnChecklist = $pickup
+                ? (
+                    $pickup->getMedia('signatures')->isNotEmpty()
+                    || $pickup->getMedia('checklist_pickup_signed')->isNotEmpty()
+                )
+                : false;
+
             if (!$signedOnRental || !$signedOnChecklist) {
                 return $this->fail('missing_signatures', 'Contratto firmato assente per la chiusura.');
             }

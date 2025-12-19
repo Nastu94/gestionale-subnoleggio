@@ -11,12 +11,10 @@
             $statusBadgeClass = [
                 'draft'       => 'badge-ghost',
                 'reserved'    => 'badge-info',
-                'checked_out' => 'badge-warning',
                 'in_use'      => 'badge-warning',
                 'checked_in'  => 'badge-accent',
                 'closed'      => 'badge-success',
-                'canceled'    => 'badge-error',
-                'no_show'     => 'badge-error',
+                'cancelled'   => 'badge-error',
             ][$rental->status] ?? 'badge-ghost';
 
             /**

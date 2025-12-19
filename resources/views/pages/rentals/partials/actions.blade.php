@@ -13,6 +13,17 @@
     x-init="init()"
     class="space-y-3"
 >
+    {{-- BADGE pagamento base mancante (serve per chiudere) --}}
+    <template x-if="phase !== 'close' && !flags.hasBasePayment">
+        <div class="flex items-center justify-between rounded-md border border-warning/30 bg-warning/10 px-3 py-2">
+            <div class="text-sm">
+                <span class="font-medium">Pagamento base:</span>
+            </div>
+
+            <span class="badge badge-warning font-semibold text-sm">Mancante</span>
+        </div>
+    </template>
+
     {{-- BADGE chilometri extra da pagare (deriva da overage.amount, non da flag "needs") --}}
     <template x-if="overage.ready && Number(overage.amount) > 0 && !flags.hasOveragePayment">
         <div class="flex items-center justify-between rounded-md border border-warning/30 bg-warning/10 px-3 py-2">
@@ -36,19 +47,6 @@
         <span x-show="!loading">Registra Pagamento</span>
         <span x-show="loading" class="loading loading-spinner loading-sm"></span>
     </button>
-
-    {{-- Checkout --}}
-    <form method="POST" action="{{ route('rentals.checkout', $rental) }}" data-phase="checked_out" x-on:submit.prevent="submit($el)">
-        @csrf
-        <button class="btn btn-primary btn-block shadow-none
-                      !bg-primary !text-primary-content !border-primary
-                      hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30
-                      disabled:opacity-50 disabled:cursor-not-allowed"
-                :disabled="loading || !canCheckout">
-            <span x-show="!loading">Checkout</span>
-            <span x-show="loading" class="loading loading-spinner loading-sm"></span>
-        </button>
-    </form>
 
     {{-- Passa a In-use --}}
     <form method="POST" action="{{ route('rentals.inuse', $rental) }}" data-phase="in_use" x-on:submit.prevent="submit($el)">
@@ -89,33 +87,18 @@
         </button>
     </form>
 
-    <div class="grid grid-cols-2 gap-2">
-        {{-- Cancella --}}
-        <form method="POST" action="{{ route('rentals.cancel', $rental) }}" data-phase="cancelled" x-on:submit.prevent="submit($el)">
-            @csrf
-            <button class="btn btn-error btn-block shadow-none
-                          !bg-error !text-error-content !border-error
-                          hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-error/30
-                          disabled:opacity-50 disabled:cursor-not-allowed"
-                    :disabled="loading || !canCancel">
-                <span x-show="!loading">Cancella</span>
-                <span x-show="loading" class="loading loading-spinner loading-sm"></span>
-            </button>
-        </form>
-
-        {{-- No-show --}}
-        <form method="POST" action="{{ route('rentals.noshow', $rental) }}" data-phase="no_show" x-on:submit.prevent="submit($el)">
-            @csrf
-            <button class="btn btn-warning btn-block shadow-none
-                          !bg-warning !text-warning-content !border-warning
-                          hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-warning/30
-                          disabled:opacity-50 disabled:cursor-not-allowed"
-                    :disabled="loading || !canNoShow">
-                <span x-show="!loading">No-show</span>
-                <span x-show="loading" class="loading loading-spinner loading-sm"></span>
-            </button>
-        </form>
-    </div>
+    {{-- Cancella --}}
+    <form method="POST" action="{{ route('rentals.cancel', $rental) }}" data-phase="cancelled" x-on:submit.prevent="submit($el)">
+        @csrf
+        <button class="btn btn-error btn-block shadow-none
+                      !bg-error !text-error-content !border-error
+                      hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-error/30
+                      disabled:opacity-50 disabled:cursor-not-allowed"
+                :disabled="loading || !canCancel">
+            <span x-show="!loading">Cancella</span>
+            <span x-show="loading" class="loading loading-spinner loading-sm"></span>
+        </button>
+    </form>
 </div>
 
 {{-- Modale pagamento --}}
@@ -243,17 +226,20 @@ document.addEventListener('alpine:init', () => {
     },
     phaseLabel(k){ return this.phaseLabels[k] ?? k.replace(/_/g,' ') },
 
-    // Abilitazioni
-    get canCheckout(){ return ['draft','reserved'].includes(this.phase) && !!this.flags.hasBasePayment },
-    get canInuse(){    return this.phase === 'checked_out' },
+    // Abilitazioni bottoni
+    get canInuse(){    return ['draft', 'checked_out'].includes(this.phase) },
     get canCheckin(){  return ['checked_out','in_use'].includes(this.phase) },
     get canClose(){
       if (this.phase !== 'checked_in') return false;
+
+      // ✅ Blocco chiusura se manca pagamento base (nuova richiesta)
+      if (!this.flags.hasBasePayment) return false;
+
+      // ✅ Se ci sono km extra dovuti, serve pagamento km extra
       const needOverage = this.overage.ready && Number(this.overage.amount) > 0;
       return !needOverage || !!this.flags.hasOveragePayment;
     },
     get canCancel(){ return ['draft','reserved'].includes(this.phase) },
-    get canNoShow(){ return this.phase === 'reserved' },
 
     async init(){
       if (this.overageUrl) await this.fetchOverage();

@@ -84,12 +84,10 @@
                             $badgeClass = match($r->status) {
                                 'draft'       => 'bg-gray-100 text-gray-800 ring-1 ring-gray-300',
                                 'reserved'    => 'bg-blue-100 text-blue-900 ring-1 ring-blue-300',
-                                'checked_out' => 'bg-amber-100 text-amber-900 ring-1 ring-amber-300',
                                 'in_use'      => 'bg-violet-100 text-violet-900 ring-1 ring-violet-300',
                                 'checked_in'  => 'bg-cyan-100 text-cyan-900 ring-1 ring-cyan-300',
                                 'closed'      => 'bg-green-100 text-green-900 ring-1 ring-green-300',
                                 'cancelled'   => 'bg-rose-100 text-rose-900 ring-1 ring-rose-300',
-                                'no_show'     => 'bg-rose-100 text-rose-900 ring-1 ring-rose-300',
                                 default       => 'bg-gray-100 text-gray-700 ring-1 ring-gray-300',
                             };
 
@@ -200,7 +198,7 @@
     @elseif($view === 'kanban')
         {{-- BACHECA (Kanban) --}}
         @php
-            $cols = $state ? [$state] : ['draft','reserved','checked_out','in_use','checked_in','closed'];
+            $cols = $state ? [$state] : ['draft','reserved','in_use','checked_in','closed'];
         @endphp
         <div class="grid grid-cols-1 lg:grid-cols-{{ count($cols) }} gap-4">
             @foreach($cols as $col)
