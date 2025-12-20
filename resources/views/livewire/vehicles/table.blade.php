@@ -286,7 +286,7 @@
                     <div>
                         <div class="text-lg font-semibold">{{ $drawer['v']->plate }} — {{ $drawer['v']->make }} {{ $drawer['v']->model }}</div>
                         <div class="text-sm text-gray-500">
-                            Anno {{ $drawer['v']->year }} • {{ $drawer['v']->fuel_type }} • {{ $drawer['v']->transmission }}
+                            Anno {{ $drawer['v']->year }} • {{ $drawer['v']->fuel_type_label }} • {{ $drawer['v']->transmission_label }}
                         </div>
                     </div>
                     <button type="button" class="rounded border px-3 py-1" wire:click="closeDrawer">Chiudi</button>
@@ -311,14 +311,13 @@
                     {{-- Stato & disponibilità --}}
                     <section>
                         <h3 class="mb-2 font-semibold">Stato & Disponibilità</h3>
-                        <div class="text-sm">Stato tecnico: <strong>{{ $drawer['currentState'] ?? 'OK' }}</strong></div>
+                        <div class="text-sm">
+                            Stato tecnico:
+                            <strong>{{ $drawer['currentStateLabel'] ?? ($drawer['currentState'] ?? 'OK') }}</strong>
+                        </div>
                         @if($drawer['assignedNow'])
                             <div class="text-sm">
                                 Affidato a: <strong>{{ $drawer['assignedNow']->renter_name }}</strong>
-                                @can('assignments.viewAny')
-                                    <a class="ml-2 text-indigo-600 hover:underline"
-                                       href="{{ route('assignments.show', $drawer['assignedNow']->assignment_id) }}">Apri affidamento</a>
-                                @endcan
                             </div>
                         @endif
                     </section>
@@ -342,7 +341,7 @@
                                     $cls  = is_null($days) ? '' : ($days <= 7 ? 'text-rose-600' : ($days <= 60 ? 'text-amber-600' : 'text-green-600'));
                                 @endphp
                                 <div class="flex justify-between">
-                                    <div>{{ strtoupper($doc->type) }} @if($doc->number)<span class="text-gray-500">#{{ $doc->number }}</span>@endif</div>
+                                    <div>{{ strtoupper($doc->type_label) }} @if($doc->number)<span class="text-gray-500">#{{ $doc->number }}</span>@endif</div>
                                     <div>
                                         @if(!is_null($days))
                                             <span class="{{ $cls }}">{{ (int)$days }} gg</span>

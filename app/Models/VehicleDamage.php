@@ -23,6 +23,19 @@ class VehicleDamage extends Model
     use LogsActivity;
 
     /**
+     * Mappa “UI-only” per mostrare in italiano l’origine del danno.
+     * NB: nel database restano in inglese.
+     *
+     * @var array<string,string>
+     */
+    public const SOURCE_LABELS_IT = [
+        'rental'      => 'Noleggio',
+        'manual'      => 'Manuale',
+        'inspection'  => 'Ispezione',
+        'service'     => 'Officina',
+    ];
+
+    /**
      * Attributi assegnabili in massa.
      * Aggiunti: source, area, severity, description (per danni non da rental).
      */
@@ -75,6 +88,21 @@ class VehicleDamage extends Model
 
     public function scopeOpen($query)       { return $query->where('is_open', true); }
     public function scopeForVehicle($query, int $vehicleId) { return $query->where('vehicle_id', $vehicleId); }
+
+    /* -----------------------------------------------------------------
+     |  Accessor “UI label”
+     |------------------------------------------------------------------*/
+
+    /**
+     * Accessor: etichetta italiana dell'origine danno.
+     * Uso: {{ $damage->source_label }}
+     */
+    public function getSourceLabelAttribute(): string
+    {
+        $source = (string) ($this->source ?? '');
+
+        return self::SOURCE_LABELS_IT[$source] ?? $source;
+    }
 
     /* -----------------------------------------------------------------
      |  Accessor “risolti” (UI-safe)

@@ -6,6 +6,18 @@ use Illuminate\Database\Eloquent\Model;
 
 class VehiclePricelist extends Model
 {
+    /**
+     * Mappa “UI-only” per mostrare in italiano gli stati del listino.
+     * NB: nel database restano in inglese (draft/active/archived).
+     *
+     * @var array<string,string>
+     */
+    public const STATUS_LABELS_IT = [
+        'draft'    => 'Bozza',
+        'active'   => 'Attivo',
+        'archived' => 'Archiviato',
+    ];
+
     protected $fillable = [
         'vehicle_id','renter_org_id',
         'name','currency',
@@ -32,4 +44,15 @@ class VehiclePricelist extends Model
     public function renter()  { return $this->belongsTo(Organization::class, 'renter_org_id'); }
     public function seasons() { return $this->hasMany(VehiclePricelistSeason::class)->orderByDesc('priority'); }
     public function tiers()   { return $this->hasMany(VehiclePricelistTier::class)->orderByDesc('priority'); }
+
+    /**
+     * Accessor: etichetta italiana dello stato listino.
+     * Uso: {{ $pricelist->status_label }}
+     */
+    public function getStatusLabelAttribute(): string
+    {
+        $status = (string) ($this->status ?? '');
+
+        return self::STATUS_LABELS_IT[$status] ?? $status;
+    }
 }

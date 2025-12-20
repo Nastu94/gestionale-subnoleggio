@@ -584,6 +584,15 @@ class Table extends Component
             ->whereNull('ended_at')
             ->value('state');
 
+        /**
+         * Etichetta IT per la UI:
+         * - Se lo stato non esiste: null (in Blade mostri "OK")
+         * - Se lo stato è sconosciuto: fallback alla stringa originale
+         */
+        $currentStateLabel = $currentState
+            ? (VehicleState::STATE_LABELS_IT[$currentState] ?? $currentState)
+            : null;
+
         $today = now()->toDateString();
         $limit = now()->addDays(60)->toDateString();
         $expiring = $v->documents->whereNotNull('expiry_date')
@@ -600,7 +609,7 @@ class Table extends Component
             ->where(function ($w) { $w->whereNull('va.end_at')->orWhere('va.end_at', '>', now()); })
             ->first();
 
-        return compact('v','currentState','expiring','expired','assignedNow');
+        return compact('v','currentState','currentStateLabel', 'expiring','expired','assignedNow');
     }
 
     // Sanifica l'array $selected escludendo i trashed

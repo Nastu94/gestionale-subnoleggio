@@ -154,8 +154,8 @@
                     <dt class="text-gray-500">Colore</dt><dd>{{ $v->color ?? '—' }}</dd>
                     <dt class="text-gray-500">Posti</dt><dd>{{ $v->seats ?? '—' }}</dd>
                     <dt class="text-gray-500">Segmento</dt><dd>{{ $v->segment ?? '—' }}</dd>
-                    <dt class="text-gray-500">Carburante</dt><dd>{{ $v->fuel_type ?? '—' }}</dd>
-                    <dt class="text-gray-500">Cambio</dt><dd>{{ $v->transmission ?? '—' }}</dd>
+                    <dt class="text-gray-500">Carburante</dt><dd>{{ $v->fuel_type_label ?? $v->fuel_type ?? '—' }}</dd>
+                    <dt class="text-gray-500">Cambio</dt><dd>{{ $v->transmission_label ?? $v->transmission ?? '—' }}</dd>
                     <dt class="text-gray-500">Creato il</dt><dd>{{ optional($v->created_at)->format('d/m/Y H:i') }}</dd>
                     <dt class="text-gray-500">Aggiornato il</dt><dd>{{ optional($v->updated_at)->format('d/m/Y H:i') }}</dd>
 
@@ -341,7 +341,7 @@
                             <div class="rounded border p-2">
                                 <div class="flex flex-wrap items-center justify-between">
                                     <div>
-                                        <span class="font-medium">{{ strtoupper($s->state) }}</span>
+                                        <span class="font-medium uppercase">{{ $s->state_label }}</span>
                                         <span class="text-gray-500 ml-2">{{ \Illuminate\Support\Carbon::parse($s->started_at)->format('d/m/Y H:i') }}</span>
                                         <span class="mx-1">→</span>
                                         <span class="text-gray-500">{{ $s->ended_at ? \Illuminate\Support\Carbon::parse($s->ended_at)->format('d/m/Y H:i') : '—' }}</span>
@@ -474,7 +474,7 @@
                             <option value="manual">Manuale</option>
                             <option value="inspection">Ispezione</option>
                             <option value="service">Officina</option>
-                            <option value="rental">Rental</option>
+                            <option value="rental">Noleggio</option>
                         </select>
                     </div>
                     <div>
@@ -635,7 +635,7 @@
                                     </span>
                                 </td>
                                 <td class="px-3 py-2" x-on:click.self="open=!open">
-                                    {{ strtoupper($d->source) }}
+                                    {{ strtoupper($d->source_label ?? $d->source ?? '—') }}
                                     @if($d->source === 'rental' && $rentalId)
                                         {{-- Link al rental: aggiorna il nome rotta se diverso --}}
                                         <a class="ml-1 text-indigo-600 underline" href="{{ route('rentals.show', $rentalId) }}" target="_blank">apri rental</a>

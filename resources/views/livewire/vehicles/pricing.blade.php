@@ -47,7 +47,7 @@
                         {{ $pricelist?->name ?: 'Listino corrente' }}
                         @if($pricelist)
                             <span class="ml-2 inline-flex items-center rounded bg-gray-100 dark:bg-gray-900 px-2 py-0.5 text-xs">
-                                Ver. {{ $pricelist->version }} · {{ strtoupper($pricelist->status) }}
+                                Ver. {{ $pricelist->version }} · {{ strtoupper($pricelist->status_label ?? $pricelist->status) }}
                             </span>
                             @if($pricelist->status === 'active')
                                 <span class="ml-2 inline-flex items-center rounded bg-emerald-100 text-emerald-800 px-2 py-0.5 text-xs">ATTIVO</span>
@@ -507,7 +507,7 @@
                             <th>Nome</th>
                             <th>Base €/g</th>
                             <th>Weekend%</th>
-                            <th>Rounding</th>
+                            <th>Arrotondamento</th>
                             <th>Note</th>
                             <th></th>
                         </tr>
@@ -516,7 +516,7 @@
                     @foreach($history as $row)
                         <tr class="border-t border-gray-200 dark:border-gray-700">
                             <td class="py-1">{{ $row->version }}</td>
-                            <td class="uppercase">{{ $row->status }}</td>
+                            <td class="uppercase">{{ $row->status_label ?? $row->status }}</td>
                             <td>{{ $row->published_at?->format('d/m/Y H:i') ?? '—' }}</td>
                             <td>{{ $row->name ?? '—' }}</td>
                             <td>{{ number_format($row->base_daily_cents/100,2,',','.') }}</td>

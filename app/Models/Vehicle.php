@@ -20,6 +20,31 @@ class Vehicle extends Model implements SpatieHasMedia
     use HasFactory, SoftDeletes;
     use InteractsWithMedia;
 
+    /**
+     * Mappa UI: carburante (valore DB => label IT).
+     * Nota: il DB resta in inglese, qui traduciamo solo per la UI.
+     *
+     * @var array<string,string>
+     */
+    public const FUEL_TYPE_LABELS_IT = [
+        'petrol'   => 'Benzina',
+        'diesel'   => 'Diesel',
+        'hybrid'   => 'Ibrida',
+        'electric' => 'Elettrica',
+        'lpg'      => 'GPL',
+        'cng'      => 'Metano',
+    ];
+
+    /**
+     * Mappa UI: trasmissione (valore DB => label IT).
+     *
+     * @var array<string,string>
+     */
+    public const TRANSMISSION_LABELS_IT = [
+        'manual'    => 'Manuale',
+        'automatic' => 'Automatico',
+    ];
+
     protected $fillable = [
         'admin_organization_id','vin','plate','make','model','year','color',
         'fuel_type','transmission','seats','segment','mileage_current','default_pickup_location_id',
@@ -51,6 +76,34 @@ class Vehicle extends Model implements SpatieHasMedia
     public function scopeActive($q) { return $q->where('is_active', true); }
 
     /**
+     * Accessor UI: label italiana del carburante.
+     * Esempio: in Blade -> {{ $vehicle->fuel_type_label }}
+     */
+    public function getFuelTypeLabelAttribute(): ?string
+    {
+        $value = $this->attributes['fuel_type'] ?? null;
+        if (!$value) {
+            return null;
+        }
+
+        return self::FUEL_TYPE_LABELS_IT[$value] ?? $value;
+    }
+
+    /**
+     * Accessor UI: label italiana del cambio.
+     * Esempio: in Blade -> {{ $vehicle->transmission_label }}
+     */
+    public function getTransmissionLabelAttribute(): ?string
+    {
+        $value = $this->attributes['transmission'] ?? null;
+        if (!$value) {
+            return null;
+        }
+
+        return self::TRANSMISSION_LABELS_IT[$value] ?? $value;
+    }
+
+    /**
      * Registra le collection media per il veicolo.
      * Usiamo una sola collection "vehicle_photos" (galleria).
      */
@@ -62,7 +115,7 @@ class Vehicle extends Model implements SpatieHasMedia
             ->acceptsMimeTypes(['image/jpeg','image/png','image/webp'])
             ->withResponsiveImages();
 
-        // ⬇️ NUOVA collection per foto legate a uno specifico danno del veicolo
+        // collection per foto legate a uno specifico danno del veicolo
         $this
             ->addMediaCollection('vehicle_damage_photos')
             ->useDisk(config('filesystems.default', 'public'))
