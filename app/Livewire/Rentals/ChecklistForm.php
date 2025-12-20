@@ -107,6 +107,41 @@ class ChecklistForm extends Component
     public bool $isLocked = false;
 
     /**
+     * Default Checklist JSON v1.
+     * Tutte le checkbox partono "true" (spuntate) per velocizzare l'operatore.
+     * NB: i valori salvati a DB sovrascrivono questi default.
+     */
+    protected function defaultChecklistV1(): array
+    {
+        return [
+            'schema_version' => 1,
+
+            'documents' => [
+                'id_card'        => true,
+                'driver_license' => true,
+                'contract_copy'  => true,
+            ],
+
+            'equipment' => [
+                'spare_wheel' => true,
+                'jack'        => true,
+                'triangle'    => true,
+                'vest'        => true,
+            ],
+
+            'vehicle' => [
+                'lights_ok'     => true,
+                'horn_ok'       => true,
+                'brakes_ok'     => true,
+                'tires_ok'      => true,
+                'windshield_ok' => true,
+            ],
+
+            'notes' => null,
+        ];
+    }
+
+    /**
      * Mount iniziale:
      * - Determina type ('pickup'|'return')
      * - Preleva chilometraggio attuale veicolo
@@ -137,7 +172,16 @@ class ChecklistForm extends Component
             $this->signed_by_customer   = (bool) $existing->signed_by_customer;
             $this->signed_by_operator   = (bool) $existing->signed_by_operator;
             $this->signature_media_uuid = $existing->signature_media_uuid;
-            $this->checklist            = $existing->checklist_json ?? [];
+
+            /**
+             * ✅ Merge robusto:
+             * - defaultChecklistV1() garantisce checkbox "true" se mancano chiavi nei record vecchi
+             * - i valori salvati a DB (true/false) hanno precedenza
+             */
+            $this->checklist = array_replace_recursive(
+                $this->defaultChecklistV1(),
+                $existing->checklist_json ?? []
+            );
 
             // ===== Precarica foto 'photos' raggruppate per kind =====
             $groups = ['odometer'=>[], 'fuel'=>[], 'exterior'=>[]];
@@ -154,6 +198,11 @@ class ChecklistForm extends Component
                 ];
             }
             $this->mediaChecklist = $groups;
+        } else {
+            /**
+             * ✅ Nuova checklist: tutte le checkbox partono attive
+             */
+            $this->checklist = $this->defaultChecklistV1();
         }
 
         // -------------------------

@@ -379,244 +379,244 @@
 
     {{-- STEP 3: Bozza (generazione contratto + documenti) --}}
     @if($step===3)
-    <fieldset @disabled(!$vehSelected) title="{{ $vehSelected ? '' : 'Seleziona prima un veicolo' }}">
-        <div class="space-y-4">
-            @if(!$rentalId)
-                <div class="rounded-md border border-amber-300 bg-amber-50 text-amber-900 px-3 py-2 text-sm">
-                    Salva la bozza per ottenere l'ID noleggio e abilitare le azioni.
-                </div>
-            @endif
+        <fieldset @disabled(!$vehSelected) title="{{ $vehSelected ? '' : 'Seleziona prima un veicolo' }}">
+            <div class="space-y-4">
+                @if(!$rentalId)
+                    <div class="rounded-md border border-amber-300 bg-amber-50 text-amber-900 px-3 py-2 text-sm">
+                        Salva la bozza per ottenere l'ID noleggio e abilitare le azioni.
+                    </div>
+                @endif
 
-            <div class="grid md:grid-cols-2 gap-4">
-                <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800 space-y-3">
-                    <div class="text-base font-semibold">Contratto</div>
-                    <p class="text-sm opacity-80">
-                        Il contratto viene <strong>generato dal gestionale</strong>. Usa il pulsante per creare la versione PDF su <em>Rental → contract</em>.
-                    </p>
-                    @if($rentalId)
-                        {{-- Azioni contratto --}}
-                        <div class="flex items-center gap-2">
-                            {{-- Genera contratto: disabilitato se esiste già un "current" --}}
-                            <button type="button"
-                                    wire:click="generateContract"
-                                    wire:loading.attr="disabled"
-                                    @disabled($currentContractMediaId)
-                                    class="{{ $btnIndigo }}">
-                                <span wire:loading.remove>Genera contratto (PDF)</span>
-                                <span wire:loading>Generazione…</span>
-                            </button>
-
-                            {{-- Apri PDF se presente --}}
-                            @if($currentContractUrl)
-                                <a href="{{ $currentContractUrl }}" target="_blank"
-                                class="inline-flex items-center px-3 py-1.5 bg-emerald-600 rounded-md
-                                        text-xs font-semibold text-white uppercase hover:bg-emerald-500
-                                        focus:outline-none focus:ring-2 focus:ring-emerald-300 transition">
-                                    Apri
-                                </a>
-                                <span class="text-xs opacity-70">Ultima generazione aggiornata.</span>
-                            @endif
-                        </div>
-                    @else
-                        <button class="{{ $btnSoft }}" wire:click="saveDraft">Salva bozza per abilitare</button>
-                    @endif
-                </div>
-
-                <div 
-                    x-data="{
-                        // stato locale per il bottone
-                        loading: false,
-
-                        // Submit via fetch() verso il controller: resta sulla pagina
-                        async submit(e) {
-                            this.loading = true;
-                            const form = e.target;
-                            const fd   = new FormData(form);
-
-                            try {
-                                const res = await fetch('{{ route('rentals.media.documents.store', $rentalId ?? 0) }}', {
-                                    method: 'POST',
-                                    headers: {
-                                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                                        'Accept': 'application/json',
-                                        'X-Requested-With': 'XMLHttpRequest',
-                                    },
-                                    body: fd
-                                });
-
-                                if (!res.ok) {
-                                    let msg = 'Errore durante il caricamento.';
-                                    try { const data = await res.json(); msg = data?.message ?? msg; } catch(_) {}
-                                    window.dispatchEvent(new CustomEvent('toast', { detail: { type:'error', message: msg }}));
-                                    return;
-                                }
-
-                                const data = await res.json();
-                                window.dispatchEvent(new CustomEvent('toast', {
-                                    detail: { type:'success', message: data.msg || 'Documento caricato.' }
-                                }));
-
-                                // 🔁 REFRESH ROBUSTO del componente Livewire più vicino a questo form
-                                const host = this.$root.closest('[wire\\:id]');           // nodo radice del componente
-                                const id   = host ? host.getAttribute('wire:id') : null;  // id del componente Livewire
-
-                                if (id && window.Livewire && typeof window.Livewire.find === 'function') {
-                                    window.Livewire.find(id).$refresh();                  // forza il render()
-                                } else if (window.$wire && typeof $wire.$refresh === 'function') {
-                                    $wire.$refresh();                                     // fallback se $wire è globale
-                                }
-
-                                form.reset();
-                            } catch (err) {
-                                window.dispatchEvent(new CustomEvent('toast', { detail: { type:'error', message: 'Errore di rete durante l’upload.' }}));
-                            } finally {
-                                this.loading = false;
-                            }
-                        },
-
-                        // Cancella un media lato server (DB + file) e aggiorna la lista
-                        async destroy(mediaId, e) { 
-                            if (!(e?.isTrusted) || e.currentTarget?.dataset.role !== 'delete-button') {
-                                return; // evita invocazioni spurie durante morph/unmount
-                            }
-                            if (!confirm('Eliminare questo documento?')) return;
-
-                            try {
-                                const res = await fetch('{{ url('/media') }}/' + mediaId, {
-                                    method: 'DELETE',
-                                    headers: {
-                                        'X-CSRF-TOKEN': '{{ csrf_token() }}',       // protezione CSRF
-                                        'Accept': 'application/json',
-                                        'X-Requested-With': 'XMLHttpRequest',
-                                    },
-                                });
-
-                                if (!res.ok) {
-                                    // Proviamo a leggere il messaggio dal JSON; fallback generico
-                                    let msg = 'Errore durante la cancellazione.';
-                                    try { const data = await res.json(); msg = data?.message ?? msg; } catch (_) {}
-                                    window.dispatchEvent(new CustomEvent('toast', { detail: { type:'error', message: msg }}));
-                                    return;
-                                }
-
-                                // Toast di conferma
-                                window.dispatchEvent(new CustomEvent('toast', {
-                                    detail: { type:'success', message: 'Documento eliminato.' }
-                                }));
-
-                                // 🔁 Refresh robusto del componente Livewire corrente
-                                const host = this.$root.closest('[wire\\:id]');
-                                const id   = host ? host.getAttribute('wire:id') : null;
-
-                                if (id && window.Livewire && typeof window.Livewire.find === 'function') {
-                                    window.Livewire.find(id).$refresh();
-                                } else if (window.$wire && typeof $wire.$refresh === 'function') {
-                                    $wire.$refresh();
-                                }
-                            } catch (err) {
-                                window.dispatchEvent(new CustomEvent('toast', {
-                                    detail: { type:'error', message: 'Errore di rete durante la cancellazione.' }
-                                }));
-                            }
-                        }
-                    }"
-                    class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800 space-y-3"
-                >
-                    <div class="text-base font-semibold">Documenti preliminari</div>
-                    <p class="text-sm opacity-80">Termini & condizioni, privacy, preventivo, ecc. (opzionali).</p>
-
-                    @if($rentalId)
-                        {{-- Upload via fetch() per restare sulla stessa pagina --}}
-                        <form
-                            @submit.prevent="submit($event)"
-                            class="mt-4 space-y-2"
-                        >
-                            @csrf
-                            <div class="flex flex-wrap items-center gap-2">
-
-                                {{-- Scelta collection: stessi valori che già usi --}}
-                                <select name="collection"
-                                        class="mt-1 w-full rounded-md border-gray-300 shadow-sm appearance-none pr-8 focus:border-indigo-500 focus:ring-indigo-500">
-                                    <option value="documents">Documenti vari (precontrattuali)</option>
-                                    <option value="id_card">Documento identità</option>
-                                    <option value="driver_license">Patente</option>
-                                    <option value="privacy">Consenso privacy</option>
-                                    <option value="other">Altro</option>
-                                </select>
-
-                                {{-- File: il nome del campo DEVE essere "file" per il tuo controller --}}
-                                <input type="file" name="file" accept="application/pdf,image/*" class="file-input file-input-bordered file-input-sm" />
-
-                                <button type="submit"
-                                        x-bind:disabled="loading"
-                                        class="rounded bg-gray-800 px-3 py-1.5 text-white hover:bg-gray-900 disabled:opacity-50">
-                                    <span x-show="!loading">Carica</span>
-                                    <span x-show="loading">Caricamento…</span>
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800 space-y-3">
+                        <div class="text-base font-semibold">Contratto</div>
+                        <p class="text-sm opacity-80">
+                            Il contratto viene <strong>generato dal gestionale</strong>. Usa il pulsante per creare la versione PDF su <em>Rental → contract</em>.
+                        </p>
+                        @if($rentalId)
+                            {{-- Azioni contratto --}}
+                            <div class="flex items-center gap-2">
+                                {{-- Genera contratto: disabilitato se esiste già un "current" --}}
+                                <button type="button"
+                                        wire:click="generateContract"
+                                        wire:loading.attr="disabled"
+                                        @disabled($currentContractMediaId)
+                                        class="{{ $btnIndigo }}">
+                                    <span wire:loading.remove>Genera contratto (PDF)</span>
+                                    <span wire:loading>Generazione…</span>
                                 </button>
+
+                                {{-- Apri PDF se presente --}}
+                                @if($currentContractUrl)
+                                    <a href="{{ $currentContractUrl }}" target="_blank"
+                                    class="inline-flex items-center px-3 py-1.5 bg-emerald-600 rounded-md
+                                            text-xs font-semibold text-white uppercase hover:bg-emerald-500
+                                            focus:outline-none focus:ring-2 focus:ring-emerald-300 transition">
+                                        Apri
+                                    </a>
+                                    <span class="text-xs opacity-70">Ultima generazione aggiornata.</span>
+                                @endif
                             </div>
+                        @else
+                            <button class="{{ $btnSoft }}" wire:click="saveDraft">Salva bozza per abilitare</button>
+                        @endif
+                    </div>
 
-                            <p class="text-xs opacity-70">Formati consentiti: PDF, JPG, PNG. Max 20MB.</p>
-                        </form>
+                    <div 
+                        x-data="{
+                            // stato locale per il bottone
+                            loading: false,
 
-                        {{-- Elenco documenti: lettura diretta dal DB, si aggiorna con $wire.$refresh() --}}
-                        @php
-                            /** @var \App\Models\Rental|null $__rental */
-                            $__rental = \App\Models\Rental::find($rentalId);
-                            /** Elenco multi-collection (Spatie: uso la relazione media() per whereIn) */
-                            $__docs = $__rental
-                                ? $__rental->media()
-                                    ->whereIn('collection_name', ['documents','id_card','driver_license','privacy','other'])
-                                    ->orderByDesc('id')
-                                    ->get()
-                                : collect();
-                        @endphp
+                            // Submit via fetch() verso il controller: resta sulla pagina
+                            async submit(e) {
+                                this.loading = true;
+                                const form = e.target;
+                                const fd   = new FormData(form);
 
-                        <div class="mt-4">
-                            <div class="text-sm font-semibold mb-2">Documenti salvati</div>
-                            <ul class="divide-y rounded-md border border-gray-200 dark:border-gray-700">
-                                @forelse($__docs as $m)
-                                    <li class="p-2 flex items-center justify-between">
-                                        <div class="text-sm">
-                                            <a href="{{ $m->getUrl() }}" target="_blank" class="font-medium hover:underline">
-                                                {{ $m->file_name }}
-                                            </a>
-                                            <div class="text-xs opacity-70">
-                                                {{ $m->collection_name }} · {{ number_format($m->size / 1024, 1) }} KB
+                                try {
+                                    const res = await fetch('{{ route('rentals.media.documents.store', $rentalId ?? 0) }}', {
+                                        method: 'POST',
+                                        headers: {
+                                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                                            'Accept': 'application/json',
+                                            'X-Requested-With': 'XMLHttpRequest',
+                                        },
+                                        body: fd
+                                    });
+
+                                    if (!res.ok) {
+                                        let msg = 'Errore durante il caricamento.';
+                                        try { const data = await res.json(); msg = data?.message ?? msg; } catch(_) {}
+                                        window.dispatchEvent(new CustomEvent('toast', { detail: { type:'error', message: msg }}));
+                                        return;
+                                    }
+
+                                    const data = await res.json();
+                                    window.dispatchEvent(new CustomEvent('toast', {
+                                        detail: { type:'success', message: data.msg || 'Documento caricato.' }
+                                    }));
+
+                                    // 🔁 REFRESH ROBUSTO del componente Livewire più vicino a questo form
+                                    const host = this.$root.closest('[wire\\:id]');           // nodo radice del componente
+                                    const id   = host ? host.getAttribute('wire:id') : null;  // id del componente Livewire
+
+                                    if (id && window.Livewire && typeof window.Livewire.find === 'function') {
+                                        window.Livewire.find(id).$refresh();                  // forza il render()
+                                    } else if (window.$wire && typeof $wire.$refresh === 'function') {
+                                        $wire.$refresh();                                     // fallback se $wire è globale
+                                    }
+
+                                    form.reset();
+                                } catch (err) {
+                                    window.dispatchEvent(new CustomEvent('toast', { detail: { type:'error', message: 'Errore di rete durante l’upload.' }}));
+                                } finally {
+                                    this.loading = false;
+                                }
+                            },
+
+                            // Cancella un media lato server (DB + file) e aggiorna la lista
+                            async destroy(mediaId, e) { 
+                                if (!(e?.isTrusted) || e.currentTarget?.dataset.role !== 'delete-button') {
+                                    return; // evita invocazioni spurie durante morph/unmount
+                                }
+                                if (!confirm('Eliminare questo documento?')) return;
+
+                                try {
+                                    const res = await fetch('{{ url('/media') }}/' + mediaId, {
+                                        method: 'DELETE',
+                                        headers: {
+                                            'X-CSRF-TOKEN': '{{ csrf_token() }}',       // protezione CSRF
+                                            'Accept': 'application/json',
+                                            'X-Requested-With': 'XMLHttpRequest',
+                                        },
+                                    });
+
+                                    if (!res.ok) {
+                                        // Proviamo a leggere il messaggio dal JSON; fallback generico
+                                        let msg = 'Errore durante la cancellazione.';
+                                        try { const data = await res.json(); msg = data?.message ?? msg; } catch (_) {}
+                                        window.dispatchEvent(new CustomEvent('toast', { detail: { type:'error', message: msg }}));
+                                        return;
+                                    }
+
+                                    // Toast di conferma
+                                    window.dispatchEvent(new CustomEvent('toast', {
+                                        detail: { type:'success', message: 'Documento eliminato.' }
+                                    }));
+
+                                    // 🔁 Refresh robusto del componente Livewire corrente
+                                    const host = this.$root.closest('[wire\\:id]');
+                                    const id   = host ? host.getAttribute('wire:id') : null;
+
+                                    if (id && window.Livewire && typeof window.Livewire.find === 'function') {
+                                        window.Livewire.find(id).$refresh();
+                                    } else if (window.$wire && typeof $wire.$refresh === 'function') {
+                                        $wire.$refresh();
+                                    }
+                                } catch (err) {
+                                    window.dispatchEvent(new CustomEvent('toast', {
+                                        detail: { type:'error', message: 'Errore di rete durante la cancellazione.' }
+                                    }));
+                                }
+                            }
+                        }"
+                        class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800 space-y-3"
+                    >
+                        <div class="text-base font-semibold">Documenti preliminari</div>
+                        <p class="text-sm opacity-80">Termini & condizioni, privacy, preventivo, ecc. (opzionali).</p>
+
+                        @if($rentalId)
+                            {{-- Upload via fetch() per restare sulla stessa pagina --}}
+                            <form
+                                @submit.prevent="submit($event)"
+                                class="mt-4 space-y-2"
+                            >
+                                @csrf
+                                <div class="flex flex-wrap items-center gap-2">
+
+                                    {{-- Scelta collection: stessi valori che già usi --}}
+                                    <select name="collection"
+                                            class="mt-1 w-full rounded-md border-gray-300 shadow-sm appearance-none pr-8 focus:border-indigo-500 focus:ring-indigo-500">
+                                        <option value="documents">Documenti vari (precontrattuali)</option>
+                                        <option value="id_card">Documento identità</option>
+                                        <option value="driver_license">Patente</option>
+                                        <option value="privacy">Consenso privacy</option>
+                                        <option value="other">Altro</option>
+                                    </select>
+
+                                    {{-- File: il nome del campo DEVE essere "file" per il tuo controller --}}
+                                    <input type="file" name="file" accept="application/pdf,image/*" class="file-input file-input-bordered file-input-sm" />
+
+                                    <button type="submit"
+                                            x-bind:disabled="loading"
+                                            class="rounded bg-gray-800 px-3 py-1.5 text-white hover:bg-gray-900 disabled:opacity-50">
+                                        <span x-show="!loading">Carica</span>
+                                        <span x-show="loading">Caricamento…</span>
+                                    </button>
+                                </div>
+
+                                <p class="text-xs opacity-70">Formati consentiti: PDF, JPG, PNG. Max 20MB.</p>
+                            </form>
+
+                            {{-- Elenco documenti: lettura diretta dal DB, si aggiorna con $wire.$refresh() --}}
+                            @php
+                                /** @var \App\Models\Rental|null $__rental */
+                                $__rental = \App\Models\Rental::find($rentalId);
+                                /** Elenco multi-collection (Spatie: uso la relazione media() per whereIn) */
+                                $__docs = $__rental
+                                    ? $__rental->media()
+                                        ->whereIn('collection_name', ['documents','id_card','driver_license','privacy','other'])
+                                        ->orderByDesc('id')
+                                        ->get()
+                                    : collect();
+                            @endphp
+
+                            <div class="mt-4">
+                                <div class="text-sm font-semibold mb-2">Documenti salvati</div>
+                                <ul class="divide-y rounded-md border border-gray-200 dark:border-gray-700">
+                                    @forelse($__docs as $m)
+                                        <li class="p-2 flex items-center justify-between">
+                                            <div class="text-sm">
+                                                <a href="{{ $m->getUrl() }}" target="_blank" class="font-medium hover:underline">
+                                                    {{ $m->file_name }}
+                                                </a>
+                                                <div class="text-xs opacity-70">
+                                                    {{ $m->collection_name }} · {{ number_format($m->size / 1024, 1) }} KB
+                                                </div>
                                             </div>
-                                        </div>
 
-                                        {{-- Azione elimina: usa la tua rotta DELETE esistente --}}
-                                        <button
-                                            type="button"
-                                            x-on:click.prevent.stop="destroy({{ $m->id }}, $event)"
-                                            data-role="delete-button"
-                                            class="inline-flex items-center px-2 py-1 rounded text-xs bg-rose-600 text-white hover:bg-rose-500">
-                                            Elimina
-                                        </button>
-                                    </li>
-                                @empty
-                                    <li class="p-2 text-sm opacity-70">Nessun documento caricato.</li>
-                                @endforelse
-                            </ul>
-                        </div>
-                    @else
-                        <button class="{{ $btnSoft }}" wire:click="saveDraft">Salva bozza per abilitare</button>
-                    @endif
+                                            {{-- Azione elimina: usa la tua rotta DELETE esistente --}}
+                                            <button
+                                                type="button"
+                                                x-on:click.prevent.stop="destroy({{ $m->id }}, $event)"
+                                                data-role="delete-button"
+                                                class="inline-flex items-center px-2 py-1 rounded text-xs bg-rose-600 text-white hover:bg-rose-500">
+                                                Elimina
+                                            </button>
+                                        </li>
+                                    @empty
+                                        <li class="p-2 text-sm opacity-70">Nessun documento caricato.</li>
+                                    @endforelse
+                                </ul>
+                            </div>
+                        @else
+                            <button class="{{ $btnSoft }}" wire:click="saveDraft">Salva bozza per abilitare</button>
+                        @endif
+                    </div>
+                </div>
+
+                {{-- Riepilogo minimo --}}
+                <div class="text-sm opacity-80">
+                    <div>Bozza ID: <span class="font-semibold">{{ $rentalId ?? '—' }}</span></div>
+                    <div>Cliente: <span class="font-semibold">{{ $customer_id ? 'associato' : '—' }}</span></div>
                 </div>
             </div>
-
-            {{-- Riepilogo minimo --}}
-            <div class="text-sm opacity-80">
-                <div>Bozza ID: <span class="font-semibold">{{ $rentalId ?? '—' }}</span></div>
-                <div>Cliente: <span class="font-semibold">{{ $customer_id ? 'associato' : '—' }}</span></div>
+        </fieldset>
+        @if(!$vehSelected)
+            <div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-2">
+                Seleziona un veicolo per generare contratto e caricare documenti.
             </div>
-        </div>
-    </fieldset>
-    @if(!$vehSelected)
-        <div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-2">
-            Seleziona un veicolo per generare contratto e caricare documenti.
-        </div>
-    @endif
+        @endif
     @endif
 
     {{-- Footer azioni --}}

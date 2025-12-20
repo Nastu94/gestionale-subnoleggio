@@ -80,13 +80,27 @@ class RentalsBoard extends Component
 
     /** Classi colore (card KPI / badge) per stato */
     public array $stateColors = [
-        'draft'       => 'bg-gray-100 border-gray-300 text-gray-800',
-        'reserved'    => 'bg-blue-100 border-blue-300 text-blue-900',
-        'in_use'      => 'bg-slate-100 border-slate-300 text-slate-900',
-        'checked_in'  => 'bg-indigo-100 border-indigo-300 text-indigo-900',
-        'closed'      => 'bg-green-100 border-green-300 text-green-900',
-        'cancelled'   => 'bg-rose-100 border-rose-300 text-rose-900',
+        // Bozze - grigio
+        'draft'      => 'bg-gray-100 border-gray-300 text-gray-800',
+
+        // Prenotati - giallo
+        'reserved'   => 'bg-yellow-100 border-yellow-300 text-yellow-900',
+
+        // In uso - rosso chiaro
+        'in_use'     => 'bg-red-100 border-red-300 text-red-900',
+
+        // Rientrati - rosso scuro
+        // (più “pesante” dell’in_use ma sempre leggibile)
+        'checked_in' => 'bg-red-200 border-red-400 text-red-950',
+
+        // Chiuso - verde
+        'closed'     => 'bg-green-100 border-green-300 text-green-900',
+
+        // Cancellati - bordeaux
+        // (bordeaux = tonalità wine/rose scura)
+        'cancelled'  => 'bg-rose-200 border-rose-400 text-rose-950',
     ];
+
 
     protected $queryString = [
         'view'  => ['as' => 'view', 'except' => 'table'],

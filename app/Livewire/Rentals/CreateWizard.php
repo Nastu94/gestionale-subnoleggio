@@ -56,10 +56,10 @@ class CreateWizard extends Component
     
     /** Selezioni coperture (flags) */
     public array $coverage = [
-        'kasko'           => false,
-        'furto_incendio'  => false,
-        'cristalli'       => false,
-        'assistenza'      => false,
+        'kasko'           => true,
+        'furto_incendio'  => true,
+        'cristalli'       => true,
+        'assistenza'      => true,
     ];
 
     /** Franchigie per coperture (valori in €) */
