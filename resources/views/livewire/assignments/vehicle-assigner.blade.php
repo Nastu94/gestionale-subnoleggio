@@ -41,11 +41,22 @@
         <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div>
                 <label class="block text-sm font-medium mb-1">Alimentazione</label>
-                <input class="w-full border rounded p-2" wire:model.live="filters.fuel_type" placeholder="es. diesel">
+                <select class="w-full border rounded p-2" wire:model.live="filters.fuel_type">
+                    <option value="">— tutte —</option>
+                    @foreach(\App\Models\Vehicle::FUEL_TYPE_LABELS_IT as $value => $label)
+                        <option value="{{ $value }}">{{ $label }}</option>
+                    @endforeach
+                </select>
             </div>
+
             <div>
                 <label class="block text-sm font-medium mb-1">Cambio</label>
-                <input class="w-full border rounded p-2" wire:model.live="filters.transmission" placeholder="es. automatico">
+                <select class="w-full border rounded p-2" wire:model.live="filters.transmission">
+                    <option value="">— tutti —</option>
+                    @foreach(\App\Models\Vehicle::TRANSMISSION_LABELS_IT as $value => $label)
+                        <option value="{{ $value }}">{{ $label }}</option>
+                    @endforeach
+                </select>
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">Posti</label>
@@ -107,7 +118,7 @@
                                     <span class="text-sm text-gray-500">({{ $v->plate }})</span>
                                 </div>
                                 <div class="text-xs text-gray-500">
-                                    {{ $v->fuel_type }} • {{ $v->transmission }} • {{ $v->seats }} posti
+                                    {{ $v->fuel_type_label }} • {{ $v->transmission_label }} • {{ $v->seats }} posti
                                 </div>
                             </div>
                         </div>
