@@ -3,7 +3,7 @@
     {{-- Header con titolo e pulsante "indietro" alla rentals/show --}}
     <x-slot name="header">
         <div class="flex items-center justify-between">
-            <h2 class="font-semibold text-xl text-gray-800 dark:text-gray-200 leading-tight">
+            <h2 class="font-semibold text-xl text-white dark:text-gray-200 leading-tight">
                 {{-- Mostro il tipo (pickup/return) letto da query string --}}
                 {{ __('Checklist') }} — 
                 <span class="uppercase">{{ request()->query('type', 'pickup') }}</span>

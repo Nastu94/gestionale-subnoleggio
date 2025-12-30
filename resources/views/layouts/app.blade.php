@@ -5,7 +5,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
 
-        <title>{{ config('app.name', 'Laravel') }}</title>
+        <title>{{ config('app.name', 'AMD Mobility') }}</title>
 
         <!-- Fonts -->
         <link rel="preconnect" href="https://fonts.bunny.net">
@@ -56,7 +56,7 @@
             @livewire('navigation-menu')
 
             @if (isset($header))
-                <header class="bg-white dark:bg-gray-800 shadow">
+                <header class="nav-color dark:bg-gray-800 shadow">
                     <div class="max-w-7xl mx-auto py-4 px-2 sm:px-4 lg:px-6">
                         {{ $header }}
                     </div>

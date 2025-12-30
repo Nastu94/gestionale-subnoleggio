@@ -5,3 +5,15 @@
 [x-cloak] {
     display: none;
 }
+
+.nav-color {
+    background-color: #182e4e;
+}
+
+.btn-text-color {
+    color: #182e4e;
+}
+
+.btn-hover-bg-color:hover{
+    background-color: #182e4e35;
+}

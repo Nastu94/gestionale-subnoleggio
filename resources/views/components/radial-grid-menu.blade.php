@@ -55,9 +55,9 @@ function centerTile(el){
             @click.stop="toggle({{ $i }})"
             class="w-28 h-28 bg-white dark:bg-gray-800 rounded-lg shadow
                    flex flex-col items-center justify-center
-                   hover:bg-indigo-50 dark:hover:bg-indigo-900
+                   hover:btn-hover-bg-color dark:hover:bg-indigo-900
                    transition-all duration-100">
-            <i class="fas {{ $section['icon'] }} text-3xl text-indigo-600 dark:text-indigo-400"></i>
+            <i class="fas {{ $section['icon'] }} text-3xl btn-text-color dark:text-indigo-400"></i>
             <span class="mt-1 text-sm font-medium text-gray-800 dark:text-gray-200">
                 {{ $section['section'] }}
             </span>

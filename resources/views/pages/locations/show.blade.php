@@ -4,14 +4,14 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between">
-            <h2 class="font-semibold text-lg text-gray-800 dark:text-gray-200 leading-tight">
+            <h2 class="font-semibold text-lg text-white dark:text-gray-200 leading-tight">
                 {{ __('Sede') }}: {{ $location->name }}
             </h2>
 
             <div class="flex gap-2">
                 <a href="{{ route('locations.index') }}"
                 class="inline-flex items-center px-3 py-1.5 rounded-md border
-                        text-xs font-semibold uppercase hover:bg-gray-100 dark:hover:bg-gray-700
+                        text-xs font-semibold uppercase hover:bg-gray-400 dark:hover:bg-gray-700 bg-white
                         text-gray-800 dark:text-gray-200">
                     <i class="fas fa-arrow-left mr-1"></i> Torna alle Sedi
                 </a>
