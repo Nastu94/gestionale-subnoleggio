@@ -225,10 +225,10 @@
                             <div class="rounded-md border border-gray-200 dark:border-gray-700 p-3">
                                 <label class="inline-flex items-center gap-2">
                                     <input type="checkbox" class="rounded" wire:model.defer="coverage.assistenza">
-                                    <span>Assistenza stradale</span>
+                                    <span>Soccorso stradale</span>
                                 </label>
                                 <div class="text-xs text-gray-600 mt-1">
-                                    Include carro attrezzi/veicolo sostitutivo secondo disponibilità.
+                                    Include carro attrezzi.
                                 </div>
                             </div>
                         </div>

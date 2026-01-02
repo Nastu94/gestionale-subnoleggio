@@ -8,7 +8,7 @@
                 <div class="rounded-xl border p-3 space-y-2">
                     <div class="flex items-center justify-between">
                         <div class="font-semibold">#{{ $dmg->id }} · {{ $dmg->phase }}</div>
-                        <span class="badge">{{ $dmg->severity }}</span>
+                        <span class="badge">{{ $dmg->area_label }} - {{ $dmg->severity_label }}</span>
                     </div>
 
                     <div class="text-sm opacity-80">{{ $dmg->description }}</div>

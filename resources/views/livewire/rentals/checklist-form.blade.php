@@ -44,67 +44,334 @@
                 @error('type') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
             </div>
 
-            {{-- Chilometraggio (>= km attuali veicolo) --}}
-            <div>
-                <label for="mileage" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {{ __('Chilometraggio') }}
-                </label>
-                <input type="number" id="mileage" wire:model.lazy="mileage"
-                       min="0" step="1"
-                       :disabled="state.isLocked"
-                       class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800" />
-                <div class="mt-1 text-sm text-gray-700 dark:text-gray-300">
-                    {{ __('Km attuali veicolo:') }}
-                    <strong>
-                        {{ $current_vehicle_mileage !== null ? number_format($current_vehicle_mileage, 0, ',', '.') : '—' }} km
-                    </strong>
-                </div>
-                @error('mileage') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
-            </div>
+            <div class="grid grid-cols-2 gap-2">
 
-            {{-- Carburante (slider 0..100) --}}
-            <div>
-                <label for="fuel_percent" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {{ __('Carburante (%)') }}
-                </label>
-                <input type="range" id="fuel_percent" wire:model.live="fuel_percent"
+                {{-- Chilometraggio (>= km attuali veicolo) --}}
+                <div>
+                    <label for="mileage" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ __('Chilometraggio') }}
+                    </label>
+                    <input type="number" id="mileage" wire:model.lazy="mileage"
+                        min="0" step="1"
                         :disabled="state.isLocked"
-                        min="0" max="100" step="1" class="mt-2 w-full" />
-                <div class="mt-1 text-sm text-gray-700 dark:text-gray-300">
-                    {{ __('Livello:') }} <strong>{{ $fuel_percent ?? 0 }}%</strong>
+                        class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800" />
+                    <div class="mt-1 text-sm text-gray-700 dark:text-gray-300">
+                        {{ __('Km attuali veicolo:') }}
+                        <strong>
+                            {{ $current_vehicle_mileage !== null ? number_format($current_vehicle_mileage, 0, ',', '.') : '—' }} km
+                        </strong>
+                    </div>
+                    @error('mileage') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
                 </div>
-                @error('fuel_percent') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
-            </div>
 
-            {{-- Pulizia --}}
-            <div>
-                <label for="cleanliness" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {{ __('Pulizia') }}
-                </label>
-                <select id="cleanliness" wire:model="cleanliness"
-                        :disabled="state.isLocked"
-                        class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800">
-                    <option value="">{{ __('Seleziona...') }}</option>
-                    <option value="poor">Scarsa</option>
-                    <option value="fair">Discreta</option>
-                    <option value="good">Buona</option>
-                    <option value="excellent">Eccellente</option>
-                </select>
-                @error('cleanliness') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                {{-- Pulizia --}}
+                <div>
+                    <label for="cleanliness" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ __('Pulizia') }}
+                    </label>
+                    <select id="cleanliness" wire:model="cleanliness"
+                            :disabled="state.isLocked"
+                            class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800">
+                        <option value="">{{ __('Seleziona...') }}</option>
+                        <option value="poor">Scarsa</option>
+                        <option value="fair">Discreta</option>
+                        <option value="good">Buona</option>
+                        <option value="excellent">Eccellente</option>
+                    </select>
+                    @error('cleanliness') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                </div>
+
+                {{-- Carburante (gauge stile cruscotto + click migliorato ai limiti + animazioni fluide) --}}
+                <div
+                    x-data="{
+                        /**
+                        * Livewire <-> Alpine (stessa property).
+                        */
+                        fuel: @entangle('fuel_percent').live,
+
+                        /**
+                        * Valori consentiti (niente intermedi).
+                        */
+                        allowed: [0, 20, 40, 50, 60, 80, 100],
+
+                        /**
+                        * Stato drag.
+                        */
+                        dragging: false,
+
+                        /**
+                        * Magnet agli estremi: percentuale di larghezza usata come “zona facile”
+                        * per scegliere 0 o 100 senza dover cliccare pixel-perfect.
+                        */
+                        edgeMagnet: 0.12, // 12% a sinistra e 12% a destra
+
+                        /**
+                        * Snap al valore consentito più vicino.
+                        */
+                        snapToAllowed(v) {
+                            const n = Number(v ?? 0);
+                            let best = this.allowed[0];
+                            let bestDiff = Math.abs(n - best);
+
+                            for (const a of this.allowed) {
+                                const d = Math.abs(n - a);
+                                if (d < bestDiff) {
+                                    best = a;
+                                    bestDiff = d;
+                                }
+                            }
+                            return best;
+                        },
+
+                        /**
+                        * Set centralizzato: applica clamp + snap e aggiorna la property.
+                        */
+                        setFuel(v) {
+                            const clamped = Math.max(0, Math.min(100, Number(v ?? 0)));
+                            const snapped = this.snapToAllowed(clamped);
+                            if (Number(this.fuel ?? 0) !== snapped) {
+                                this.fuel = snapped; // aggiorna Livewire via entangle
+                            }
+                        },
+
+                        /**
+                        * Converte la posizione del puntatore in 0..100 (con magnet ai bordi).
+                        * Nota: mappo linearmente sull'asse X del gauge (più intuitivo per il click).
+                        */
+                        valueFromPointer(evt) {
+                            const rect = this.$refs.gauge.getBoundingClientRect();
+                            const x = Math.min(Math.max(evt.clientX - rect.left, 0), rect.width);
+                            const ratio = rect.width > 0 ? (x / rect.width) : 0;
+
+                            // Zone magnet ai limiti
+                            if (ratio <= this.edgeMagnet) return 0;
+                            if (ratio >= (1 - this.edgeMagnet)) return 100;
+
+                            // Rimappo la parte centrale (senza magnet) a 0..100
+                            const norm = (ratio - this.edgeMagnet) / (1 - (2 * this.edgeMagnet));
+                            return norm * 100;
+                        },
+
+                        /**
+                        * Aggiorna da evento puntatore.
+                        */
+                        updateFromPointer(evt) {
+                            // Se bloccato, non consentire interazioni
+                            if (typeof state !== 'undefined' && state.isLocked) return;
+
+                            const v = this.valueFromPointer(evt);
+                            this.setFuel(v);
+                        },
+
+                        /**
+                        * Angolo lancetta -90..+90
+                        */
+                        get needleAngle() {
+                            const clamped = Math.max(0, Math.min(100, Number(this.fuel ?? 0)));
+                            return -90 + (clamped * 180 / 100);
+                        },
+
+                        /**
+                        * Valore visualizzato sempre “pulito”.
+                        */
+                        get displayFuel() {
+                            return this.snapToAllowed(this.fuel);
+                        },
+
+                        /**
+                        * Init: se arriva un valore non ammesso, lo riallineo.
+                        */
+                        init() {
+                            this.setFuel(this.fuel ?? 0);
+                        }
+                    }"
+                    x-init="init()"
+                    class="flex flex-col items-center"
+                >
+                    <label for="fuel_percent" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ __('Carburante (%)') }}
+                    </label>
+
+                    <div class="relative mt-2 w-full max-w-sm">
+                        <div class="rounded-2xl border border-gray-200/70 dark:border-gray-700/70 bg-white/80 dark:bg-gray-900/60 shadow-sm px-4 pt-4 pb-3">
+                            {{-- Area interattiva: click/drag sul gauge --}}
+                            <div
+                                x-ref="gauge"
+                                class="relative cursor-pointer"
+                                :class="(typeof state !== 'undefined' && state.isLocked) ? 'opacity-60 cursor-not-allowed' : ''"
+                                @pointerdown.prevent="
+                                    if (typeof state !== 'undefined' && state.isLocked) return;
+                                    dragging = true;
+                                    updateFromPointer($event);
+                                "
+                                @pointermove.prevent="
+                                    if (!dragging) return;
+                                    updateFromPointer($event);
+                                "
+                                @pointerup.window="dragging = false"
+                                @pointercancel.window="dragging = false"
+                            >
+                                <svg viewBox="0 0 200 120" class="w-full h-auto">
+                                    {{-- Cornice esterna --}}
+                                    <path
+                                        d="M16,100 A84,84 0 0,1 184,100"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="14"
+                                        class="text-gray-200 dark:text-gray-700"
+                                        stroke-linecap="round"
+                                        opacity="0.9"
+                                    />
+
+                                    {{-- Arco base --}}
+                                    <path
+                                        d="M20,100 A80,80 0 0,1 180,100"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="10"
+                                        class="text-gray-300 dark:text-gray-600"
+                                        stroke-linecap="round"
+                                    />
+
+                                    {{-- Riempimento progressivo (fluido) --}}
+                                    <path
+                                        d="M20,100 A80,80 0 0,1 180,100"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="10"
+                                        class="text-emerald-500"
+                                        stroke-linecap="round"
+                                        pathLength="100"
+                                        :stroke-dasharray="displayFuel === 100
+                                            ? '100 0'
+                                            : `${displayFuel} ${100 - displayFuel + 0.6}`"
+                                        style="transition: stroke-dasharray 220ms ease-out, opacity 120ms ease-out;"
+                                        :opacity="displayFuel === 0 ? 0 : 0.95"
+                                    />
+
+                                    {{-- Zona riserva evidenziata (0..20) - endpoint corretto al 20% --}}
+                                    <path
+                                        d="M20,100 A80,80 0 0,1 35.28,52.98"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="10"
+                                        class="text-red-500"
+                                        stroke-linecap="round"
+                                        opacity="0.95"
+                                    />
+
+                                    {{-- Tacche SOLO sui valori consentiti --}}
+                                    <g class="text-gray-700 dark:text-gray-300">
+                                        @php $allowed = [0,20,40,50,60,80,100]; @endphp
+                                        @foreach ($allowed as $val)
+                                            @php
+                                                $angle = -90 + ($val * 180 / 100);
+                                                $isMajor = in_array($val, [0,20,40,60,80,100], true);
+                                                $y1 = $isMajor ? 18 : 22;
+                                                $y2 = $isMajor ? 38 : 34;
+                                                $w  = $isMajor ? 3 : 2;
+                                                $op = $isMajor ? 0.85 : 0.65;
+                                            @endphp
+                                            <line
+                                                x1="100" y1="{{ $y1 }}"
+                                                x2="100" y2="{{ $y2 }}"
+                                                stroke="currentColor"
+                                                stroke-width="{{ $w }}"
+                                                transform="rotate({{ $angle }} 100 100)"
+                                                opacity="{{ $op }}"
+                                            />
+                                        @endforeach
+                                    </g>
+
+                                    {{-- Etichette --}}
+                                    <text x="22" y="112" font-size="13" class="fill-gray-700 dark:fill-gray-300">E</text>
+                                    <text x="172" y="112" font-size="13" class="fill-gray-700 dark:fill-gray-300">F</text>
+
+                                    {{-- Iconcina --}}
+                                    <text x="96" y="62" font-size="14" class="fill-gray-700 dark:fill-gray-300">⛽</text>
+
+                                    {{-- Lancetta (fluida via transition) --}}
+                                    <g
+                                        :transform="`rotate(${needleAngle} 100 100)`"
+                                        style="transition: transform 180ms cubic-bezier(.2,.8,.2,1);"
+                                    >
+                                        <line
+                                            x1="100" y1="100"
+                                            x2="100" y2="34"
+                                            stroke="currentColor"
+                                            stroke-width="4"
+                                            class="text-red-600"
+                                            stroke-linecap="round"
+                                        />
+                                    </g>
+
+                                    {{-- Perno --}}
+                                    <circle cx="100" cy="100" r="8" class="fill-gray-800 dark:fill-gray-200" />
+                                    <circle cx="100" cy="100" r="3" class="fill-gray-200 dark:fill-gray-800" />
+                                </svg>
+
+                                {{-- “Hot zones” cliccabili grandi per 0 e 100 --}}
+                                <button
+                                    type="button"
+                                    class="absolute left-0 bottom-0 -translate-x-2 translate-y-2 w-12 h-12 rounded-full"
+                                    title="{{ __('Imposta riserva (0%)') }}"
+                                    @click.prevent="setFuel(0)"
+                                    :disabled="(typeof state !== 'undefined' && state.isLocked)"
+                                    :class="(typeof state !== 'undefined' && state.isLocked) ? 'opacity-0 pointer-events-none' : 'opacity-0'"
+                                ></button>
+
+                                <button
+                                    type="button"
+                                    class="absolute right-0 bottom-0 translate-x-2 translate-y-2 w-12 h-12 rounded-full"
+                                    title="{{ __('Imposta pieno (100%)') }}"
+                                    @click.prevent="setFuel(100)"
+                                    :disabled="(typeof state !== 'undefined' && state.isLocked)"
+                                    :class="(typeof state !== 'undefined' && state.isLocked) ? 'opacity-0 pointer-events-none' : 'opacity-0'"
+                                ></button>
+
+                                {{-- Input “vero” per accessibilità/validazione: nascosto, ma resta wire:model.live --}}
+                                <input
+                                    type="range"
+                                    id="fuel_percent"
+                                    wire:model.live="fuel_percent"
+                                    min="0"
+                                    max="100"
+                                    step="1"
+                                    class="sr-only"
+                                />
+                            </div>
+
+                            <div class="mt-2 flex items-center justify-between text-sm text-gray-700 dark:text-gray-300">
+                                <div>
+                                    {{ __('Livello:') }}
+                                    <strong x-text="`${displayFuel}%`"></strong>
+                                </div>
+
+                                <div class="text-xs text-gray-500 dark:text-gray-400">
+                                    0 • 20 • 40 • 50 • 60 • 80 • 100
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    @error('fuel_percent')
+                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                    @enderror
+                </div>
             </div>
 
             {{-- Firme (flag informativi) --}}
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <label class="inline-flex items-center">
                     <input type="checkbox" wire:model="signed_by_customer"
-                           :disabled="state.isLocked"
-                           class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-800">
+                        :disabled="state.isLocked"
+                        class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-800">
                     <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">{{ __('Firmata dal cliente') }}</span>
                 </label>
                 <label class="inline-flex items-center">
                     <input type="checkbox" wire:model="signed_by_operator"
-                           :disabled="state.isLocked"
-                           class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-800">
+                        :disabled="state.isLocked"
+                        class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-800">
                     <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">{{ __('Firmata dall’operatore') }}</span>
                 </label>
             </div>
@@ -790,10 +1057,63 @@ document.addEventListener('alpine:init', () => {
             ].join(' ');
         },
     }));
+
+    
+        /**
+        * Traduce area e gravità del danno per la UI.
+        * Fallback: se non trova la chiave, mostra il valore originale.
+        */
+        const DAMAGE_AREA_LABELS = {
+            // Inglese -> Italiano
+            front: 'Anteriore',
+            rear: 'Posteriore',
+            left: 'Sinistra',
+            right: 'Destra',
+            interior: 'Interno',
+            roof: 'Tetto',
+            windshield: 'Parabrezza',
+            wheel: 'Ruota',
+            other: 'Altro',
+
+            // Italiano già salvato -> Italiano (per robustezza)
+            anteriore: 'Anteriore',
+            posteriore: 'Posteriore',
+            sinistra: 'Sinistra',
+            destra: 'Destra',
+            interno: 'Interno',
+            tetto: 'Tetto',
+            parabrezza: 'Parabrezza',
+            ruota: 'Ruota',
+            altro: 'Altro',
+        };
+
+        const DAMAGE_SEVERITY_LABELS = {
+            low: 'Bassa',
+            medium: 'Media',
+            high: 'Alta',
+
+            // Se per caso arrivano già in italiano
+            bassa: 'Bassa',
+            media: 'Media',
+            alta: 'Alta',
+        };
+
+        /**
+        * Normalizza chiavi per lookup.
+        */
+        const damageKey = (v) => String(v ?? '').trim().toLowerCase();
+
+        /**
+        * Traduzioni con fallback al valore originale.
+        */
+        const tDamageArea = (area) => DAMAGE_AREA_LABELS[damageKey(area)] ?? area;
+        const tDamageSeverity = (severity) => DAMAGE_SEVERITY_LABELS[damageKey(severity)] ?? severity;
+
     Alpine.data('checklistMedia', (cfg) => ({
         // ===========================
         // Stato locale del pannello
         // ===========================
+
         state: {
             checklistId: cfg.checklistId,
             rentalId:    cfg.rentalId,
@@ -807,14 +1127,18 @@ document.addEventListener('alpine:init', () => {
             },
 
             // Danni per la select (solo return): { id, label }
+            // Danni per la select (solo return): { id, label }
             damages: (Array.isArray(cfg.damages) ? cfg.damages : [])
                 .filter(d => Number.isInteger(d?.id))
                 .map(d => ({
                     id: d.id,
-                    // Etichetta comoda "Area · Gravità" o fallback "Danno #ID"
-                    label: [d.area || null, d.severity || null].filter(Boolean).join(' · ')
-                           || `Danno #${d.id}`
-                })),
+                    // Etichetta "Area · Gravità" (tradotte) o fallback "Danno #ID"
+                    label: [
+                    tDamageArea(d.area) || null,
+                    tDamageSeverity(d.severity) || null
+                    ].filter(Boolean).join(' · ')
+                    || `Danno #${d.id}`,
+            })),
 
             // Danno attualmente selezionato (per upload/lista foto danni)
             selectedDamageId: null,

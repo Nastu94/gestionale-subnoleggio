@@ -30,6 +30,53 @@ class RentalDamage extends Model implements SpatieHasMedia
         'photos_count'   => 'integer',
     ];
 
+    /**
+     * Mappe “UI-only” per mostrare in italiano l'area del danno.
+     * NB: nel database restano in inglese.
+     *
+     * @var array<string,string>
+     */
+    public const DAMAGE_AREA_LABELS = [
+        // Inglese -> Italiano
+        'front' => 'Anteriore',
+        'rear' => 'Posteriore',
+        'left' => 'Sinistra',
+        'right' => 'Destra',
+        'interior' => 'Interno',
+        'roof' => 'Tetto',
+        'windshield' => 'Parabrezza',
+        'wheel' => 'Ruota',
+        'other' => 'Altro',
+
+        // Italiano già salvato -> Italiano (per robustezza)
+        'anteriore' => 'Anteriore',
+        'posteriore' => 'Posteriore',
+        'sinistra' => 'Sinistra',
+        'destra' => 'Destra',
+        'interno' => 'Interno',
+        'tetto' => 'Tetto',
+        'parabrezza' => 'Parabrezza',
+        'ruota' => 'Ruota',
+        'altro' => 'Altro',
+    ];
+
+    /**
+     * Mappa “UI-only” per mostrare in italiano la severità del danno.
+     * NB: nel database restano in inglese.
+     *
+     * @var array<string,string>
+     */
+    public const DAMAGE_SEVERITY_LABELS = [
+        'low' => 'Bassa',
+        'medium' => 'Media',
+        'high' => 'Alta',
+
+        // Se per caso arrivano già in italiano
+        'bassa' => 'Bassa',
+        'media' => 'Media',
+        'alta' => 'Alta',
+    ];
+
     public function rental()  { return $this->belongsTo(Rental::class); }
     public function creator() { return $this->belongsTo(User::class, 'created_by'); }
     public function vehicleDamages() { return $this->hasMany(VehicleDamage::class, 'first_rental_damage_id'); }
@@ -59,5 +106,31 @@ class RentalDamage extends Model implements SpatieHasMedia
             ->keepOriginalImageFormat()
             ->performOnCollections('photos')
             ->nonQueued();
+    }
+
+    /**
+     * Accessor: etichetta italiana dell'area danno.
+     * Uso: {{ $damage->area_label }}
+     */
+    public function getAreaLabelAttribute(): ?string
+    {
+        $area = (string) ($this->area ?? '');
+        if (!$area) {
+            return null;
+        }
+        return self::DAMAGE_AREA_LABELS[$area] ?? $area;
+    }
+
+    /**
+     * Accessor: etichetta italiana della severità danno.
+     * Uso: {{ $damage->severity_label }}
+     */
+    public function getSeverityLabelAttribute(): ?string
+    {
+        $severity = (string) ($this->severity ?? '');
+        if (!$severity) {
+            return null;
+        }
+        return self::DAMAGE_SEVERITY_LABELS[$severity] ?? $severity;
     }
 }

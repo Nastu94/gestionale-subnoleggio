@@ -199,6 +199,9 @@ class ChecklistForm extends Component
             }
             $this->mediaChecklist = $groups;
         } else {
+            $this->cleanliness  = 'excellent'; // default
+            $this->fuel_percent = 100;        // default
+
             /**
              * ✅ Nuova checklist: tutte le checkbox partono attive
              */
@@ -275,6 +278,34 @@ class ChecklistForm extends Component
             'signed_by_operator' => ['boolean'],
         ];
     }
+    
+    /**
+     * Messaggi di validazione per TAB 1 (Base).
+     * Nota: uso le chiavi "campo.regola" per sovrascrivere i messaggi di default.
+     */
+    protected function messagesBase(): array
+    {
+        return [
+            'type.required'         => __('Seleziona il tipo di checklist.'),
+            'type.in'               => __('Tipo checklist non valido.'),
+
+            'mileage.required'      => __('Inserisci il chilometraggio.'),
+            'mileage.integer'       => __('Il chilometraggio deve essere un numero intero.'),
+            'mileage.min'           => __('Il chilometraggio deve essere almeno :min km (km attuali del veicolo).'),
+            'mileage.max'           => __('Il chilometraggio non può superare :max km.'),
+
+            'fuel_percent.required' => __('Inserisci la percentuale di carburante.'),
+            'fuel_percent.integer'  => __('La percentuale di carburante deve essere un numero intero.'),
+            'fuel_percent.min'      => __('La percentuale di carburante non può essere inferiore a :min.'),
+            'fuel_percent.max'      => __('La percentuale di carburante non può superare :max.'),
+
+            'cleanliness.required'  => __('Seleziona il livello di pulizia.'),
+            'cleanliness.in'        => __('Livello di pulizia non valido.'),
+
+            'signed_by_customer.boolean' => __('Il valore "firmato dal cliente" non è valido.'),
+            'signed_by_operator.boolean' => __('Il valore "firmato dall’operatore" non è valido.'),
+        ];
+    }
 
     /**
      * Salva/Crea la checklist (solo TAB 1).
@@ -316,7 +347,7 @@ class ChecklistForm extends Component
         ]);
 
         // 2) Valido
-        $data = $this->validate($this->rulesBase());
+        $data = $this->validate($this->rulesBase(), $this->messagesBase());
         Log::debug('[CHK][saveBase] Validated data', [
             'trace_id' => $traceId,
             'data'     => $data,
