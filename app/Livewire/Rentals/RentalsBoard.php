@@ -517,8 +517,13 @@ class RentalsBoard extends Component
             // Tutti i veicoli che hanno un affidamento aperto verso questa org
             $q->whereHas('assignments', function ($assign) use ($org) {
                 $assign
+                    // L'affidamento deve essere dell'organizzazione corrente
                     ->where('renter_org_id', $org->id)
-                    ->whereNull('end_at'); // end_at NULL = affidamento aperto
+                    // ...e deve essere attivo: end_at nel futuro oppure end_at NULL (affidamento aperto)
+                    ->where(function ($sub) {
+                        $sub->where('end_at', '>', Carbon::now())
+                            ->orWhereNull('end_at');
+                    });
             });
         }
         // Caso: organizzazione ADMIN (parco veicoli proprio)

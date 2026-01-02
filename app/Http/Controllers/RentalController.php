@@ -131,7 +131,7 @@ class RentalController extends Controller
             return response()->json(['ok' => false, 'message' => 'Contratto firmato assente.'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        if (!in_array($rental->status, ['draft', 'checked_out'], true)) {
+        if (!in_array($rental->status, ['draft', 'checked_out', 'reserved'], true)) {
             return response()->json(['ok' => false, 'message' => 'Stato non valido per passare a in_use.'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 

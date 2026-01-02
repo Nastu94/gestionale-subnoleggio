@@ -11,7 +11,7 @@
 
             {{-- Torna alla show del rental --}}
             <a href="{{ route('rentals.show', $rental) }}"
-               class="btn btn-outline px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50
+               class="btn btn-outline px-3 py-1.5 rounded-md border bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-50
                       dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800">                      
                 {{-- Icona minimale (accessoria) --}}
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
