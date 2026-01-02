@@ -10,10 +10,8 @@
 
             {{-- Pulsante: Nuova sede --}}
             <a href="{{ route('locations.create') }}"
-               class="inline-flex items-center px-3 py-1.5 bg-indigo-600 rounded-md
-                      text-xs font-semibold text-white uppercase hover:bg-indigo-500
-                      focus:outline-none focus:ring-2 focus:ring-indigo-300 transition">
-                <i class="fas fa-plus mr-1"></i> Nuova sede
+               class="inline-flex h-10 items-center rounded-md px-3 bg-gray-100 text-gray-900 hover:bg-gray-200">
+                <span class="mr-1 text-lg leading-none">+</span> Nuova sede
             </a>
         </div>
     </x-slot>

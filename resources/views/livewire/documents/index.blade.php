@@ -255,9 +255,9 @@
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-xs text-gray-500">Veicolo</label>
-                            <input type="number" class="mt-1 w-full rounded border-gray-300"
+                            <input type="text" class="mt-1 w-full rounded border-gray-300"
                                    wire:model.live="form.vehicle_id"
-                                   @if($editingId !== null) disabled @endif>
+                                   disabled>
                             @error('form.vehicle_id') <div class="mt-1 text-xs text-rose-600">{{ $message }}</div> @enderror
                         </div>
 

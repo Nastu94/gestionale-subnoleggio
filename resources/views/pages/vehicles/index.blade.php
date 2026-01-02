@@ -9,7 +9,7 @@
 
                 @can('vehicles.create')
                     <a href="{{ route('vehicles.create') }}"
-                    class="inline-flex h-10 items-center rounded-md bg-slate-800 px-3 text-white hover:bg-slate-900">
+                    class="inline-flex h-10 items-center rounded-md px-3 bg-gray-100 text-gray-900 hover:bg-gray-200">
                         {{-- icona opzionale: + --}}
                         <span class="mr-1 text-lg leading-none">+</span>
                         Nuovo veicolo

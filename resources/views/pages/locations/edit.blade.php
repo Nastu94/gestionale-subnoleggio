@@ -7,10 +7,8 @@
             </h2>
 
             <a href="{{ route('locations.show', $location) }}"
-               class="inline-flex items-center px-3 py-1.5 rounded-md border
-                      text-xs font-semibold uppercase hover:bg-gray-100 dark:hover:bg-gray-700
-                      text-gray-800 dark:text-gray-200">
-                <i class="fas fa-arrow-left mr-1"></i> Torna al dettaglio
+               class="inline-flex h-10 items-center rounded-md px-3 bg-gray-100 text-gray-900 hover:bg-gray-200">
+                <span class="mr-1 text-lg leading-none">←</span> Torna al dettaglio
             </a>
         </div>
     </x-slot>

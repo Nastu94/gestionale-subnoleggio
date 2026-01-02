@@ -6,7 +6,9 @@
                     {{ __('Nuovo veicolo') }}
                 </h2>
                 <a href="{{ route('vehicles.index') }}"
-                   class="inline-flex h-10 items-center rounded-md border border-gray-200 dark:border-gray-700 px-3 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/40">
+                   class="inline-flex h-10 items-center rounded-md px-3 bg-gray-100 text-gray-900 hover:bg-gray-200">
+                    {{-- icona opzionale: ← --}}
+                    <span class="mr-1 text-lg leading-none">←</span>
                     Torna all’elenco
                 </a>
             </div>

@@ -10,19 +10,15 @@
 
             <div class="flex gap-2">
                 <a href="{{ route('locations.index') }}"
-                class="inline-flex items-center px-3 py-1.5 rounded-md border
-                        text-xs font-semibold uppercase hover:bg-gray-400 dark:hover:bg-gray-700 bg-white
-                        text-gray-800 dark:text-gray-200">
-                    <i class="fas fa-arrow-left mr-1"></i> Torna alle Sedi
+                class="inline-flex h-10 items-center rounded-md px-3 bg-gray-100 text-gray-900 hover:bg-gray-200">
+                    <span class="mr-1 text-lg leading-none">←</span> Torna alle Sedi
                 </a>
 
                 {{-- Mostra solo se l’utente può aggiornare --}}
                 @can('update', $location)
                     <a href="{{ route('locations.edit', $location) }}"
-                    class="inline-flex items-center px-3 py-1.5 bg-indigo-600 rounded-md
-                            text-xs font-semibold text-white uppercase hover:bg-indigo-500
-                            focus:outline-none focus:ring-2 focus:ring-indigo-300 transition">
-                        <i class="fas fa-pencil-alt mr-1"></i> Modifica
+                    class="inline-flex h-10 items-center rounded-md px-3 bg-gray-100 text-gray-900 hover:bg-gray-200">
+                        <span class="mr-1 text-lg leading-none">✎</span> Modifica
                     </a>
                 @endcan
             </div>

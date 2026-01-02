@@ -126,7 +126,8 @@ class Index extends Component
 
         $this->editingId = null;
         $this->form = [
-            'vehicle_id'  => $vehicle->id,
+            'id_vehicle'  => $vehicle->id,
+            'vehicle_id'  => $vehicle->plate . ' - ' . $vehicle->make . ' ' . $vehicle->model,
             'type'        => null,
             'number'      => null,
             'expiry_date' => null,
@@ -142,12 +143,15 @@ class Index extends Component
         $doc = VehicleDocument::query()
             ->with(['vehicle' => fn($q) => $q->withTrashed()->select('id','deleted_at')])
             ->findOrFail($id);
+        $vehicle = Vehicle::withTrashed()->findOrFail($doc->vehicle_id);
 
         $this->editingVehicleArchived = method_exists($doc->vehicle, 'trashed') && $doc->vehicle->trashed();
 
         $this->editingId = $doc->id;
+
         $this->form = [
-            'vehicle_id'  => $doc->vehicle_id,
+            'id_vehicle'  => $doc->vehicle_id,
+            'vehicle_id'  => $vehicle->plate . ' - ' . $vehicle->make . ' ' . $vehicle->model,
             'type'        => $doc->type,
             'number'      => $doc->number,
             'expiry_date' => $doc->expiry_date ? Carbon::parse($doc->expiry_date)->toDateString() : null,
@@ -174,7 +178,7 @@ class Index extends Component
         $this->validate();
 
         // Veicolo non deve essere archiviato
-        $vehicle = Vehicle::withTrashed()->findOrFail($this->form['vehicle_id']);
+        $vehicle = Vehicle::withTrashed()->findOrFail($this->form['id_vehicle']);
         if (method_exists($vehicle, 'trashed') && $vehicle->trashed()) {
             $this->dispatch('toast', ['type' => 'warning', 'message' => 'Veicolo archiviato: non puoi modificare i documenti.']);
             return;
