@@ -244,7 +244,7 @@
                 {{-- Ricerca e selezione --}}
                 <div class="space-y-3">
                     <div class="text-sm font-semibold">Cerca cliente esistente</div>
-                    <input type="text" wire:model.live.debounce.300ms="customerQuery" class="{{ $input }}" placeholder="Nome o n. documento…" />
+                    <input type="text" wire:model.live.debounce.300ms="customerQuery" class="{{ $input }}" placeholder="Nome o n. patente…" />
                     <div class="text-xs opacity-60">Min. 2 caratteri</div>
 
                     <div class="divide-y rounded-md border border-gray-200 dark:border-gray-700">
@@ -252,7 +252,7 @@
                             <div class="flex items-center justify-between p-2">
                                 <div class="text-sm">
                                     <div class="font-medium">{{ $c['name'] }}</div>
-                                    <div class="opacity-70">Doc: {{ $c['doc_id_number'] }}</div>
+                                    <div class="opacity-70">Patente: {{ $c['driver_license_number'] }}</div>
                                 </div>
                                 <button wire:click="selectCustomer({{ $c['id'] }})" class="{{ $btnIndigo }}">Seleziona</button>
                             </div>

@@ -271,7 +271,7 @@ class CreateWizard extends Component
         ];
     }
 
-        /**
+    /**
      * Messaggi di validazione personalizzati per lo STEP 1.
      * Chiavi: "<campo>.<regola>"
      */
@@ -446,10 +446,10 @@ class CreateWizard extends Component
     public function next(): void
     {
         if ($this->step === 1) {
-            // validazioni base + salvataggio bozza
-            $this->saveDraft();
             // check overlap veicolo
             $this->assertVehicleAvailability();
+            // validazioni base + salvataggio bozza
+            $this->saveDraft();
         }
 
         if ($this->step === 2) {
@@ -738,9 +738,9 @@ class CreateWizard extends Component
         if (mb_strlen($this->customerQuery) >= 2) {
             $customers = Customer::query()
                 ->where('name','like','%'.$this->customerQuery.'%')
-                ->orWhere('doc_id_number','like','%'.$this->customerQuery.'%')
+                ->orWhere('driver_license_number','like','%'.$this->customerQuery.'%')
                 ->limit(10)
-                ->get(['id','name','doc_id_number'])
+                ->get(['id','name','driver_license_number'])
                 ->toArray();
         }
 
