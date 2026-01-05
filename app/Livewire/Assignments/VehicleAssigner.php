@@ -283,16 +283,43 @@ class VehicleAssigner extends Component
                 ->paginate(10, ['*'], 'assignmentsPage');
         }
 
+        /** @var \Illuminate\Support\Carbon $now */
+        $now = Carbon::now();
+
         $q = VehicleAssignment::query()
             ->with(['vehicle'])
             ->where('renter_org_id', $this->renterOrgId);
 
         if ($this->tab === 'active') {
-            $q->where('status', 'active');
+            /**
+             * Attive = iniziate e non ancora terminate (end_at null oppure > now).
+             * Escludo inoltre gli status conclusivi per coerenza.
+             */
+            $q->where('start_at', '<=', $now)
+            ->where(function ($qq) use ($now) {
+                $qq->whereNull('end_at')
+                    ->orWhere('end_at', '>', $now);
+            })
+            ->whereNotIn('status', ['ended', 'revoked']);
         } elseif ($this->tab === 'scheduled') {
-            $q->where('status', 'scheduled');
+            /**
+             * Programmate = iniziano nel futuro.
+             * Escludo status conclusivi.
+             */
+            $q->where('start_at', '>', $now)
+            ->whereNotIn('status', ['ended', 'revoked']);
         } else {
-            $q->whereIn('status', ['ended', 'revoked']);
+            /**
+             * Storico = status conclusi (ended/revoked) OPPURE assegnazioni con end_at passato.
+             * Serve a “recuperare” eventuali righe rimaste status=active ma con end_at già superato.
+             */
+            $q->where(function ($qq) use ($now) {
+                $qq->whereIn('status', ['ended', 'revoked'])
+                ->orWhere(function ($q2) use ($now) {
+                    $q2->whereNotNull('end_at')
+                        ->where('end_at', '<=', $now);
+                });
+            });
         }
 
         return $q->orderByDesc('start_at')->paginate(10, ['*'], 'assignmentsPage');
