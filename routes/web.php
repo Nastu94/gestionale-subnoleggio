@@ -26,11 +26,25 @@ use App\Http\Controllers\VehiclePhotoController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\AuditController;
 
+
+/*
+| Pagina informativa: organizzazione archiviata.
+| - Deve essere accessibile anche da guest, perché l’utente verrà sloggato.
+*/
+Route::view('/organization-blocked', 'auth.organization-blocked')
+    ->name('organization.blocked')
+    ->withoutMiddleware([
+        'auth:sanctum',
+        'verified',
+        'ensure.organization.active',
+    ]);
+
 Route::get('/', function () {
     return view('auth.login');
 });
 
 Route::middleware([
+    'ensure.organization.active',
     'auth:sanctum',
     config('jetstream.auth_session'),
     'verified',
@@ -44,7 +58,6 @@ Route::middleware([
     | Permessi: gestiti nella view via Gate (le tiles e il menu si auto-filtrano).
     */
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
-
 
 /*
 |--------------------------------------------------------------------------
