@@ -222,11 +222,49 @@ class OrganizationController extends Controller
                 ->with('error', 'Errore durante l’aggiornamento. Riprova.');
         }
     }
-
-    /** Cancellazione */
-    public function destroy(Organization $organization)
+    
+    /**
+     * Riabilita un renter archiviato (restore Soft Delete).
+     * NB: la rotta usa withTrashed() per fare route model binding anche sui record archiviati.
+     */
+    public function restore(Organization $organization): RedirectResponse
     {
-        // TODO soft/hard delete
-        return redirect()->route('organizations.index');
+        // Hard guard: da questa UI gestiamo solo renter
+        if ($organization->type !== 'renter') {
+            abort(404);
+        }
+
+        // Se è già attivo, non facciamo nulla
+        if (! $organization->trashed()) {
+            return redirect()
+                ->route('organizations.index')
+                ->with('info', 'Il renter è già attivo.');
+        }
+
+        // Ripristino (abilitazione)
+        $organization->restore();
+
+        return redirect()
+            ->route('organizations.index')
+            ->with('success', 'Renter abilitato correttamente.');
+    }
+
+    /**
+     * Archivia un renter tramite Soft Delete.
+     * NB: non esiste hard delete via gestionale.
+     */
+    public function destroy(Organization $organization): RedirectResponse
+    {
+        // Hard guard: da questa UI gestiamo solo renter
+        if ($organization->type !== 'renter') {
+            abort(404);
+        }
+
+        // Soft delete (archiviazione)
+        $organization->delete();
+
+        return redirect()
+            ->route('organizations.index')
+            ->with('success', 'Renter archiviato correttamente.');
     }
 }

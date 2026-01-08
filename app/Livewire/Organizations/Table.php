@@ -29,11 +29,21 @@ class Table extends Component
         'perPage'     => ['except' => 15],
         'countFilter' => ['except' => 'all'],
         'page'        => ['except' => 1],
+        'statusFilter' => ['except' => 'active'],
     ];
 
     public function updatedSearch(): void      { $this->resetPage(); }
     public function updatedPerPage(): void     { $this->resetPage(); }
     public function updatedCountFilter(): void { $this->resetPage(); }
+    public function updatedStatusFilter(): void { $this->resetPage();}
+
+    /**
+     * Filtro stato renter:
+     * - active: solo attive (default)
+     * - trashed: solo archiviate (soft delete)
+     * - all: tutte (attive + archiviate)
+     */
+    public string $statusFilter = 'active';
 
     public function mount(): void
     {
@@ -129,7 +139,10 @@ class Table extends Component
             ->leftJoinSub($assignTodaySub, 'ac', function ($join) {
                 $join->on('ac.org_id', '=', 'organizations.id');
             })
-            ->leftJoin('users', 'users.organization_id', '=', 'organizations.id')
+            ->leftJoin('users', function ($join) {
+                $join->on('users.organization_id', '=', 'organizations.id')
+                     ->whereNull('users.deleted_at');
+            })
             ->select([
                 'organizations.*',
                 DB::raw('COALESCE(ac.cnt, 0) as vehicles_count'),
@@ -162,6 +175,16 @@ class Table extends Component
         // Filtro per numero veicoli assegnati oggi
         $q->when($this->countFilter === 'zero', fn($q) => $q->whereRaw('COALESCE(ac.cnt,0) = 0'))
           ->when($this->countFilter === 'gt0',  fn($q) => $q->whereRaw('COALESCE(ac.cnt,0) > 0'));
+
+        /**
+         * Filtro stato renter:
+         * - active: default (nessuna modifica, esclude i trashed per global scope)
+         * - trashed: solo archiviate
+         * - all: include anche archiviate
+         */
+        $q->when($this->statusFilter === 'trashed', fn ($q) => $q->onlyTrashed())
+          ->when($this->statusFilter === 'all', fn ($q) => $q->withTrashed());
+
 
         // Ordinamento
         if ($this->sort === 'vehicles_count') {

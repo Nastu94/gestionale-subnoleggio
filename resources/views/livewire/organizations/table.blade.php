@@ -26,6 +26,18 @@
                 </select>
             </div>
 
+            {{-- Filtro stato renter (attive / archiviate / tutte) --}}
+            <div>
+                <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Stato</label>
+                <select wire:model.live="statusFilter"
+                        class="px-6 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
+                               text-gray-900 dark:text-gray-100">
+                    <option value="active">Attive</option>
+                    <option value="trashed">Archiviate</option>
+                    <option value="all">Tutte</option>
+                </select>
+            </div>
+
             {{-- Per pagina --}}
             <div>
                 <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Per pagina</label>
@@ -105,7 +117,19 @@
                         :class="openId === '{{ $rowKey }}' ? 'bg-gray-200 dark:bg-gray-700' : ''"
                     >
                         <td class="px-6 py-2 whitespace-nowrap">{{ $rowNum }}</td>
-                        <td class="px-6 py-2 whitespace-nowrap">{{ $row->name }}</td>
+                        <td class="px-6 py-2 whitespace-nowrap">
+                            <div class="flex items-center gap-2">
+                                <span>{{ $row->name }}</span>
+
+                                {{-- Badge stato: utile quando mostri "Tutte" --}}
+                                @if(method_exists($row, 'trashed') && $row->trashed())
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold
+                                                bg-gray-300 text-gray-800 dark:bg-gray-600 dark:text-gray-100">
+                                        Archiviato
+                                    </span>
+                                @endif
+                            </div>
+                        </td>
                         <td class="px-6 py-2 whitespace-nowrap">
                             @if($row->user_id)
                                 <div class="flex flex-col">
@@ -123,44 +147,63 @@
                     <tr x-show="openId === '{{ $rowKey }}'" x-cloak>
                         <td colspan="4" class="px-6 py-2 bg-gray-200 dark:bg-gray-700">
                             <div class="flex flex-wrap gap-6 items-center text-xs">
-
-                                {{-- Aggiungi utente (solo user su renter esistente) --}}
-                                <button type="button"
-                                        wire:click.stop="openAddUser({{ $row->id }})"
-                                        class="inline-flex items-center hover:text-indigo-600">
-                                    <i class="fas fa-user-plus mr-1"></i> Aggiungi utente
-                                </button>
-
-                                {{-- Modifica: apre modale precompilando org + (eventuale) user di questa riga --}}
-                                <button type="button"
-                                        wire:click.stop="openEdit({{ $row->id }}, {{ $row->user_id ?? 'null' }})"
-                                        class="inline-flex items-center hover:text-yellow-600">
-                                    <i class="fas fa-pencil-alt mr-1"></i> Modifica
-                                </button>
-
-                                {{-- azioni riga organization --}}
-                                @if(auth()->user()->hasRole('admin'))
-                                    <button
-                                        type="button"
-                                        class="text-xs hover:text-indigo-600"
-                                        x-on:click="Livewire.dispatch('org-fees:open', { organizationId: {{ $row->id }} })"
-                                    >
-                                        <i class="fas fa-percent mr-1"></i>Tassazione
+                                @if(! (method_exists($row, 'trashed') && $row->trashed()))
+                                    {{-- Aggiungi utente (solo user su renter esistente) --}}
+                                    <button type="button"
+                                            wire:click.stop="openAddUser({{ $row->id }})"
+                                            class="inline-flex items-center hover:text-indigo-600">
+                                        <i class="fas fa-user-plus mr-1"></i> Aggiungi utente
                                     </button>
+
+                                    {{-- Modifica: apre modale precompilando org + (eventuale) user di questa riga --}}
+                                    <button type="button"
+                                            wire:click.stop="openEdit({{ $row->id }}, {{ $row->user_id ?? 'null' }})"
+                                            class="inline-flex items-center hover:text-yellow-600">
+                                        <i class="fas fa-pencil-alt mr-1"></i> Modifica
+                                    </button>
+
+                                    {{-- azioni riga organization --}}
+                                    @if(auth()->user()->hasRole('admin'))
+                                        <button
+                                            type="button"
+                                            class="text-xs hover:text-indigo-600"
+                                            x-on:click="Livewire.dispatch('org-fees:open', { organizationId: {{ $row->id }} })"
+                                        >
+                                            <i class="fas fa-percent mr-1"></i>Tassazione
+                                        </button>
+                                    @endif
                                 @endif
 
-                                {{-- Elimina RENTER (come da UX precedente) --}}
-                                <form
-                                    action="{{ route('organizations.destroy', $row->id) }}"
-                                    method="POST"
-                                    onsubmit="return confirm('Eliminare definitivamente questo renter?');"
-                                >
-                                    @csrf @method('DELETE')
-                                    <button type="submit" class="inline-flex items-center hover:text-red-600">
-                                        <i class="fas fa-trash-alt mr-1"></i> Elimina
-                                    </button>
-                                </form>
+                                {{-- Archivia / Abilita (soft delete / restore) --}}
+                                @if(method_exists($row, 'trashed') && $row->trashed())
+                                    {{-- Abilita (restore) --}}
+                                    <form
+                                        action="{{ route('organizations.restore', $row->id) }}"
+                                        method="POST"
+                                        onsubmit="return confirm('Riabilitare questo renter archiviato?');"
+                                    >
+                                        @csrf
+                                        @method('PATCH')
 
+                                        <button type="submit" class="inline-flex items-center hover:text-green-700">
+                                            <i class="fas fa-rotate-left mr-1"></i> Abilita
+                                        </button>
+                                    </form>
+                                @else
+                                    {{-- Archivia (soft delete) --}}
+                                    <form
+                                        action="{{ route('organizations.destroy', $row->id) }}"
+                                        method="POST"
+                                        onsubmit="return confirm('Archiviare questo renter? Gli utenti collegati verranno bloccati all’accesso.');"
+                                    >
+                                        @csrf
+                                        @method('DELETE')
+
+                                        <button type="submit" class="inline-flex items-center hover:text-red-600">
+                                            <i class="fas fa-box-archive mr-1"></i> Archivia
+                                        </button>
+                                    </form>
+                                @endif
                             </div>
                         </td>
                     </tr>

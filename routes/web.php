@@ -573,6 +573,17 @@ Route::middleware([
             'update'  => 'organizations.update',
             'destroy' => 'organizations.destroy',
         ]);
+    
+    /*
+     | Ripristina (restore) un renter archiviato (soft delete).
+     | NB: withTrashed() serve per risolvere il Model anche se è in soft delete.
+     | Permesso: manage.renters
+     */
+    Route::patch('/organizations/{organization}/restore', [OrganizationController::class, 'restore'])
+        ->name('organizations.restore')
+        ->middleware('can:manage.renters')
+        ->withTrashed();
+
 
     /*
      | Alias admin per "Assegna veicoli" (usa la index attuale ma è visibile/visitabile solo agli admin)
