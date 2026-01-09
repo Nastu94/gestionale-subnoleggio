@@ -378,7 +378,43 @@ Route::middleware([
     Route::post('/rentals/{rental}/media/contract-signed', [RentalMediaController::class, 'storeSignedContract'])
         ->name('rentals.media.contract.signed.store')
         ->middleware(['permission:media.attach.contract_signed','permission:rentals.contract.upload_signed']);
-        
+    
+    /*
+    | Firma cliente (override sul noleggio) → Rental->signature_customer
+    */
+    Route::post('/rentals/{rental}/signature/customer', [RentalMediaController::class, 'storeCustomerSignature'])
+        ->name('rentals.signature.customer.store');
+
+    /*
+    | Rimuovi firma cliente (override sul noleggio) → Rental->signature_customer
+    */
+    Route::delete('/rentals/{rental}/signature/customer', [RentalMediaController::class, 'destroyCustomerSignature'])
+        ->name('rentals.signature.customer.destroy');
+
+    /*
+    | Firma locatore (override sul noleggio) → Rental->signature_lessor
+    */
+    Route::post('/rentals/{rental}/signature/lessor', [RentalMediaController::class, 'storeLessorSignature'])
+        ->name('rentals.signature.lessor.store');
+
+    /*
+    | Rimuovi firma locatore (override sul noleggio) → Rental->signature_lessor
+    */
+    Route::delete('/rentals/{rental}/signature/lessor', [RentalMediaController::class, 'destroyLessorSignature'])
+        ->name('rentals.signature.lessor.destroy');
+    
+    /*
+    | Firma aziendale noleggiante → Organization->signature_company
+    */
+    Route::post('/organizations/{organization}/signature', [RentalMediaController::class, 'storeOrganizationSignature'])
+        ->name('organizations.signature.store');
+
+    /*
+    | Rimuovi firma aziendale noleggiante → Organization->signature_company
+    */
+    Route::delete('/organizations/{organization}/signature', [RentalMediaController::class, 'destroyOrganizationSignature'])
+        ->name('organizations.signature.destroy');
+
     /*
     | Checklist firmata (immagine/PDF) → RentalChecklist->signedPdf
     | Permesso: media.attach.checklist_signed + rental_checklists.update

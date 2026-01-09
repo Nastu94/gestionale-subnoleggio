@@ -6,15 +6,18 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Spatie\MediaLibrary\HasMedia as SpatieHasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
 
 /**
  * Modello: Organization
  * - type: admin | renter
  * - Rappresenta Admin (proprietario parco) o Noleggiatore.
  */
-class Organization extends Model
+class Organization extends Model implements SpatieHasMedia
 {
     use HasFactory, SoftDeletes;
+    use InteractsWithMedia;
 
     protected $fillable = [
         // Base
@@ -81,4 +84,14 @@ class Organization extends Model
     // --- Helper ---
     public function isAdmin(): bool  { return $this->type === 'admin'; }
     public function isRenter(): bool { return $this->type === 'renter'; }
+
+    /**
+     * Collection Media:
+     * - org_signature: firma aziendale del noleggiante (una sola “corrente”)
+     */
+    public function registerMediaCollections(): void
+    {
+        // Firma aziendale di default
+        $this->addMediaCollection('signature_company')->singleFile();
+    }
 }

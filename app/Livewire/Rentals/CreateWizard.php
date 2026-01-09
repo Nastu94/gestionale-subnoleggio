@@ -494,7 +494,6 @@ class CreateWizard extends Component
 
         $this->customer_id = $customer->id;
 
-        // Popola il form con i dati trovati (campi compatibili con la tua tabella customers)
         $this->customerForm = [
             'name'          => $customer->name,
             'email'         => $customer->email,
@@ -510,23 +509,52 @@ class CreateWizard extends Component
             'driver_license_number'      => $customer->driver_license_number,
             'driver_license_expires_at'  => optional($customer->driver_license_expires_at)->format('Y-m-d'),
         ];
+
         $this->customerPopulated = true;
 
-        // Collega alla bozza in modo silenzioso
+        // Collega alla bozza
         $this->saveDraft();
     }
 
-    /** Crea o aggiorna il cliente usando i dati nel form e collega alla bozza */
     public function createOrUpdateCustomer(): void
     {
         $this->validate($this->rulesCustomerCreate());
 
+        $orgId = auth()->user()->organization_id;
+
+        if (!$orgId) {
+            throw new \RuntimeException('Organization ID mancante durante la creazione del cliente');
+        }
+
+        // 🔁 Mapping esplicito form → colonne DB
+        $payload = [
+            'organization_id'             => $orgId,
+            'name'                        => $this->customerForm['name'],
+            'email'                       => $this->customerForm['email'],
+            'phone'                       => $this->customerForm['phone'],
+            'doc_id_type'                 => $this->customerForm['doc_id_type'],
+            'doc_id_number'               => $this->customerForm['doc_id_number'],
+
+            // ⚠️ QUI ERA IL PROBLEMA
+            'birthdate'                   => $this->castDate($this->customerForm['birth_date']),
+            'address_line'                => $this->customerForm['address'],
+            'postal_code'                 => $this->customerForm['zip'],
+
+            'city'                        => $this->customerForm['city'],
+            'province'                    => $this->customerForm['province'],
+            'country_code'                => $this->customerForm['country_code'],
+
+            'driver_license_number'       => $this->customerForm['driver_license_number'],
+            'driver_license_expires_at'   => $this->castDate($this->customerForm['driver_license_expires_at']),
+        ];
+
         if ($this->customer_id) {
+            // UPDATE
             $customer = Customer::query()->findOrFail($this->customer_id);
-            $customer->fill($this->customerForm)->save();
+            $customer->update($payload);
         } else {
-            $customer = new Customer($this->customerForm);
-            $customer->save();
+            // CREATE
+            $customer = Customer::query()->create($payload);
             $this->customer_id = $customer->id;
         }
 

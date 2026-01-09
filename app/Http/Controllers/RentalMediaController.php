@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\Response;
 
-use App\Models\{Rental, RentalChecklist, RentalDamage};
+use App\Models\{Rental, RentalChecklist, RentalDamage, Organization};
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 /**
@@ -382,4 +382,128 @@ class RentalMediaController extends Controller
 
         return response()->json(['ok' => true]);
     }
+    
+    /* ==========================================================
+     |  FIRME GRAFICHE
+     |  Rental collections:
+     |   - signature_customer (singleFile)
+     |   - signature_lessor   (singleFile)  -> override sul noleggio
+     ========================================================== */
+
+    /**
+     * Upload firma grafica CLIENTE (immagine).
+     * Collection: Rental -> signature_customer (singleFile)
+     */
+    public function storeCustomerSignature(Request $request, Rental $rental)
+    {
+        $this->authorize('uploadMedia', $rental);
+
+        $request->validate([
+            'file' => ['required', 'file', 'mimetypes:image/png,image/jpeg', 'max:4096'],
+        ]);
+
+        $media = $rental->addMediaFromRequest('file')
+            ->usingName('signature-customer')
+            ->toMediaCollection('signature_customer');
+
+        return response()->json([
+            'ok'       => true,
+            'media_id' => $media->id,
+            'uuid'     => $media->uuid,
+            'url'      => route('media.open', $media),
+            'name'     => $media->file_name,
+            'size'     => (int) $media->size,
+        ], Response::HTTP_CREATED);
+    }
+
+    /**
+     * Cancella firma grafica CLIENTE.
+     */
+    public function destroyCustomerSignature(Request $request, Rental $rental)
+    {
+        $this->authorize('uploadMedia', $rental);
+
+        $rental->clearMediaCollection('signature_customer');
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Upload firma grafica NOLEGGIANTE (override sul Rental).
+     * Collection: Rental -> signature_lessor (singleFile)
+     */
+    public function storeLessorSignatureOverride(Request $request, Rental $rental)
+    {
+        $this->authorize('uploadMedia', $rental);
+
+        $request->validate([
+            'file' => ['required', 'file', 'mimetypes:image/png,image/jpeg', 'max:4096'],
+        ]);
+
+        $media = $rental->addMediaFromRequest('file')
+            ->usingName('signature-lessor-override')
+            ->toMediaCollection('signature_lessor');
+
+        return response()->json([
+            'ok'       => true,
+            'media_id' => $media->id,
+            'uuid'     => $media->uuid,
+            'url'      => route('media.open', $media),
+            'name'     => $media->file_name,
+            'size'     => (int) $media->size,
+        ], Response::HTTP_CREATED);
+    }
+
+    /**
+     * Cancella firma grafica NOLEGGIANTE (override Rental).
+     */
+    public function destroyLessorSignatureOverride(Request $request, Rental $rental)
+    {
+        $this->authorize('uploadMedia', $rental);
+
+        $rental->clearMediaCollection('signature_lessor');
+
+        return response()->json(['ok' => true]);
+    }
+    
+    /**
+     * Upload firma aziendale di default.
+     * Collection: Organization -> signature_company
+     */
+    public function storeOrganizationSignature(Request $request, Organization $organization)
+    {
+        // Scegli tu la policy corretta:
+        // - se hai policy Organization: update
+        $this->authorize('update', $organization);
+
+        $request->validate([
+            'file' => ['required', 'file', 'mimetypes:image/png,image/jpeg', 'max:4096'],
+        ]);
+
+        $media = $organization->addMediaFromRequest('file')
+            ->usingName('signature-company')
+            ->toMediaCollection('signature_company'); // singleFile consigliato sul model
+
+        return response()->json([
+            'ok'       => true,
+            'media_id' => $media->id,
+            'uuid'     => $media->uuid,
+            'url'      => route('media.open', $media),
+            'name'     => $media->file_name,
+            'size'     => (int) $media->size,
+        ], Response::HTTP_CREATED);
+    }
+
+    /**
+     * Cancella firma aziendale di default.
+     */
+    public function destroyOrganizationSignature(Request $request, Organization $organization)
+    {
+        $this->authorize('update', $organization);
+
+        $organization->clearMediaCollection('signature_company');
+
+        return response()->json(['ok' => true]);
+    }
+
 }

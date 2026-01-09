@@ -29,6 +29,8 @@ class Rental extends Model implements SpatieHasMedia
         'notes','created_by', 'closed_at', 'closed_by',
         // facoltativi/denormalizzati se li usi:
         'amount','admin_fee_percent','admin_fee_amount',
+        'second_driver_id',
+        'final_amount_override',
     ];
 
     protected $casts = [
@@ -42,6 +44,7 @@ class Rental extends Model implements SpatieHasMedia
         'mileage_in'        => 'integer',
         'fuel_out_percent'  => 'integer',
         'fuel_in_percent'   => 'integer',
+        'final_amount_override' => 'decimal:2',
     ];
 
     // -------------------------
@@ -68,6 +71,14 @@ class Rental extends Model implements SpatieHasMedia
     public function damages(): HasMany
     {
         return $this->hasMany(RentalDamage::class);
+    }
+
+    /**
+     * Seconda guida (Customer) opzionale.
+     */
+    public function secondDriver()
+    {
+        return $this->belongsTo(Customer::class, 'second_driver_id');
     }
 
     // Helper per accesso diretto alle due checklist canoniche
@@ -194,6 +205,8 @@ class Rental extends Model implements SpatieHasMedia
         $this->addMediaCollection('contract')->useDisk(config('filesystems.default'));
         $this->addMediaCollection('signatures')->useDisk(config('filesystems.default'));
         $this->addMediaCollection('documents')->useDisk(config('filesystems.default'));
+        $this->addMediaCollection('signature_customer')->singleFile();
+        $this->addMediaCollection('signature_lessor')->singleFile();
     }
 
     public function registerMediaConversions(Media $media = null): void
@@ -235,5 +248,45 @@ class Rental extends Model implements SpatieHasMedia
             'franchise_rca' => null, 'franchise_kasko' => null, 'franchise_furto_incendio' => null, 'franchise_cristalli' => null,
             'notes' => null,
         ]);
+    }
+
+    /**
+     * Risoluzione firma noleggiante da usare nel contratto:
+     * - prima prova a prendere l’override sul noleggio
+     * - se manca, usa la firma aziendale dell’organizzazione noleggiante
+     */
+    public function resolveLessorSignatureMedia(): ?Media
+    {
+        $order = config('rental.signatures.lessor_precedence', ['organization', 'rental']);
+
+        foreach ($order as $source) {
+            if ($source === 'organization') {
+                $org = $this->organization ?? null;
+                if ($org) {
+                    $m = $org->getFirstMedia('signature_company');
+                    if ($m) return $m;
+                }
+            }
+
+            if ($source === 'rental') {
+                $m = $this->getFirstMedia('signature_lessor'); // override sul noleggio
+                if ($m) return $m;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * URL firma noleggiante da usare nel contratto (se esiste).
+     */
+    public function resolveLessorSignatureUrl(): ?string
+    {
+        $m = $this->resolveLessorSignatureMedia();
+
+        // Se usi il tuo endpoint protetto "open":
+        return $m ? route('media.open', $m) : null;
+        // In alternativa (se tutto è pubblico):
+        // return $m ? $m->getUrl() : null;
     }
 }
