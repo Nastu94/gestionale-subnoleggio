@@ -161,6 +161,20 @@
                                             class="inline-flex items-center hover:text-yellow-600">
                                         <i class="fas fa-pencil-alt mr-1"></i> Modifica
                                     </button>
+                                    
+                                    {{-- Anagrafica + Licenza (solo renter attivo) --}}
+                                    <button type="button"
+                                            wire:click.stop="openAnagraphic({{ $row->id }})"
+                                            class="inline-flex items-center hover:text-indigo-600">
+                                        <i class="fas fa-id-card mr-1"></i> Anagrafica
+                                    </button>
+
+                                    {{-- Cargos (solo renter attivo) --}}
+                                    <button type="button"
+                                            wire:click.stop="openCargos({{ $row->id }})"
+                                            class="inline-flex items-center hover:text-indigo-600">
+                                        <i class="fas fa-sim-card mr-1"></i> Cargos
+                                    </button>
 
                                     {{-- azioni riga organization --}}
                                     @if(auth()->user()->hasRole('admin'))

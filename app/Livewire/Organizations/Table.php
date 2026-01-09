@@ -112,6 +112,55 @@ class Table extends Component
     }
 
     /**
+     * Apre il modale "Anagrafica/Licenza" per un renter.
+     * Invia dati non sensibili al frontend (ok nel payload evento).
+     */
+    public function openAnagraphic(int $organizationId): void
+    {
+        $org = Organization::query()
+            ->where('type', 'renter')
+            ->findOrFail($organizationId);
+
+        $this->dispatch('open-org-anagraphic', org: [
+            'id'   => $org->id,
+            'name' => $org->name,
+
+            // Anagrafica
+            'legal_name'   => $org->legal_name,
+            'vat'          => $org->vat,
+            'address_line' => $org->address_line,
+            'city'         => $org->city,
+            'province'     => $org->province,
+            'postal_code'  => $org->postal_code,
+            'country_code' => $org->country_code,
+            'phone'        => $org->phone,
+            'email'        => $org->email,
+
+            // Licenza
+            'rental_license'            => (bool) $org->rental_license,
+            'rental_license_number'     => $org->rental_license_number,
+            'rental_license_expires_at' => $org->rental_license_expires_at?->format('Y-m-d'),
+        ]);
+    }
+
+    /**
+     * Apre il modale "Cargos" per un renter.
+     *
+     * Sicurezza:
+     * - NON inviamo password/puk nel payload dell'evento (sono dati sensibili).
+     * - Inviamo solo organizationId: il modale caricherà i valori lato server.
+     */
+    public function openCargos(int $organizationId): void
+    {
+        $org = Organization::query()
+            ->where('type', 'renter')
+            ->findOrFail($organizationId);
+
+        $this->dispatch('open-org-cargos', organizationId: $org->id);
+    }
+
+
+    /**
      * Costruisce il paginator:
      *  - LEFT JOIN su subquery di conteggio veicoli assegnati OGGI (overlap)
      *  - LEFT JOIN su users per avere una riga per ogni utente dell'organizzazione

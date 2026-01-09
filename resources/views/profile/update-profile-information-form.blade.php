@@ -1,3 +1,4 @@
+{{-- resources/views/profile/update-profile-information-form.blade.php --}}
 <x-form-section submit="updateProfileInformation">
     <x-slot name="title">
         Informazioni profilo

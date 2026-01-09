@@ -1,3 +1,4 @@
+{{-- resources/views/profile/update-password-form.blade.php --}}
 <x-form-section submit="updatePassword">
     <x-slot name="title">
         Aggiorna password

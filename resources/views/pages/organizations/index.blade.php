@@ -84,6 +84,10 @@
                     <x-organization-create-modal />
                 </div>
             </div>
+
+            <livewire:organizations.anagraphic-modal />
+            <livewire:organizations.cargos-modal />
+
         </div>
     </div>
 

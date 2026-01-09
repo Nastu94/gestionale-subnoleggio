@@ -9,7 +9,7 @@
 
                 @can('vehicles.update')
                     <a href="{{ route('vehicles.edit', $vehicle) }}"
-                    class="inline-flex h-10 items-center rounded-md bg-slate-800 px-3 text-white hover:bg-slate-900">
+                    class="inline-flex h-10 items-center rounded-md px-3 bg-gray-100 text-gray-900 hover:bg-gray-200">
                         Modifica
                     </a>
                 @endcan
