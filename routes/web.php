@@ -394,13 +394,13 @@ Route::middleware([
     /*
     | Firma locatore (override sul noleggio) → Rental->signature_lessor
     */
-    Route::post('/rentals/{rental}/signature/lessor', [RentalMediaController::class, 'storeLessorSignature'])
+    Route::post('/rentals/{rental}/signature-lessor', [RentalMediaController::class, 'storeLessorSignature'])
         ->name('rentals.signature.lessor.store');
 
     /*
     | Rimuovi firma locatore (override sul noleggio) → Rental->signature_lessor
     */
-    Route::delete('/rentals/{rental}/signature/lessor', [RentalMediaController::class, 'destroyLessorSignature'])
+    Route::delete('/rentals/{rental}/signature-lessor', [RentalMediaController::class, 'destroyLessorSignature'])
         ->name('rentals.signature.lessor.destroy');
     
     /*
