@@ -359,6 +359,44 @@ class Show extends Component
         }
     }
 
+    /**
+     * Rigenerazione “con firme”.
+     * - serve quando il cliente ha appena firmato
+     * - genera una nuova versione PDF (versioning già gestito dalla collection "contract")
+     */
+    public function regenerateContractWithSignatures(GenerateRentalContract $generator): void
+    {
+        $this->authorize('contractGenerate', $this->rental);
+
+        if (empty($this->rental->customer_id)) {
+            $this->dispatch('toast', type: 'warning', message: 'Associa prima un cliente al noleggio.');
+            return;
+        }
+
+        // Per rigenerare “con firme” pretendiamo almeno la firma cliente (come da tua regola)
+        if (!$this->hasCustomerSignature()) {
+            $this->dispatch('toast', type: 'warning', message: 'Inserisci prima la firma del cliente per rigenerare il contratto con firme.');
+            return;
+        }
+
+        $generator->handle($this->rental);
+
+        $this->rental->refresh();
+
+        $this->dispatch('toast', type: 'success', message: 'Contratto rigenerato con le firme.');
+    }
+
+    /**
+     * Controlla se il noleggio ha la firma del cliente caricata.
+     *
+     * @return bool
+     */
+    private function hasCustomerSignature(): bool
+    {
+        // collection: signature_customer (override sul Rental)
+        return method_exists($this->rental, 'getFirstMedia')
+            && (bool) $this->rental->getFirstMedia('signature_customer');
+    }
 
     /** ✅ Arriva da JS quando viene caricata la checklist firmata */
     #[On('checklist-signed-uploaded')]

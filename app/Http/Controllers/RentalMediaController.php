@@ -91,7 +91,7 @@ class RentalMediaController extends Controller
     {
         // Autorizzazione sul "padre"
         $parent = $media->model;
-        if ($parent instanceof \App\Models\Rental || $parent instanceof \App\Models\RentalChecklist) {
+        if ($parent instanceof Rental || $parent instanceof RentalChecklist) {
             $this->authorize('view', $parent);
         } else {
             abort(403, 'Accesso negato.');
@@ -333,7 +333,7 @@ class RentalMediaController extends Controller
                 return response()->json([
                     'ok'      => false,
                     'message' => 'Checklist bloccata: non è possibile eliminare media.',
-                ], \Symfony\Component\HttpFoundation\Response::HTTP_LOCKED);
+                ], Response::HTTP_LOCKED);
             }
 
             // ❌ Protezione esplicita del media firmato che ha causato il lock
@@ -341,7 +341,7 @@ class RentalMediaController extends Controller
                 return response()->json([
                     'ok'      => false,
                     'message' => 'Il media firmato non può essere eliminato.',
-                ], \Symfony\Component\HttpFoundation\Response::HTTP_LOCKED);
+                ], Response::HTTP_LOCKED);
             }
         }
         elseif ($model instanceof \App\Models\RentalDamage) {
@@ -353,7 +353,7 @@ class RentalMediaController extends Controller
                 return response()->json([
                     'ok'      => false,
                     'message' => 'Checklist bloccata: non è possibile eliminare media del danno.',
-                ], \Symfony\Component\HttpFoundation\Response::HTTP_LOCKED);
+                ], Response::HTTP_LOCKED);
             }
         }
         elseif ($model instanceof \App\Models\Rental) {
@@ -366,7 +366,7 @@ class RentalMediaController extends Controller
                 return response()->json([
                     'ok'      => false,
                     'message' => 'Contratto firmato: il file non può essere eliminato.',
-                ], \Symfony\Component\HttpFoundation\Response::HTTP_LOCKED);
+                ], Response::HTTP_LOCKED);
             }
 
             // Per altre collection (es. documents, contract bozza, ecc.) si procede
@@ -375,7 +375,7 @@ class RentalMediaController extends Controller
             return response()->json([
                 'ok'      => false,
                 'message' => 'Operazione non consentita per questo modello.',
-            ], \Symfony\Component\HttpFoundation\Response::HTTP_FORBIDDEN);
+            ], Response::HTTP_FORBIDDEN);
         }
 
         $media->delete();
@@ -510,43 +510,43 @@ class RentalMediaController extends Controller
     }
 
     /**
- * Upload firma aziendale di default.
- * Collection: Organization -> signature_company
- */
-public function storeOrganizationSignature(Request $request, Organization $organization)
-{
-    // Scegli tu la policy corretta:
-    // - se hai policy Organization: update
-    $this->authorize('update', $organization);
+     * Upload firma aziendale di default.
+     * Collection: Organization -> signature_company
+     */
+    public function storeOrganizationSignature(Request $request, Organization $organization)
+    {
+        // Scegli tu la policy corretta:
+        // - se hai policy Organization: update
+        $this->authorize('update', $organization);
 
-    $request->validate([
-        'file' => ['required', 'file', 'mimetypes:image/png,image/jpeg', 'max:4096'],
-    ]);
+        $request->validate([
+            'file' => ['required', 'file', 'mimetypes:image/png,image/jpeg', 'max:4096'],
+        ]);
 
-    $media = $organization->addMediaFromRequest('file')
-        ->usingName('signature-company')
-        ->toMediaCollection('signature_company'); // singleFile consigliato sul model
+        $media = $organization->addMediaFromRequest('file')
+            ->usingName('signature-company')
+            ->toMediaCollection('signature_company'); // singleFile consigliato sul model
 
-    return response()->json([
-        'ok'       => true,
-        'media_id' => $media->id,
-        'uuid'     => $media->uuid,
-        'url'      => route('media.open', $media),
-        'name'     => $media->file_name,
-        'size'     => (int) $media->size,
-    ], Response::HTTP_CREATED);
-}
+        return response()->json([
+            'ok'       => true,
+            'media_id' => $media->id,
+            'uuid'     => $media->uuid,
+            'url'      => route('media.open', $media),
+            'name'     => $media->file_name,
+            'size'     => (int) $media->size,
+        ], Response::HTTP_CREATED);
+    }
 
-/**
- * Cancella firma aziendale di default.
- */
-public function destroyOrganizationSignature(Request $request, Organization $organization)
-{
-    $this->authorize('update', $organization);
+    /**
+     * Cancella firma aziendale di default.
+     */
+    public function destroyOrganizationSignature(Request $request, Organization $organization)
+    {
+        $this->authorize('update', $organization);
 
-    $organization->clearMediaCollection('signature_company');
+        $organization->clearMediaCollection('signature_company');
 
-    return response()->json(['ok' => true]);
-}
+        return response()->json(['ok' => true]);
+    }
 
 }

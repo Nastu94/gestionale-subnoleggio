@@ -3,8 +3,18 @@
 
 @php
     $hasGenerated = method_exists($rental,'getMedia') && $rental->getMedia('contract')->isNotEmpty();
-    $hasSigned    = method_exists($rental,'getMedia') && $rental->getMedia('signatures')->isNotEmpty();
-    $hasCustomer  = !empty($rental->customer_id);
+
+    // ✅ compat: se qualcuno ha usato davvero una collection diversa per il firmato
+    $signedMedia = collect();
+    if (method_exists($rental,'getMedia')) {
+        $signedMedia = $rental->getMedia('signatures');
+        if ($signedMedia->isEmpty()) {
+            $signedMedia = $rental->getMedia('rental-contract-signed');
+        }
+    }
+    $hasSigned   = $signedMedia->isNotEmpty();
+
+    $hasCustomer = !empty($rental->customer_id);
 
     /**
      * ===== FIRME =====
@@ -30,8 +40,10 @@
 
     // Firma noleggiante effettiva: override > default
     $lessorSig = $lessorOverrideSig ?: $lessorDefaultSig;
-
     $lessorSigSource = $lessorOverrideSig ? 'override' : ($lessorDefaultSig ? 'default' : null);
+
+    // ✅ (1) questa variabile era usata ma non esisteva
+    $hasCustomerSignature = (bool) $customerSig;
 
     // Preview SEMPRE con media.open per evitare "immagine rotta" su dischi non pubblici
     $customerSigUrl = $customerSig ? route('media.open', $customerSig) : null;
@@ -49,13 +61,12 @@
             </div>
         </div>
 
-        {{-- CTA: mostra solo se NON c'è un contratto generato --}}
-        @if(!$hasGenerated)
-            <div class="flex justify-end">
+        {{-- CTA: genera / rigenera --}}
+        <div class="flex flex-wrap items-center justify-end gap-2">
+            @if(!$hasGenerated)
                 @if($hasCustomer)
-                    {{-- ✅ Mostra il pulsante solo con cliente presente --}}
                     <button
-                        class="btn btn-primary shadow-none
+                        class="p-2 btn btn-primary shadow-none
                             !bg-primary !text-primary-content !border-primary
                             hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30
                             disabled:opacity-50 disabled:cursor-not-allowed"
@@ -68,17 +79,44 @@
                         <span wire:loading wire:target="generateContract" class="loading loading-spinner loading-sm"></span>
                     </button>
                 @else
-                    {{-- 🚫 Nessun cliente: niente pulsante --}}
                     <div class="alert alert-warning shadow-sm">
                         <span class="text-sm">
                             Associa prima un cliente al noleggio per poter generare il contratto.
                         </span>
                     </div>
                 @endif
-            </div>
-        @endif
+            @else
+                {{-- ✅ (2) metodo corretto: chiama quello che hai davvero nel Livewire --}}
+                @if($hasCustomerSignature)
+                    <button
+                        class="p-2 btn btn-primary shadow-none
+                            !bg-primary !text-primary-content !border-primary
+                            hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30
+                            disabled:opacity-50 disabled:cursor-not-allowed"
+                        wire:click="regenerateContractWithSignatures"
+                        wire:loading.attr="disabled"
+                        wire:target="regenerateContractWithSignatures"
+                        title="Rigenera una nuova versione del PDF includendo anche la firma grafica del cliente"
+                    >
+                        <span wire:loading.remove wire:target="regenerateContractWithSignatures">
+                            Rigenera PDF con firma cliente
+                        </span>
+                        <span wire:loading wire:target="regenerateContractWithSignatures" class="loading loading-spinner loading-sm"></span>
+                    </button>
+                @else
+                    <button
+                        class="p-2 btn btn-primary shadow-none opacity-60 cursor-not-allowed
+                            !bg-primary !text-primary-content !border-primary"
+                        disabled
+                        title="Prima acquisisci la firma del cliente (Carica o Firma su schermo)"
+                    >
+                        Rigenera PDF con firma cliente
+                    </button>
+                @endif
+            @endif
+        </div>
 
-        {{-- ===== (TUA PARTE ESISTENTE) Versioni generate (PDF) + Firmati ===== --}}
+        {{-- ===== Versioni generate (PDF) + Firmati ===== --}}
         <div class="grid md:grid-cols-2 gap-5">
             {{-- Colonna: versioni generate (PDF) --}}
             <div class="space-y-2">
@@ -92,7 +130,6 @@
                             <span class="opacity-70">· {{ $m->created_at->format('d/m/Y H:i') }}</span>
                         </div>
                         <div class="flex gap-2">
-                            {{-- Apri (filled neutral) --}}
                             <a href="{{ $m->getUrl() }}" target="_blank"
                                class="btn btn-sm shadow-none
                                       !bg-neutral !text-neutral-content !border-neutral
@@ -100,7 +137,6 @@
                                 Apri
                             </a>
 
-                            {{-- Elimina --}}
                             <form method="POST" action="{{ route('media.destroy', $m) }}"
                                   x-data="ajaxDeleteMedia()"
                                   x-cloak
@@ -128,7 +164,7 @@
             <div class="space-y-2">
                 <div class="font-semibold">Firmati</div>
 
-                @forelse($rental->getMedia('signatures') as $m)
+                @forelse($signedMedia as $m)
                     <div class="flex items-center justify-between rounded-xl border p-3">
                         <div class="text-sm">
                             <span class="mr-2">✍️</span>
@@ -166,7 +202,6 @@
 
         {{-- ===== FIRME (sezioni identiche) ===== --}}
         <div class="grid lg:grid-cols-2 gap-5">
-
             {{-- FIRMA CLIENTE --}}
             <div class="rounded-xl border p-4 space-y-3 overflow-hidden">
                 <div class="flex items-start justify-between gap-4">
@@ -183,18 +218,14 @@
 
                 <div class="rounded-lg border bg-base-100 p-3 min-h-[160px] flex items-center justify-center overflow-hidden">
                     @if($customerSigUrl)
-                        <img
-                            src="{{ $customerSigUrl }}"
-                            alt="Firma cliente"
-                            class="max-h-[140px] w-auto object-contain"
-                        >
+                        <img src="{{ $customerSigUrl }}" alt="Firma cliente"
+                             class="max-h-[140px] w-auto object-contain">
                     @else
                         <div class="text-sm opacity-60">Nessuna firma cliente salvata.</div>
                     @endif
                 </div>
 
                 <div class="flex flex-wrap items-center gap-2">
-                    {{-- Carica firma cliente (AJAX) --}}
                     <form method="POST"
                           action="{{ route('rentals.signature.customer.store', $rental) }}"
                           enctype="multipart/form-data"
@@ -206,13 +237,13 @@
                                class="file-input file-input-sm file-input-bordered w-full max-w-[260px]" required>
                         <button class="p-2 btn btn-sm shadow-none
                                       !bg-neutral !text-neutral-content !border-neutral
-                                      hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-neutral/30" :disabled="loading">
+                                      hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-neutral/30"
+                                :disabled="loading">
                             <span x-show="!loading">Carica firma</span>
                             <span x-show="loading" class="loading loading-spinner loading-sm"></span>
                         </button>
                     </form>
 
-                    {{-- Firma su schermo --}}
                     <button type="button"
                             class="p-2 btn btn-sm shadow-none
                                       !bg-neutral !text-neutral-content !border-neutral
@@ -221,7 +252,6 @@
                         Firma su schermo
                     </button>
 
-                    {{-- Rimuovi firma cliente (AJAX) --}}
                     @if($customerSig)
                         <form method="POST"
                               action="{{ route('rentals.signature.customer.destroy', $rental) }}"
@@ -230,9 +260,11 @@
                               class="inline-flex">
                             @csrf
                             @method('DELETE')
-                            <button type="submit" class="p-2 btn btn-sm shadow-none
+                            <button type="submit"
+                                    class="p-2 btn btn-sm shadow-none
                                         !bg-error !text-error-content !border-error
-                                        hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-error/30" :disabled="loading">
+                                        hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-error/30"
+                                    :disabled="loading">
                                 <span x-show="!loading">Rimuovi</span>
                                 <span x-show="loading" class="loading loading-spinner loading-sm"></span>
                             </button>
@@ -255,31 +287,21 @@
                         </div>
                     </div>
 
-                    @php
-                        $lessorBadge = $lessorSig ? 'Presente' : 'Assente';
-                        if ($lessorSig && $lessorSigSource === 'override') $lessorBadge = 'Presente';
-                        if ($lessorSig && $lessorSigSource === 'default')  $lessorBadge = 'Presente';
-                    @endphp
-
                     <span class="badge {{ $lessorSig ? 'badge-success' : 'badge-outline' }}">
-                        {{ $lessorBadge }}
+                        {{ $lessorSig ? 'Presente' : 'Assente' }}
                     </span>
                 </div>
 
                 <div class="rounded-lg border bg-base-100 p-3 min-h-[160px] flex items-center justify-center overflow-hidden">
                     @if($lessorSigUrl)
-                        <img
-                            src="{{ $lessorSigUrl }}"
-                            alt="Firma noleggiante"
-                            class="max-h-[140px] w-auto object-contain"
-                        >
+                        <img src="{{ $lessorSigUrl }}" alt="Firma noleggiante"
+                             class="max-h-[140px] w-auto object-contain">
                     @else
                         <div class="text-sm opacity-60">Nessuna firma noleggiante disponibile.</div>
                     @endif
                 </div>
 
                 <div class="flex flex-wrap items-center gap-2">
-                    {{-- Carica firma noleggiante (override) (AJAX) --}}
                     <form method="POST"
                           action="{{ route('rentals.signature.lessor.store', $rental) }}"
                           enctype="multipart/form-data"
@@ -291,13 +313,13 @@
                                class="file-input file-input-sm file-input-bordered w-full max-w-[260px]" required>
                         <button class="p-2 btn btn-sm shadow-none
                                       !bg-neutral !text-neutral-content !border-neutral
-                                      hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-neutral/30" :disabled="loading">
+                                      hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-neutral/30"
+                                :disabled="loading">
                             <span x-show="!loading">Carica firma</span>
                             <span x-show="loading" class="loading loading-spinner loading-sm"></span>
                         </button>
                     </form>
 
-                    {{-- Firma su schermo (override) --}}
                     <button type="button"
                             class="p-2 btn btn-sm shadow-none
                                       !bg-neutral !text-neutral-content !border-neutral
@@ -306,7 +328,6 @@
                         Firma su schermo
                     </button>
 
-                    {{-- Rimuovi override (solo se esiste override sul Rental) --}}
                     @if($lessorOverrideSig)
                         <form method="POST"
                               action="{{ route('rentals.signature.lessor.destroy', $rental) }}"
@@ -315,9 +336,11 @@
                               class="inline-flex">
                             @csrf
                             @method('DELETE')
-                            <button type="submit" class="p-2 btn btn-sm shadow-none
+                            <button type="submit"
+                                    class="p-2 btn btn-sm shadow-none
                                         !bg-error !text-error-content !border-error
-                                        hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-error/30" :disabled="loading">
+                                        hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-error/30"
+                                    :disabled="loading">
                                 <span x-show="!loading">Rimuovi override</span>
                                 <span x-show="loading" class="loading loading-spinner loading-sm"></span>
                             </button>
@@ -345,7 +368,6 @@
             <canvas id="sigCanvas" style="width:100%; height:220px; touch-action:none;"></canvas>
         </div>
 
-        {{-- Pulsanti modale firma (Pulisci / Salva / Chiudi) --}}
         <div class="mt-4 flex items-center justify-end gap-2">
             <button type="button"
                 onclick="window.__sigClear()"
@@ -363,23 +385,19 @@
                 Salva
             </button>
 
-            <form method="dialog" class="inline-flex">
-                <button type="submit"
-                    class="p-2 btn btn-sm shadow-none
-                        !bg-base-200 !text-base-content !border-base-200
-                        hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-base-content/20">
-                    Chiudi
-                </button>
-            </form>
+            {{-- ✅ niente form annidata: chiudi direttamente il dialog --}}
+            <button type="button"
+                onclick="document.getElementById('signatureModal')?.close()"
+                class="p-2 btn btn-sm shadow-none
+                    !bg-base-200 !text-base-content !border-base-200
+                    hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-base-content/20">
+                Chiudi
+            </button>
         </div>
-
     </form>
 </dialog>
 
 <script>
-/**
- * Upload/Delete AJAX (evita che il browser "apra" il JSON in pagina)
- */
 window.ajaxSignatureUpload = function () {
     return {
         loading: false,
@@ -399,8 +417,6 @@ window.ajaxSignatureUpload = function () {
                 });
 
                 if (!res.ok) throw new Error('Upload fallito');
-
-                // Semplice e robusto: ricarico per aggiornare badge/preview
                 window.location.reload();
             } catch (err) {
                 console.error(err);
@@ -424,7 +440,7 @@ window.ajaxSignatureDelete = function () {
                 const url  = form.getAttribute('action');
 
                 const res = await fetch(url, {
-                    method: 'POST', // Laravel spoof method
+                    method: 'POST',
                     headers: {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content,
                         'Accept': 'application/json',
@@ -433,7 +449,6 @@ window.ajaxSignatureDelete = function () {
                 });
 
                 if (!res.ok) throw new Error('Delete fallito');
-
                 window.location.reload();
             } catch (err) {
                 console.error(err);
@@ -445,9 +460,6 @@ window.ajaxSignatureDelete = function () {
     }
 };
 
-/**
- * Modal firma su schermo (POST alle tue rotte)
- */
 (function(){
     const modal  = document.getElementById('signatureModal');
     const canvas = document.getElementById('sigCanvas');
@@ -470,7 +482,6 @@ window.ajaxSignatureDelete = function () {
         canvas.height = Math.floor(rect.height * ratio);
         ctx = canvas.getContext('2d');
 
-        // reset trasformazioni prima di scalare
         ctx.setTransform(1,0,0,1,0,0);
         ctx.scale(ratio, ratio);
 
@@ -488,10 +499,7 @@ window.ajaxSignatureDelete = function () {
         return {x, y};
     }
 
-    function start(e){
-        drawing = true;
-        last = getPoint(e);
-    }
+    function start(e){ drawing = true; last = getPoint(e); }
     function move(e){
         if(!drawing) return;
         e.preventDefault();
@@ -502,10 +510,7 @@ window.ajaxSignatureDelete = function () {
         ctx.stroke();
         last = p;
     }
-    function end(){
-        drawing = false;
-        last = null;
-    }
+    function end(){ drawing = false; last = null; }
 
     canvas.addEventListener('pointerdown', (e)=>{ start(e); canvas.setPointerCapture(e.pointerId); });
     canvas.addEventListener('pointermove', move);
@@ -519,9 +524,7 @@ window.ajaxSignatureDelete = function () {
         setTimeout(resizeCanvas, 50);
     };
 
-    window.__sigClear = function(){
-        resizeCanvas();
-    };
+    window.__sigClear = function(){ resizeCanvas(); };
 
     window.__sigSave = async function(){
         canvas.toBlob(async (blob) => {

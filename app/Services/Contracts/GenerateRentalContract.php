@@ -11,6 +11,7 @@ use App\Domain\Pricing\VehiclePricingService;
 use Illuminate\Contracts\View\Factory as ViewFactory;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 class GenerateRentalContract
 {
@@ -176,6 +177,31 @@ class GenerateRentalContract
         // ---------------------------------------------------------------------
         $clauses = config('rental.clauses', []);
 
+        // ======================================================
+        // RECUPERO FIRME (per stampa nel PDF)
+        // - Cliente: override sul Rental -> signature_customer
+        // - Noleggiante: prima default Organization -> signature_company
+        //              se non presente, fallback su override Rental -> signature_lessor
+        // Output: data-uri (DOMPDF friendly)
+        // ======================================================
+
+        $customerSignatureMedia = method_exists($rental, 'getFirstMedia')
+            ? $rental->getFirstMedia('signature_customer')
+            : null;
+
+        $organization = $lessorOrg;
+
+        $lessorSignatureMedia = null;
+        if ($organization && method_exists($organization, 'getFirstMedia')) {
+            $lessorSignatureMedia = $organization->getFirstMedia('signature_company');
+        }
+        if (!$lessorSignatureMedia && method_exists($rental, 'getFirstMedia')) {
+            $lessorSignatureMedia = $rental->getFirstMedia('signature_lessor');
+        }
+
+        $signatureCustomerDataUri = $this->mediaToDataUri($customerSignatureMedia);
+        $signatureLessorDataUri   = $this->mediaToDataUri($lessorSignatureMedia);
+
         // ---------------------------------------------------------------------
         // 5) DTO PER BLADE (ESTESO, NON ROTTO)
         // ---------------------------------------------------------------------
@@ -230,23 +256,88 @@ class GenerateRentalContract
             'coverages'  => $coverage,
             'franchigie' => $finalFranchise,
             'clauses'    => $clauses,
+            'signature_customer' => $signatureCustomerDataUri,
+            'signature_lessor'   => $signatureLessorDataUri,
         ];
 
         // ---------------------------------------------------------------------
-        // 6–8) PDF + MEDIA LIBRARY (INVARIATO)
+        // 6–8) PDF + MEDIA LIBRARY (FIX: salva in "signatures" se c'è firma cliente)
         // ---------------------------------------------------------------------
         $html = $this->view->make('contracts.rental', $vars)->render();
 
         $pdf = app('dompdf.wrapper')->setPaper('a4', 'portrait')->loadHTML($html);
         $binary = $pdf->output();
 
-        $rental->getMedia('contract')->each(fn ($m) => $m->setCustomProperty('current', false)->save());
+        // ✅ Se esiste firma cliente, consideriamo questo PDF "firmato" (grafico) e lo salviamo in signatures
+        $storeAsSigned = (bool) $customerSignatureMedia;
+        $targetCollection = $storeAsSigned ? 'signatures' : 'contract';
+
+        // Versioniamo SOLO dentro la collection di destinazione (non tocchiamo l'altra)
+        $rental->getMedia($targetCollection)->each(function ($m) {
+            $m->setCustomProperty('current', false);
+            $m->save();
+        });
+
+        $prefix = $storeAsSigned ? 'contratto-firmato' : 'contratto';
 
         $media = $rental->addMediaFromString($binary)
-            ->usingFileName('contratto-'.$rental->id.'-'.now()->format('Ymd_His').'.pdf')
-            ->withCustomProperties(['current' => true])
-            ->toMediaCollection('contract');
+            ->usingFileName($prefix.'-'.$rental->id.'-'.now()->format('Ymd_His').'.pdf')
+            ->withCustomProperties([
+                'current' => true,
+                'generated_with_signatures' => $storeAsSigned,
+            ])
+            ->toMediaCollection($targetCollection);
 
         return $media;
+    }
+
+    /**
+     * Prova a risalire all'Organization del noleggio.
+     * Adatta la lista delle relazioni se nel tuo progetto si chiama diversamente.
+     */
+    private function resolveOrganizationFromRental(Rental $rental): ?Organization
+    {
+        // Relazioni più probabili (safe)
+        foreach (['organization', 'org'] as $rel) {
+            if (method_exists($rental, $rel)) {
+                $o = $rental->{$rel};
+                if ($o instanceof Organization) {
+                    return $o;
+                }
+            }
+        }
+
+        // Fallback su foreign key, se esiste
+        if (!empty($rental->organization_id)) {
+            return Organization::find($rental->organization_id);
+        }
+
+        return null;
+    }
+
+    /**
+     * Converte un Media (PNG/JPG) in data-uri per includerlo nel PDF senza URL esterni.
+     */
+    private function mediaToDataUri(?Media $media): ?string
+    {
+        if (!$media) {
+            return null;
+        }
+
+        $path = $media->getPath(); // path assoluto
+        if (!is_string($path) || !is_file($path)) {
+            return null;
+        }
+
+        $mime = $media->mime_type
+            ?: (function_exists('mime_content_type') ? mime_content_type($path) : null)
+            ?: 'image/png';
+
+        $bin = @file_get_contents($path);
+        if ($bin === false) {
+            return null;
+        }
+
+        return 'data:' . $mime . ';base64,' . base64_encode($bin);
     }
 }

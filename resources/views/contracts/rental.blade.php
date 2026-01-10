@@ -234,21 +234,46 @@
         @endif
     </div>
 
-    {{-- NEW — FIRME SOLO ALLA FINE --}}
+    {{-- NEW — FIRME SOLO ALLA FINE --}} 
     <div class="row">
         <div class="col">
             <div class="box">
                 <h2>Firma cliente</h2>
                 <div class="small muted">La firma sottostante vale come accettazione integrale del contratto e delle condizioni generali.</div>
-                <div style="height:80px;border:1px dashed #bbb;margin-top:8px;"></div>
+
+                @if(!empty($signature_customer))
+                    <div style="margin-top:8px; border:1px solid #e5e5e5; border-radius:6px; padding:8px; height:80px; display:flex; align-items:center; justify-content:center;">
+                        <img
+                            src="{{ $signature_customer }}"
+                            alt="Firma cliente"
+                            style="max-width:100%; max-height:64px; object-fit:contain;"
+                        >
+                    </div>
+                @else
+                    <div style="height:80px;border:1px dashed #bbb;margin-top:8px;"></div>
+                @endif
+
                 <div class="small">{{ $customer['name'] }}</div>
             </div>
         </div>
+
         <div class="col">
             <div class="box">
                 <h2>Firma noleggiante</h2>
                 <div class="small muted">La firma sottostante vale come accettazione integrale del contratto e delle condizioni generali.</div>
-                <div style="height:80px;border:1px dashed #bbb;margin-top:8px;"></div>
+
+                @if(!empty($signature_lessor))
+                    <div style="margin-top:8px; border:1px solid #e5e5e5; border-radius:6px; padding:8px; height:80px; display:flex; align-items:center; justify-content:center;">
+                        <img
+                            src="{{ $signature_lessor }}"
+                            alt="Firma noleggiante"
+                            style="max-width:100%; max-height:64px; object-fit:contain;"
+                        >
+                    </div>
+                @else
+                    <div style="height:80px;border:1px dashed #bbb;margin-top:8px;"></div>
+                @endif
+
                 <div class="small">{{ $org['name'] }}</div>
             </div>
         </div>
