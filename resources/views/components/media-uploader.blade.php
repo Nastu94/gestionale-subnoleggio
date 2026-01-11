@@ -40,7 +40,10 @@
                class="file-input file-input-bordered w-full" />
 
         <button type="button"
-                class="btn"
+                class="p-2 btn btn-sm shadow-none
+                        !bg-neutral !text-neutral-content !border-neutral
+                        hover:brightness-95 focus-visible:outline-none
+                        focus-visible:ring focus-visible:ring-neutral/30"
                 @click="$refs.file.click()"
                 :disabled="loading">
             <span x-show="!loading">Carica</span>
@@ -48,7 +51,7 @@
         </button>
     </div>
 
-    <p class="text-xs opacity-70">Max 20MB.</p>
+    <p class="text-xs opacity-70">Max 6MB.</p>
 </form>
 
 {{-- Registrazione una sola volta dell’helper Alpine --}}

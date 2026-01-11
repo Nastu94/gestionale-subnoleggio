@@ -59,26 +59,45 @@
 
                 <div>
                     <dt class="opacity-70">Cliente</dt>
-
-                    {{-- Nome cliente + azione rapida (Aggiungi / Cambia) --}}
                     <dd class="font-medium flex items-center justify-between gap-2">
                         <span>{{ optional($rental->customer)->name ?? '—' }}</span>
-
 
                         @if(in_array($rental->status, ['draft','reserved'], true))
                             <button
                                 type="button"
                                 class="btn btn-xs shadow-none
-                                    !bg-neutral !text-neutral-content !border-neutral
-                                    hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-neutral/30
-                                    disabled:opacity-50 disabled:cursor-not-allowed p-2"
-                                wire:click="openCustomerModal(false)"
+                                        !bg-neutral !text-neutral-content !border-neutral
+                                        hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-neutral/30
+                                        disabled:opacity-50 disabled:cursor-not-allowed p-2"
+                                wire:click="openCustomerModal('primary')"
                             >
-                                {{ $rental->customer ? 'Cambia Cliente' : 'Aggiungi Cliente' }}
+                                {{ empty($rental->customer_id) ? 'Aggiungi cliente' : 'Modifica cliente' }}
                             </button>
                         @endif
                     </dd>
                 </div>
+
+                @if(!empty($rental->customer_id))
+                    <div class="col-span-2">
+                        <dt class="opacity-70">Seconda guida</dt>
+                        <dd class="font-medium flex items-center justify-between gap-2">
+                            <span>{{ optional($rental->secondDriver)->name ?? '—' }}</span>
+
+                            @if(in_array($rental->status, ['draft','reserved'], true))
+                                <button
+                                    type="button"
+                                    class="btn btn-xs shadow-none
+                                            !bg-neutral !text-neutral-content !border-neutral
+                                            hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-neutral/30
+                                            disabled:opacity-50 disabled:cursor-not-allowed p-2"
+                                    wire:click="openCustomerModal('second')"
+                                >
+                                    {{ empty($rental->second_driver_id) ? 'Aggiungi seconda guida' : 'Modifica seconda guida' }}
+                                </button>
+                            @endif
+                        </dd>
+                    </div>
+                @endif
 
                 <div>
                     <dt class="opacity-70">Veicolo</dt>
@@ -400,15 +419,15 @@
                             <div class="grid md:grid-cols-2 gap-3">
                                 <label class="block">
                                     <span class="block mb-1 text-sm">Data di nascita</span>
-                                    <input type="date" wire:model.defer="customerForm.birth_date" class="{{ $input }}" />
-                                    @error('customerForm.birth_date') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                                    <input type="date" wire:model.defer="customerForm.birthdate" class="{{ $input }}" />
+                                    @error('customerForm.birthdate') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                                 </label>
                                 <div></div>
                             </div>
 
                             <label class="block">
                                 <span class="block mb-1 text-sm">Indirizzo</span>
-                                <input type="text" wire:model.defer="customerForm.address" class="{{ $input }}" />
+                                <input type="text" wire:model.defer="customerForm.address_line" class="{{ $input }}" />
                             </label>
 
                             <div class="grid md:grid-cols-4 gap-3">
@@ -424,7 +443,7 @@
 
                                 <label class="block">
                                     <span class="block mb-1 text-sm">CAP</span>
-                                    <input type="text" wire:model.defer="customerForm.zip" class="{{ $input }}" />
+                                    <input type="text" wire:model.defer="customerForm.postal_code" class="{{ $input }}" />
                                 </label>
                             </div>
 

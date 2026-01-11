@@ -322,7 +322,7 @@
                     <form method="POST"
                           action="{{ route('rentals.signature.customer.store', $rental) }}"
                           enctype="multipart/form-data"
-                          x-data="ajaxSignatureUpload()"
+                          x-data="ajaxSignatureUpload"
                           x-on:submit.prevent="submit($event)"
                           class="flex flex-wrap items-center gap-2">
                         @csrf
@@ -348,7 +348,7 @@
                     @if($customerSig)
                         <form method="POST"
                               action="{{ route('rentals.signature.customer.destroy', $rental) }}"
-                              x-data="ajaxSignatureDelete()"
+                              x-data="ajaxSignatureDelete"
                               x-on:submit.prevent="submit($event)"
                               class="inline-flex">
                             @csrf
@@ -398,7 +398,7 @@
                     <form method="POST"
                           action="{{ route('rentals.signature.lessor.store', $rental) }}"
                           enctype="multipart/form-data"
-                          x-data="ajaxSignatureUpload()"
+                          x-data="ajaxSignatureUpload"
                           x-on:submit.prevent="submit($event)"
                           class="flex flex-wrap items-center gap-2">
                         @csrf
@@ -424,7 +424,7 @@
                     @if($lessorOverrideSig)
                         <form method="POST"
                               action="{{ route('rentals.signature.lessor.destroy', $rental) }}"
-                              x-data="ajaxSignatureDelete()"
+                              x-data="ajaxSignatureDelete"
                               x-on:submit.prevent="submit($event)"
                               class="inline-flex">
                             @csrf
@@ -450,20 +450,20 @@
 </div>
 
 {{-- ===== MODAL FIRMA SU SCHERMO (riusata per customer/lessor) ===== --}}
-<dialog id="signatureModal" class="modal">
+<dialog id="signatureModal" class="modal" x-data="signaturePad">
     <form method="dialog" class="modal-box w-11/12 max-w-2xl">
-        <h3 class="font-bold text-lg" id="sigTitle">Firma</h3>
+        <h3 class="font-bold text-lg" x-ref="title">Firma</h3>
         <p class="text-sm opacity-70 mt-1">
             Disegna la firma e salva. Verrà caricata come PNG.
         </p>
 
         <div class="mt-4 border rounded-lg overflow-hidden">
-            <canvas id="sigCanvas" style="width:100%; height:220px; touch-action:none;"></canvas>
+            <canvas x-ref="canvas" style="width:100%; height:220px; touch-action:none;"></canvas>
         </div>
 
         <div class="mt-4 flex items-center justify-end gap-2">
             <button type="button"
-                onclick="window.__sigClear()"
+                @click="clear()"
                 class="p-2 btn btn-sm shadow-none
                     !bg-neutral !text-neutral-content !border-neutral
                     hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-neutral/30">
@@ -471,16 +471,15 @@
             </button>
 
             <button type="button"
-                onclick="window.__sigSave()"
+                @click="save()"
                 class="p-2 btn btn-sm shadow-none
                     !bg-primary !text-primary-content !border-primary
                     hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30">
                 Salva
             </button>
 
-            {{-- ✅ niente form annidata: chiudi direttamente il dialog --}}
             <button type="button"
-                onclick="document.getElementById('signatureModal')?.close()"
+                @click="close()"
                 class="p-2 btn btn-sm shadow-none
                     !bg-base-200 !text-base-content !border-base-200
                     hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-base-content/20">
@@ -490,158 +489,368 @@
     </form>
 </dialog>
 
+
+@script
 <script>
-// ===== LOGICA FIRMA SU SCHERMO =====
-window.ajaxSignatureUpload = function () {
-    return {
-        loading: false,
-        async submit(e) {
-            if (this.loading) return;
-            this.loading = true;
+(() => {
+    // Evita doppie registrazioni su re-render Livewire
+    if (window.__sigAllRegistered) return;
+    window.__sigAllRegistered = true;
 
-            try {
-                const form = e.target;
-                const url  = form.getAttribute('action');
-                const fd   = new FormData(form);
-
-                const res = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content },
-                    body: fd,
-                });
-
-                if (!res.ok) throw new Error('Upload fallito');
-                window.location.reload();
-            } catch (err) {
-                console.error(err);
-                alert('Errore durante il caricamento della firma.');
-            } finally {
-                this.loading = false;
-            }
-        }
-    }
-};
-
-window.ajaxSignatureDelete = function () {
-    return {
-        loading: false,
-        async submit(e) {
-            if (this.loading) return;
-            this.loading = true;
-
-            try {
-                const form = e.target;
-                const url  = form.getAttribute('action');
-
-                const res = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content,
-                        'Accept': 'application/json',
-                    },
-                    body: new FormData(form),
-                });
-
-                if (!res.ok) throw new Error('Delete fallito');
-                window.location.reload();
-            } catch (err) {
-                console.error(err);
-                alert('Errore durante la rimozione della firma.');
-            } finally {
-                this.loading = false;
-            }
-        }
-    }
-};
-
-(function(){
-    const modal  = document.getElementById('signatureModal');
-    const canvas = document.getElementById('sigCanvas');
-    const title  = document.getElementById('sigTitle');
-
-    let ctx, drawing = false, last = null;
-    let currentTarget = 'customer';
-
-    const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || @json(csrf_token());
-
-    const URLS = {
-        customer: @json(route('rentals.signature.customer.store', $rental)),
-        lessor:   @json(route('rentals.signature.lessor.store', $rental)),
+    // Stub globale: anche se clicchi prima, non esplode.
+    // Accoda la richiesta e la riapre quando Alpine è pronto.
+    window.__pendingSigTarget = null;
+    window.__openSignatureModal = function (target) {
+        window.__pendingSigTarget = (target === 'lessor') ? 'lessor' : 'customer';
+        document.dispatchEvent(new CustomEvent('sig-open', { detail: { target: window.__pendingSigTarget } }));
     };
 
-    function resizeCanvas(){
-        const rect = canvas.getBoundingClientRect();
-        const ratio = window.devicePixelRatio || 1;
-        canvas.width  = Math.floor(rect.width * ratio);
-        canvas.height = Math.floor(rect.height * ratio);
-        ctx = canvas.getContext('2d');
+    const register = () => {
+        const Alpine = window.Alpine;
+        if (!Alpine) return;
 
-        ctx.setTransform(1,0,0,1,0,0);
-        ctx.scale(ratio, ratio);
+        // ===== Upload =====
+        Alpine.data('ajaxSignatureUpload', () => ({
+            loading: false,
+            async submit(e) {
+                if (this.loading) return;
+                this.loading = true;
 
-        ctx.lineWidth = 2;
-        ctx.lineCap = 'round';
-        ctx.strokeStyle = '#111';
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, rect.width, rect.height);
-    }
+                try {
+                    const form = e.target;
+                    const url  = form.getAttribute('action');
+                    const fd   = new FormData(form);
 
-    function getPoint(e){
-        const rect = canvas.getBoundingClientRect();
-        const x = (e.clientX ?? (e.touches && e.touches[0].clientX)) - rect.left;
-        const y = (e.clientY ?? (e.touches && e.touches[0].clientY)) - rect.top;
-        return {x, y};
-    }
+                    const fileInput = form.querySelector('input[type="file"]');
+                    if (fileInput && fileInput.files.length === 0) return;
 
-    function start(e){ drawing = true; last = getPoint(e); }
-    function move(e){
-        if(!drawing) return;
-        e.preventDefault();
-        const p = getPoint(e);
-        ctx.beginPath();
-        ctx.moveTo(last.x, last.y);
-        ctx.lineTo(p.x, p.y);
-        ctx.stroke();
-        last = p;
-    }
-    function end(){ drawing = false; last = null; }
+                    const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 
-    canvas.addEventListener('pointerdown', (e)=>{ start(e); canvas.setPointerCapture(e.pointerId); });
-    canvas.addEventListener('pointermove', move);
-    canvas.addEventListener('pointerup', end);
-    canvas.addEventListener('pointercancel', end);
+                    const res = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': csrf ?? '',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                        },
+                        body: fd,
+                    });
 
-    window.__openSignatureModal = function(target){
-        currentTarget = (target === 'lessor') ? 'lessor' : 'customer';
-        title.textContent = (currentTarget === 'lessor') ? 'Firma noleggiante' : 'Firma cliente';
-        modal.showModal();
-        setTimeout(resizeCanvas, 50);
-    };
+                    if (!res.ok) {
+                        let msg = `Upload fallito (${res.status})`;
+                        try { const data = await res.json(); msg = data?.message || msg; } catch (_) {}
+                        throw new Error(msg);
+                    }
 
-    window.__sigClear = function(){ resizeCanvas(); };
-
-    window.__sigSave = async function(){
-        canvas.toBlob(async (blob) => {
-            if(!blob) return;
-
-            const fd = new FormData();
-            fd.append('file', new File([blob], 'signature.png', {type: 'image/png'}));
-
-            const url = URLS[currentTarget];
-
-            const res = await fetch(url, {
-                method: 'POST',
-                headers: { 'X-CSRF-TOKEN': csrf },
-                body: fd
-            });
-
-            if(!res.ok){
-                alert('Errore salvataggio firma.');
-                return;
+                    window.Livewire ? window.Livewire.dispatch('signature-updated') : window.location.reload();
+                } catch (err) {
+                    console.error(err);
+                    alert(err?.message ?? 'Errore durante il caricamento della firma.');
+                } finally {
+                    this.loading = false;
+                }
             }
+        }));
 
-            window.location.reload();
-        }, 'image/png');
+        // ===== Delete =====
+        Alpine.data('ajaxSignatureDelete', () => ({
+            loading: false,
+            async submit(e) {
+                if (this.loading) return;
+                this.loading = true;
+
+                try {
+                    const form = e.target;
+                    const url  = form.getAttribute('action');
+
+                    const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+                    const res = await fetch(url, {
+                        method: 'POST', // @method('DELETE') nel form
+                        headers: {
+                            'X-CSRF-TOKEN': csrf ?? '',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                        },
+                        body: new FormData(form),
+                    });
+
+                    if (!res.ok) {
+                        let msg = `Delete fallito (${res.status})`;
+                        try { const data = await res.json(); msg = data?.message || msg; } catch (_) {}
+                        throw new Error(msg);
+                    }
+
+                    window.Livewire ? window.Livewire.dispatch('signature-updated') : window.location.reload();
+                } catch (err) {
+                    console.error(err);
+                    alert(err?.message ?? 'Errore durante la rimozione della firma.');
+                } finally {
+                    this.loading = false;
+                }
+            }
+        }));
+
+        // ===== Signature pad (modal) =====
+        Alpine.data('signaturePad', () => ({
+            target: 'customer',
+            ctx: null,
+            drawing: false,
+            last: null,
+            listenersBound: false,
+
+            csrf: document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || @json(csrf_token()),
+            URLS: {
+                customer: @json(route('rentals.signature.customer.store', $rental)),
+                lessor:   @json(route('rentals.signature.lessor.store', $rental)),
+            },
+
+            init() {
+                // ascolta l'evento globale (anche se viene sparato prima, recuperiamo da pending)
+                if (!window.__sigOpenListenerAdded) {
+                    window.__sigOpenListenerAdded = true;
+
+                    document.addEventListener('sig-open', (e) => {
+                        const t = e?.detail?.target;
+                        this.open(t);
+                    });
+                }
+
+                // se qualcuno ha cliccato prima dell’init
+                if (window.__pendingSigTarget) {
+                    const t = window.__pendingSigTarget;
+                    window.__pendingSigTarget = null;
+                    this.open(t);
+                }
+            },
+
+            open(target) {
+                this.target = (target === 'lessor') ? 'lessor' : 'customer';
+
+                // titolo
+                if (this.$refs.title) {
+                    this.$refs.title.textContent = this.target === 'lessor'
+                        ? 'Firma noleggiante'
+                        : 'Firma cliente';
+                }
+
+                const modal = document.getElementById('signatureModal');
+                if (!modal) return;
+
+                modal.showModal();
+
+                // aspetta layout reale del dialog, poi inizializza canvas
+                requestAnimationFrame(() => requestAnimationFrame(() => this.resizeCanvas(true)));
+            },
+
+            close() {
+                document.getElementById('signatureModal')?.close();
+            },
+
+            resizeCanvas(bind = false) {
+                const canvas = this.$refs.canvas;
+                if (!canvas) return;
+
+                const rect = canvas.getBoundingClientRect();
+                if (!rect.width || !rect.height) return;
+
+                const ratio = window.devicePixelRatio || 1;
+                canvas.width  = Math.floor(rect.width * ratio);
+                canvas.height = Math.floor(rect.height * ratio);
+
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(1,0,0,1,0,0);
+                ctx.scale(ratio, ratio);
+
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = '#111';
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, 0, rect.width, rect.height);
+
+                this.ctx = ctx;
+                this.drawing = false;
+                this.last = null;
+
+                if (bind && !this.listenersBound) this.bindListeners();
+            },
+
+            bindListeners() {
+                const canvas = this.$refs.canvas;
+                if (!canvas || !this.ctx) return;
+
+                this.listenersBound = true;
+
+                const getPoint = (e) => {
+                    const r = canvas.getBoundingClientRect();
+                    const x = (e.clientX ?? (e.touches && e.touches[0].clientX)) - r.left;
+                    const y = (e.clientY ?? (e.touches && e.touches[0].clientY)) - r.top;
+                    return { x, y };
+                };
+
+                const start = (e) => {
+                    this.drawing = true;
+                    this.last = getPoint(e);
+                    canvas.setPointerCapture?.(e.pointerId);
+                };
+
+                const move = (e) => {
+                    if (!this.drawing) return;
+                    e.preventDefault();
+
+                    const p = getPoint(e);
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(this.last.x, this.last.y);
+                    this.ctx.lineTo(p.x, p.y);
+                    this.ctx.stroke();
+                    this.last = p;
+                };
+
+                const end = () => {
+                    this.drawing = false;
+                    this.last = null;
+                };
+
+                canvas.addEventListener('pointerdown', start);
+                canvas.addEventListener('pointermove', move, { passive: false });
+                canvas.addEventListener('pointerup', end);
+                canvas.addEventListener('pointercancel', end);
+            },
+
+            clear() {
+                requestAnimationFrame(() => this.resizeCanvas(false));
+            },
+
+            save() {
+                const canvas = this.$refs.canvas;
+                if (!canvas) return;
+
+                canvas.toBlob(async (blob) => {
+                    if (!blob) return;
+
+                    try {
+                        const fd = new FormData();
+                        fd.append('file', new File([blob], 'signature.png', { type: 'image/png' }));
+
+                        const url = this.URLS[this.target];
+
+                        const res = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'X-CSRF-TOKEN': this.csrf },
+                            body: fd
+                        });
+
+                        if (!res.ok) {
+                            let msg = `Errore salvataggio firma (${res.status})`;
+                            try { const data = await res.json(); msg = data?.message || msg; } catch (_) {}
+                            throw new Error(msg);
+                        }
+
+                        this.close();
+                        window.Livewire ? window.Livewire.dispatch('signature-updated') : window.location.reload();
+                    } catch (err) {
+                        console.error(err);
+                        alert(err?.message ?? 'Errore salvataggio firma.');
+                    }
+                }, 'image/png');
+            }
+        }));
     };
+
+    // registra subito e anche in fallback
+    register();
+    document.addEventListener('alpine:init', register, { once: true });
 })();
+    
+    /*(function(){
+        const modal  = document.getElementById('signatureModal');
+        const canvas = document.getElementById('sigCanvas');
+        const title  = document.getElementById('sigTitle');
+
+        let ctx, drawing = false, last = null;
+        let currentTarget = 'customer';
+
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || @json(csrf_token());
+
+        const URLS = {
+            customer: @json(route('rentals.signature.customer.store', $rental)),
+            lessor:   @json(route('rentals.signature.lessor.store', $rental)),
+        };
+
+        function resizeCanvas(){
+            const rect = canvas.getBoundingClientRect();
+            const ratio = window.devicePixelRatio || 1;
+            canvas.width  = Math.floor(rect.width * ratio);
+            canvas.height = Math.floor(rect.height * ratio);
+            ctx = canvas.getContext('2d');
+
+            ctx.setTransform(1,0,0,1,0,0);
+            ctx.scale(ratio, ratio);
+
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = '#111';
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, rect.width, rect.height);
+        }
+
+        function getPoint(e){
+            const rect = canvas.getBoundingClientRect();
+            const x = (e.clientX ?? (e.touches && e.touches[0].clientX)) - rect.left;
+            const y = (e.clientY ?? (e.touches && e.touches[0].clientY)) - rect.top;
+            return {x, y};
+        }
+
+        function start(e){ drawing = true; last = getPoint(e); }
+        function move(e){
+            if(!drawing) return;
+            e.preventDefault();
+            const p = getPoint(e);
+            ctx.beginPath();
+            ctx.moveTo(last.x, last.y);
+            ctx.lineTo(p.x, p.y);
+            ctx.stroke();
+            last = p;
+        }
+        function end(){ drawing = false; last = null; }
+
+        canvas.addEventListener('pointerdown', (e)=>{ start(e); canvas.setPointerCapture(e.pointerId); });
+        canvas.addEventListener('pointermove', move);
+        canvas.addEventListener('pointerup', end);
+        canvas.addEventListener('pointercancel', end);
+
+        window.__openSignatureModal = function(target){
+            currentTarget = (target === 'lessor') ? 'lessor' : 'customer';
+            title.textContent = (currentTarget === 'lessor') ? 'Firma noleggiante' : 'Firma cliente';
+            modal.showModal();
+            setTimeout(resizeCanvas, 50);
+        };
+
+        window.__sigClear = function(){ resizeCanvas(); };
+
+        window.__sigSave = async function(){
+            canvas.toBlob(async (blob) => {
+                if(!blob) return;
+
+                const fd = new FormData();
+                fd.append('file', new File([blob], 'signature.png', {type: 'image/png'}));
+
+                const url = URLS[currentTarget];
+
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'X-CSRF-TOKEN': csrf },
+                    body: fd
+                });
+
+                if(!res.ok){
+                    alert('Errore salvataggio firma.');
+                    return;
+                }
+
+                window.location.reload();
+            }, 'image/png');
+        };
+    })();*/
 </script>
+@endscript

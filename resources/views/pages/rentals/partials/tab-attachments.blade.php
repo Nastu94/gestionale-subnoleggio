@@ -59,7 +59,7 @@
                             <div class="flex shrink-0 gap-2">
                                 {{-- Apri --}}
                                 <a href="{{ $m->getUrl() }}" target="_blank"
-                                   class="btn btn-sm shadow-none
+                                   class="p-2 btn btn-sm shadow-none
                                           !bg-neutral !text-neutral-content !border-neutral
                                           hover:brightness-95 focus-visible:outline-none
                                           focus-visible:ring focus-visible:ring-neutral/30">
@@ -76,7 +76,7 @@
                                     @csrf @method('DELETE')
                                     <button
                                         :disabled="$store.rental.isClosed || loading"
-                                        class="btn btn-error btn-sm shadow-none
+                                        class="p-2 btn btn-error btn-sm shadow-none
                                                !bg-error !text-error-content !border-error
                                                hover:brightness-95 focus-visible:outline-none
                                                focus-visible:ring focus-visible:ring-error/30">

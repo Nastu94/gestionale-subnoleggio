@@ -2,7 +2,6 @@
 
 namespace App\Livewire\Rentals;
 
-use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
 use Livewire\Component;
 use App\Models\Rental;
@@ -15,8 +14,14 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 /**
  * Livewire: Scheda noleggio con tab e Action Drawer.
  *
- * - Non modifica nomi/relazioni esistenti.
- * - Le transizioni di stato invocano rotte POST di RentalController (submit form hidden).
+ * NOTE:
+ * - Questo componente gestisce sia il "Cliente principale" sia la "Seconda guida"
+ *   usando un unico modale, con:
+ *     - role: primary|second
+ *     - mode: create|edit
+ *
+ * - I campi del form sono allineati ai nomi reali del DB customers:
+ *     birthdate, address_line, postal_code
  */
 class Show extends Component
 {
@@ -32,54 +37,76 @@ class Show extends Component
         'tab' => ['as' => 'tab', 'except' => 'data']
     ];
 
-    /**
-     * Modale gestione Cliente (Aggiungi / Cambia)
-     * - Usiamo gli stessi campi del form già in uso nel wizard.
-     */
+    /* -------------------------------------------------------------------------
+     |  MODALE CLIENTE / SECONDA GUIDA
+     * ------------------------------------------------------------------------- */
+
+    /** Modale aperto/chiuso */
     public bool $customerModalOpen = false;
 
-    /** @var bool Se true, stiamo modificando un cliente esistente (prefill). */
+    /**
+     * Contesto modale (legacy/compat): 'primary'|'second'
+     * - Se lo stai già usando in view per titoli/label, resta disponibile.
+     * - Internamente usiamo customerRole.
+     */
+    public string $customerModalContext = 'primary';
+
+    /** Ruolo del modale: primary (cliente) | second (seconda guida) */
+    public string $customerRole = 'primary';
+
+    /** Modalità: create (crea/associa) | edit (modifica anagrafica già collegata) */
+    public string $customerModalMode = 'create';
+
+    /**
+     * Se true, abbiamo selezionato un customer esistente (o stiamo editando).
+     * Nota: nel tuo flusso attuale, quando selezioni un customer esistente,
+     *       il form è modificabile e al salvataggio verrà anche aggiornato.
+     */
     public bool $customerPopulated = false;
 
-    /** @var int|null Id cliente in modifica (se customerPopulated = true). */
+    /** Id customer selezionato/in modifica */
     public ?int $customer_id = null;
 
-    /** @var array Form cliente (chiavi identiche a quelle già usate nel progetto). */
+    /**
+     * Form customer (NOMI DB REALI)
+     * customers: birthdate, address_line, postal_code
+     */
     public array $customerForm = [
         'name'                     => null,
         'email'                    => null,
         'phone'                    => null,
         'doc_id_type'              => null,
         'doc_id_number'            => null,
-        'birth_date'               => null,
-        'address'                  => null,
+        'birthdate'                => null,
+        'address_line'             => null,
         'city'                     => null,
         'province'                 => null,
-        'zip'                      => null,
+        'postal_code'              => null,
         'country_code'             => null,
         'driver_license_number'    => null,
         'driver_license_expires_at'=> null,
     ];
 
-    /**
-     * Ricerca cliente (aperta):
-     * - Usata per cercare cliente esistente e poi selezionarlo.
-     * - Nessun filtro per organization/renter: evita doppioni se un cliente noleggia con renter diversi.
-     */
+    /** Ricerca customer esistenti (usata SOLO in mode=create) */
     public string $customerQuery = '';
 
-    /**
-     * Override prezzo finale (salvato su rentals.final_amount_override)
-     * - nullable: se vuoto/null, nel contratto useremo il prezzo previsto.
-     * - lo teniamo come string per gestire bene "input vuoto" in Livewire.
-     */
+    /* -------------------------------------------------------------------------
+     |  PREZZO OVERRIDE
+     * ------------------------------------------------------------------------- */
+
+    /** Override prezzo finale (rentals.final_amount_override) */
     public ?string $final_amount_override = null;
 
     public function mount(Rental $rental): void
     {
-        $this->rental = $rental->load(['customer','vehicle','checklists','damages']);
+        $this->rental = $rental->load([
+            'customer',
+            'secondDriver',
+            'vehicle',
+            'checklists',
+            'damages'
+        ]);
 
-        // ✅ Precompilo l’override prezzo (se presente)
         $this->final_amount_override = $this->rental->final_amount_override !== null
             ? (string) $this->rental->final_amount_override
             : null;
@@ -90,14 +117,82 @@ class Show extends Component
         $this->tab = $tab;
     }
 
-    /*--------------------------------------------------------------------------
-    | Gestione Cliente - TAB DATA
-    |--------------------------------------------------------------------------*/
+    /* -------------------------------------------------------------------------
+     |  HELPERS: ruolo/mode + FK seconda guida
+     * ------------------------------------------------------------------------- */
+
+    protected function isSecondDriverContext(): bool
+    {
+        return $this->customerRole === 'second';
+    }
 
     /**
-     * Regole di validazione del form cliente.
-     * - Allineate ai campi obbligatori mostrati nel form (nome + documento).
+     * Compat: in alcuni DB la colonna potrebbe chiamarsi:
+     * - second_driver_customer_id (preferita)
+     * - second_driver_id (legacy)
+     *
+     * Restituiamo quella presente negli attributi del model.
      */
+    protected function secondDriverForeignKey(): string
+    {
+        $attrs = $this->rental->getAttributes();
+
+        if (array_key_exists('second_driver_customer_id', $attrs)) {
+            return 'second_driver_customer_id';
+        }
+
+        // fallback legacy
+        return 'second_driver_id';
+    }
+
+    protected function primaryForeignKey(): string
+    {
+        return 'customer_id';
+    }
+
+    protected function rentalForeignKeyForRole(): string
+    {
+        return $this->isSecondDriverContext()
+            ? $this->secondDriverForeignKey()
+            : $this->primaryForeignKey();
+    }
+
+    protected function resetCustomerForm(): void
+    {
+        $this->customerPopulated = false;
+        $this->customer_id = null;
+
+        foreach ($this->customerForm as $key => $value) {
+            $this->customerForm[$key] = null;
+        }
+    }
+
+    protected function fillCustomerFormFromModel(Customer $c): void
+    {
+        $this->customerForm = [
+            'name'                     => $c->name,
+            'email'                    => $c->email,
+            'phone'                    => $c->phone,
+            'doc_id_type'              => $c->doc_id_type,
+            'doc_id_number'            => $c->doc_id_number,
+
+            // ✅ NOMI DB REALI
+            'birthdate'                => optional($c->birthdate)->format('Y-m-d'),
+            'address_line'             => $c->address_line,
+            'city'                     => $c->city,
+            'province'                 => $c->province,
+            'postal_code'              => $c->postal_code,
+            'country_code'             => $c->country_code,
+
+            'driver_license_number'    => $c->driver_license_number,
+            'driver_license_expires_at'=> optional($c->driver_license_expires_at)->format('Y-m-d'),
+        ];
+    }
+
+    /* -------------------------------------------------------------------------
+     |  VALIDAZIONE CUSTOMER
+     * ------------------------------------------------------------------------- */
+
     protected function customerRules(): array
     {
         return [
@@ -111,158 +206,175 @@ class Show extends Component
             'customerForm.driver_license_number'     => ['nullable', 'string', 'max:64'],
             'customerForm.driver_license_expires_at' => ['nullable', 'date'],
 
-            'customerForm.birth_date'    => ['nullable', 'date'],
-            'customerForm.address'       => ['nullable', 'string', 'max:255'],
+            // ✅ DB fields reali
+            'customerForm.birthdate'     => ['nullable', 'date'],
+            'customerForm.address_line'  => ['nullable', 'string', 'max:191'],
             'customerForm.city'          => ['nullable', 'string', 'max:128'],
-            'customerForm.province'      => ['nullable', 'string', 'max:16'],
-            'customerForm.zip'           => ['nullable', 'string', 'max:16'],
+            'customerForm.province'      => ['nullable', 'string', 'max:64'],
+            'customerForm.postal_code'   => ['nullable', 'string', 'max:16'],
             'customerForm.country_code'  => ['nullable', 'string', 'size:2'],
         ];
     }
 
-    /**
-     * Reset del form cliente.
-     */
-    protected function resetCustomerForm(): void
-    {
-        $this->customerPopulated = false;
-        $this->customer_id = null;
-
-        foreach ($this->customerForm as $key => $value) {
-            $this->customerForm[$key] = null;
-        }
-    }
+    /* -------------------------------------------------------------------------
+     |  MODALE: OPEN/CLOSE
+     * ------------------------------------------------------------------------- */
 
     /**
-     * Apre il modale Cliente.
-     *
-     * @param bool $prefillCurrent
-     *  - false: form vuoto (use-case "Aggiungi Cliente" o "Cambia Cliente" creando un nuovo record)
-     *  - true : precompila dal cliente corrente per aggiornamento (use-case futuro)
+     * Apre il modale per:
+     * - primary: cliente principale
+     * - second : seconda guida (solo se il cliente principale esiste)
      */
-    public function openCustomerModal(bool $prefillCurrent = false): void
+    public function openCustomerModal(string $role = 'primary'): void
     {
-        // 🔐 Autorizzazione: stai modificando il Rental (associazione cliente)
         $this->authorize('update', $this->rental);
 
-        // ✅ Regola di business: cliente modificabile solo in draft/reserved
         if (!in_array($this->rental->status, ['draft', 'reserved'], true)) {
-            $this->dispatch('toast', type: 'error', message: 'Non è possibile cambiare cliente dopo l’avvio del noleggio.');
+            $this->dispatch('toast', type: 'error', message: 'Non è possibile modificare i dati conducente dopo l’avvio del noleggio.');
             return;
         }
 
         $this->resetErrorBag();
         $this->resetValidation();
 
-        if ($prefillCurrent && $this->rental->customer) {
-            $c = $this->rental->customer;
+        $this->customerRole = ($role === 'second') ? 'second' : 'primary';
+        $this->customerModalContext = $this->customerRole; // compat con eventuali view
 
-            $this->customerPopulated = true;
-            $this->customer_id = (int) $c->id;
+        // Regola: la seconda guida si gestisce solo se esiste il cliente principale
+        if ($this->isSecondDriverContext() && empty($this->rental->customer_id)) {
+            $this->dispatch('toast', type: 'warning', message: 'Inserisci prima il cliente principale.');
+            return;
+        }
 
-            // Pre-fill mantenendo i nomi delle chiavi invariati
-            $this->customerForm['name'] = $c->name;
-            $this->customerForm['email'] = $c->email;
-            $this->customerForm['phone'] = $c->phone;
+        // Pulisco ricerca per evitare residui UI
+        $this->customerQuery = '';
 
-            $this->customerForm['doc_id_type'] = $c->doc_id_type;
-            $this->customerForm['doc_id_number'] = $c->doc_id_number;
+        // Determino mode + prefill in base a cosa è già collegato al rental
+        if ($this->isSecondDriverContext()) {
+            $fk = $this->secondDriverForeignKey();
+            $hasSecond = !empty($this->rental->{$fk}) && $this->rental->secondDriver;
 
-            $this->customerForm['driver_license_number'] = $c->driver_license_number;
-            $this->customerForm['driver_license_expires_at'] = $c->driver_license_expires_at
-                ? optional($c->driver_license_expires_at)->format('Y-m-d')
-                : null;
-
-            $this->customerForm['birth_date'] = $c->birth_date
-                ? optional($c->birth_date)->format('Y-m-d')
-                : null;
-
-            $this->customerForm['address'] = $c->address;
-            $this->customerForm['city'] = $c->city;
-            $this->customerForm['province'] = $c->province;
-            $this->customerForm['zip'] = $c->zip;
-            $this->customerForm['country_code'] = $c->country_code;
+            if ($hasSecond) {
+                $this->customerModalMode = 'edit';
+                $this->customerPopulated = true;
+                $this->customer_id = (int) $this->rental->secondDriver->id;
+                $this->fillCustomerFormFromModel($this->rental->secondDriver);
+            } else {
+                $this->customerModalMode = 'create';
+                $this->resetCustomerForm();
+            }
         } else {
-            // Caso normale: vogliamo creare un nuovo cliente e associarlo
-            $this->resetCustomerForm();
+            $hasPrimary = !empty($this->rental->customer_id) && $this->rental->customer;
+
+            if ($hasPrimary) {
+                $this->customerModalMode = 'edit';
+                $this->customerPopulated = true;
+                $this->customer_id = (int) $this->rental->customer->id;
+                $this->fillCustomerFormFromModel($this->rental->customer);
+            } else {
+                $this->customerModalMode = 'create';
+                $this->resetCustomerForm();
+            }
         }
 
         $this->customerModalOpen = true;
     }
 
-    /**
-     * Chiude il modale Cliente.
-     */
+    /** Chiude il modale customer/second driver */
     public function closeCustomerModal(): void
     {
         $this->customerModalOpen = false;
     }
 
-    /**
-     * Crea o aggiorna il cliente e lo associa al noleggio.
-     * - Hookato dal form: wire:click="createOrUpdateCustomer"
-     */
+    /* -------------------------------------------------------------------------
+     |  SALVATAGGIO CUSTOMER (primary/second)
+     * ------------------------------------------------------------------------- */
+
     public function createOrUpdateCustomer(): void
     {
-        // 🔐 Autorizzazione su Rental
         $this->authorize('update', $this->rental);
 
-        // ✅ Regola di business: cliente modificabile solo in draft/reserved
         if (!in_array($this->rental->status, ['draft', 'reserved'], true)) {
-            $this->dispatch('toast', type: 'error', message: 'Non è possibile cambiare cliente dopo l’avvio del noleggio.');
+            $this->dispatch('toast', type: 'error', message: 'Non è possibile modificare i dati conducente dopo l’avvio del noleggio.');
             return;
         }
 
         $this->validate($this->customerRules());
 
-        // Normalizzazioni leggere (non invasive)
+        // Normalizzazione country ISO2
         if (!empty($this->customerForm['country_code'])) {
             $this->customerForm['country_code'] = strtoupper(trim((string) $this->customerForm['country_code']));
         }
 
+        $fk = $this->rentalForeignKeyForRole();
+
         try {
-            DB::transaction(function () {
-                // Se stiamo modificando un cliente esistente (prefill)
+            DB::transaction(function () use ($fk) {
+
+                // 1) CREATE/EDIT customer
                 if ($this->customerPopulated === true && $this->customer_id) {
+                    // Update customer esistente (se selezionato o già collegato)
                     $customer = Customer::query()->findOrFail($this->customer_id);
                     $customer->fill($this->customerForm);
                     $customer->save();
                 } else {
-                    // Caso standard per il tuo flusso "Cambia Cliente": crea nuovo record e associa
+                    // Create customer nuovo
                     $customer = new Customer();
                     $customer->fill($this->customerForm);
+
+                    // organization_id è NOT NULL nel tuo DB
+                    $customer->organization_id = $this->rental->organization_id;
+
                     $customer->save();
                 }
 
-                // Associa il cliente al rental
-                $this->rental->customer_id = (int) $customer->id;
+                // 2) Business rule: seconda guida != cliente principale
+                if ($this->isSecondDriverContext() && !empty($this->rental->customer_id)) {
+                    if ((int) $this->rental->customer_id === (int) $customer->id) {
+                        throw new \RuntimeException('La seconda guida non può coincidere con il cliente principale.');
+                    }
+                }
+
+                // 3) Associazione sul rental
+                $this->rental->{$fk} = (int) $customer->id;
                 $this->rental->save();
             });
 
-            // 🔄 Refresh per riflettere subito il cambio in UI
             $this->rental->refresh();
-            $this->rental->load(['customer']);
+            $this->rental->load(['customer', 'secondDriver']);
 
             $this->customerModalOpen = false;
 
-            $this->dispatch('toast', type: 'success', message: 'Cliente associato al noleggio.');
+            $msg = $this->isSecondDriverContext()
+                ? ($this->customerModalMode === 'edit' ? 'Seconda guida aggiornata.' : 'Seconda guida associata al noleggio.')
+                : ($this->customerModalMode === 'edit' ? 'Cliente aggiornato.' : 'Cliente associato al noleggio.');
+
+            $this->dispatch('toast', type: 'success', message: $msg);
             $this->dispatch('$refresh');
+        } catch (\RuntimeException $e) {
+            $this->dispatch('toast', type: 'error', message: $e->getMessage());
         } catch (\Throwable $e) {
             report($e);
             $this->dispatch('toast', type: 'error', message: 'Errore durante il salvataggio del cliente.');
         }
     }
 
+    /* -------------------------------------------------------------------------
+     |  RICERCA CUSTOMER (SOLO mode=create)
+     * ------------------------------------------------------------------------- */
+
     /**
      * Risultati ricerca clienti (computed).
-     * - Ricerca aperta: nome o numero documento, min 2 caratteri, max 10 risultati.
-     *
-     * @return array<int, array{id:int,name:string,doc_id_number:?string}>
+     * - Min 2 caratteri, max 10 risultati.
+     * - Mostrata SOLO quando il modale è in mode=create.
      */
     public function getCustomerSearchResultsProperty(): array
     {
-        // 🔐 Sicurezza: stai per associare un cliente a un rental, quindi richiediamo update sul rental
         $this->authorize('update', $this->rental);
+
+        if (!$this->customerModalOpen || $this->customerModalMode !== 'create') {
+            return [];
+        }
 
         if (mb_strlen($this->customerQuery) < 2) {
             return [];
@@ -271,7 +383,6 @@ class Show extends Component
         $q = trim($this->customerQuery);
 
         return Customer::query()
-            // ✅ Raggruppamento corretto della OR
             ->where(function ($query) use ($q) {
                 $query->where('name', 'like', '%' . $q . '%')
                       ->orWhere('doc_id_number', 'like', '%' . $q . '%');
@@ -287,57 +398,33 @@ class Show extends Component
     }
 
     /**
-     * Selezione cliente esistente:
-     * - Compila il form con i dati del cliente (no re-typing).
-     * - Imposta customer_id e customerPopulated.
-     *
-     * NB: Qui NON salvo/associo automaticamente al rental:
-     *     l'associazione avviene quando confermi con createOrUpdateCustomer().
+     * Seleziona un customer esistente (solo mode=create):
+     * - Compila il form
+     * - Imposta customer_id e customerPopulated
      */
     public function selectCustomer(int $id): void
     {
         $this->authorize('update', $this->rental);
 
-        // ✅ Ricerca/associazione aperta: nessun filtro per renter/organization
+        if ($this->customerModalMode !== 'create') {
+            return;
+        }
+
         $customer = Customer::query()->findOrFail($id);
 
         $this->customer_id = (int) $customer->id;
-
-        // Popola il form con i dati trovati (replica del CreateWizard)
-        $this->customerForm = [
-            'name'          => $customer->name,
-            'email'         => $customer->email,
-            'phone'         => $customer->phone,
-            'doc_id_type'   => $customer->doc_id_type,
-            'doc_id_number' => $customer->doc_id_number,
-
-            // Nel tuo wizard usi "birthdate" (non "birth_date")
-            'birth_date'    => optional($customer->birthdate)->format('Y-m-d'),
-
-            // Nel tuo wizard usi "address_line" e "postal_code"
-            'address'       => $customer->address_line,
-            'city'          => $customer->city,
-            'province'      => $customer->province,
-            'zip'           => $customer->postal_code,
-            'country_code'  => $customer->country_code,
-
-            'driver_license_number'      => $customer->driver_license_number,
-            'driver_license_expires_at'  => optional($customer->driver_license_expires_at)->format('Y-m-d'),
-        ];
-
         $this->customerPopulated = true;
 
-        // Quando selezioni un cliente, pulisci la query per “chiudere” la lista risultati (UI)
+        $this->fillCustomerFormFromModel($customer);
+
+        // Pulisco query per chiudere la lista risultati
         $this->customerQuery = '';
     }
 
-    /*--------------------------------------------------------------------------
-    | Gestione Contratto - TAB CONTRATTO
-    |--------------------------------------------------------------------------*/
-
-    /**
-     * Regole validazione override prezzo.
-     */
+    /* -------------------------------------------------------------------------
+     |  CONTRATTO / PREZZO OVERRIDE
+     * ------------------------------------------------------------------------- */
+    /** Regole di validazione per l'override del prezzo finale. */
     protected function finalAmountRules(): array
     {
         return [
@@ -345,16 +432,11 @@ class Show extends Component
         ];
     }
 
-    /**
-     * Salva l'override del prezzo finale sul noleggio.
-     * Usabile in "tab contratto" per modifiche successive.
-     */
+    /** Salva l'override del prezzo finale. */
     public function saveFinalAmountOverride(): void
     {
-        // 🔐 Autorizzazione
         $this->authorize('update', $this->rental);
 
-        // ✅ Regola business: modificabile solo in draft/reserved
         if (!in_array($this->rental->status, ['draft', 'reserved'], true)) {
             $this->dispatch('toast', type: 'error', message: 'Non è possibile modificare il prezzo in questa fase del noleggio.');
             return;
@@ -362,7 +444,6 @@ class Show extends Component
 
         $this->validate($this->finalAmountRules());
 
-        // Normalizzazione: stringa vuota -> null
         $raw = is_string($this->final_amount_override) ? trim($this->final_amount_override) : $this->final_amount_override;
         $value = ($raw === '' || $raw === null) ? null : round((float) $raw, 2);
 
@@ -374,7 +455,6 @@ class Show extends Component
 
             $this->rental->refresh();
 
-            // Riallineo la property (utile se DB casta/formatta)
             $this->final_amount_override = $this->rental->final_amount_override !== null
                 ? (string) $this->rental->final_amount_override
                 : null;
@@ -387,36 +467,26 @@ class Show extends Component
         }
     }
 
-    /**
-     * Rimuove l'override: si torna al prezzo previsto.
-     */
+    /** Rimuove l'override del prezzo finale. */
     public function clearFinalAmountOverride(): void
     {
         $this->final_amount_override = null;
         $this->saveFinalAmountOverride();
     }
 
-    /**
-     * Genera una nuova versione del contratto (PDF) e la salva su Media Library (collection "contract").
-     * - Autorizza l'utente (policy/permessi).
-     * - Usa il service GenerateRentalContract (già fornito).
-     * - Mostra un toast e aggiorna il componente Livewire senza navigare.
-     */
+    /** Genera il contratto di noleggio. */
     public function generateContract(GenerateRentalContract $generator): void
     {
-        // 🔐 Autorizzazione
         if (!auth()->user()?->can('rentals.contract.generate') || !auth()->user()?->can('media.attach.contract')) {
             $this->dispatch('toast', type: 'error', message: 'Permesso negato.');
             return;
         }
 
-        // ✅ Regola business: niente contratto senza cliente
         if (empty($this->rental->customer_id)) {
             $this->dispatch('toast', type: 'error', message: 'Associa prima un cliente al noleggio.');
             return;
         }
 
-        // ✅ Coerenza flusso: contratto generabile prima dell’avvio (draft/reserved)
         if (!in_array($this->rental->status, ['draft', 'reserved'], true)) {
             $this->dispatch('toast', type: 'error', message: 'Non puoi generare il contratto in questa fase del noleggio.');
             return;
@@ -425,7 +495,6 @@ class Show extends Component
         try {
             $generator->handle($this->rental);
 
-            // ✅ Dopo generazione contratto: se era draft, diventa reserved
             if ($this->rental->status === 'draft') {
                 $this->rental->status = 'reserved';
                 $this->rental->save();
@@ -440,11 +509,7 @@ class Show extends Component
         }
     }
 
-    /**
-     * Rigenerazione “con firme”.
-     * - serve quando il cliente ha appena firmato
-     * - genera una nuova versione PDF (versioning già gestito dalla collection "contract")
-     */
+    /** Rigenera il contratto includendo le firme caricate. */
     public function regenerateContractWithSignatures(GenerateRentalContract $generator): void
     {
         $this->authorize('contractGenerate', $this->rental);
@@ -454,7 +519,6 @@ class Show extends Component
             return;
         }
 
-        // Per rigenerare “con firme” pretendiamo almeno la firma cliente (come da tua regola)
         if (!$this->hasCustomerSignature()) {
             $this->dispatch('toast', type: 'warning', message: 'Inserisci prima la firma del cliente per rigenerare il contratto con firme.');
             return;
@@ -467,44 +531,53 @@ class Show extends Component
         $this->dispatch('toast', type: 'success', message: 'Contratto rigenerato con le firme.');
     }
 
-    /**
-     * Controlla se il noleggio ha la firma del cliente caricata.
-     *
-     * @return bool
-     */
+    /** Verifica se il noleggio ha la firma del cliente caricata. */  
     private function hasCustomerSignature(): bool
     {
-        // collection: signature_customer (override sul Rental)
         return method_exists($this->rental, 'getFirstMedia')
             && (bool) $this->rental->getFirstMedia('signature_customer');
     }
-    
-    /*--------------------------------------------------------------------------
-    | Gestione Checklist - TAB CHECKLIST
-    |--------------------------------------------------------------------------*/
 
-    /** ✅ Arriva da JS quando viene caricata la checklist firmata */
+    /* -------------------------------------------------------------------------
+     |  CHECKLIST EVENTS
+     * ------------------------------------------------------------------------- */
+    /**
+     * Aggiorna la rental quando viene caricato un file firmato per una checklist.
+     */
     #[On('checklist-signed-uploaded')]
     public function onChecklistSignedUploaded(array $payload = []): void
     {
-        // Se vuoi, filtra per rentalId (utile con più istanze aperte)
-        if (isset($payload['rentalId']) && (int)$payload['rentalId'] !== (int)$this->rental->id) {
+        if (isset($payload['rentalId']) && (int) $payload['rentalId'] !== (int) $this->rental->id) {
             return;
         }
 
         $this->rental->refresh();
         $this->rental->load(['checklists.media']);
 
-        // se stai visualizzando già la checklist, rimani lì; altrimenti non cambio tab
         $this->dispatch('$refresh');
     }
 
-    /** ✅ Arriva da JS quando si carica/elimina una foto */
+    /**
+     * Aggiorna la rental quando i media delle checklist vengono modificati
+     * (aggiunti/rimossi).
+     */
     #[On('checklist-media-updated')]
     public function onChecklistMediaUpdated(): void
     {
         $this->rental->refresh();
         $this->rental->load(['checklists.media']);
+        $this->dispatch('$refresh');
+    }
+
+    /**
+     * Aggiorna la rental quando viene aggiornata la firma del cliente
+     * nel contratto di noleggio.
+     */
+    #[On('signature-updated')]
+    public function onSignatureUpdated(): void
+    {
+        $this->rental->refresh();
+        $this->rental->load(['customer', 'secondDriver']); // e media se la usi qui
         $this->dispatch('$refresh');
     }
 
