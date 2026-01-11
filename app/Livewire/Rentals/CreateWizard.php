@@ -32,6 +32,7 @@ class CreateWizard extends Component
         'planned_pickup_at'   => null,
         'planned_return_at'   => null,
         'notes'               => null,
+        'final_amount_override' => null,
     ];
 
     /** Associazione cliente */
@@ -242,7 +243,7 @@ class CreateWizard extends Component
             'coverage.furto_incendio'       => ['boolean'],
             'coverage.cristalli'            => ['boolean'],
             'coverage.assistenza'           => ['boolean'],
-
+            'rentalData.final_amount_override' => ['nullable','numeric','min:0'],
             // Se una copertura è selezionata, la relativa franchigia può essere richiesta (qui la lasciamo facoltativa).
             'franchise.rca'                 => ['nullable','numeric','min:0'],
             'franchise.kasko'               => ['nullable','numeric','min:0'],
@@ -308,6 +309,10 @@ class CreateWizard extends Component
             'franchise.furto_incendio.min'     => 'La franchigia Furto/Incendio non può essere negativa.',
             'franchise.cristalli.numeric'      => 'La franchigia Cristalli deve essere un importo valido.',
             'franchise.cristalli.min'          => 'La franchigia Cristalli non può essere negativa.',
+
+            // final_amount_override
+            'rentalData.final_amount_override.numeric' => 'Il prezzo finale deve essere un importo valido.',
+            'rentalData.final_amount_override.min'     => 'Il prezzo finale non può essere negativo.',
         ];
     }
 
@@ -331,6 +336,7 @@ class CreateWizard extends Component
             'franchise.kasko'               => 'franchigia Kasko',
             'franchise.furto_incendio'      => 'franchigia Furto/Incendio',
             'franchise.cristalli'           => 'franchigia Cristalli',
+            'rentalData.final_amount_override' => 'prezzo finale',
         ];
     }
 
@@ -364,6 +370,12 @@ class CreateWizard extends Component
         $rental->organization_id    = auth()->user()->organization_id;
         $rental->assignment_id      = $assignment->id ?? null;
         $rental->notes              = $this->rentalData['notes'] ?? null;
+        // final_amount_override (se vuoto → null)
+        $override = $this->rentalData['final_amount_override'] ?? null;
+        $override = (is_string($override) && trim($override) === '') ? null : $override;
+
+        $rental->final_amount_override = is_null($override) ? null : round((float)$override, 2);
+
 
         if ($this->customer_id) {
             $rental->customer_id = $this->customer_id;

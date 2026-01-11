@@ -387,6 +387,71 @@
                     </div>
                 @endif
 
+                {{-- ✅ NEW — Prezzo finale (override) --}}
+                @php
+                    /** @var \App\Models\Rental|null $__rentalPrice */
+                    $__rentalPrice = $rentalId ? \App\Models\Rental::find($rentalId) : null;
+
+                    // Prezzo previsto da listino (denormalizzato su rentals.amount)
+                    $predictedAmount = $__rentalPrice?->amount;
+
+                    // Override attuale: preferisco lo state Livewire, fallback su DB
+                    $overrideAmount = $rentalData['final_amount_override'] ?? $__rentalPrice?->final_amount_override ?? null;
+
+                    $predictedLabel = is_numeric($predictedAmount)
+                        ? '€ ' . number_format((float)$predictedAmount, 2, ',', '.')
+                        : '—';
+
+                    $overrideLabel = is_numeric($overrideAmount)
+                        ? '€ ' . number_format((float)$overrideAmount, 2, ',', '.')
+                        : '—';
+                @endphp
+
+                <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="text-base font-semibold">Prezzo noleggio</div>
+
+                        <span class="text-xs rounded-full px-2 py-0.5 {{ is_numeric($overrideAmount) ? 'bg-indigo-100 text-indigo-800 ring-1 ring-indigo-300' : 'bg-gray-100 text-gray-700 ring-1 ring-gray-200' }}">
+                            {{ is_numeric($overrideAmount) ? 'Override attivo' : 'Listino' }}
+                        </span>
+                    </div>
+
+                    <div class="text-sm opacity-80">
+                        <div>
+                            Prezzo previsto da listino:
+                            <span class="font-semibold">{{ $predictedLabel }}</span>
+                        </div>
+
+                        @if(is_numeric($overrideAmount))
+                            <div class="mt-1">
+                                Prezzo finale attuale (override):
+                                <span class="font-semibold">{{ $overrideLabel }}</span>
+                            </div>
+                        @endif
+                    </div>
+
+                    <label class="form-control">
+                        <span class="label-text mb-1 text-sm">Sovrascrivi prezzo finale (opzionale)</span>
+
+                        <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            wire:model.defer="rentalData.final_amount_override"
+                            class="{{ $input }}"
+                            placeholder="Lascia vuoto per usare il prezzo da listino"
+                        />
+
+                        <div class="text-xs opacity-70 mt-1">
+                            Se compili, il contratto userà questo importo al posto del listino.
+                        </div>
+
+                        @error('rentalData.final_amount_override')
+                            <span class="text-red-500 text-xs">{{ $message }}</span>
+                        @enderror
+                    </label>
+                </div>
+
                 <div class="grid md:grid-cols-2 gap-4">
                     <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800 space-y-3">
                         <div class="text-base font-semibold">Contratto</div>
