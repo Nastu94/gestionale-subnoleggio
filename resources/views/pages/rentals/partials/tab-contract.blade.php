@@ -491,6 +491,7 @@
 </dialog>
 
 <script>
+// ===== LOGICA FIRMA SU SCHERMO =====
 window.ajaxSignatureUpload = function () {
     return {
         loading: false,

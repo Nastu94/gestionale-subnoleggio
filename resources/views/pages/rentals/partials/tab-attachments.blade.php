@@ -6,6 +6,8 @@
         'id_card'        => 'Documento identità',
         'driver_license' => 'Patente',
         'privacy'        => 'Consenso privacy',
+        'signature_customer' => 'Firma cliente',
+        'signature_lessor'   => 'Firma Noleggiatore',
         'other'          => 'Altro',
         // 'contract'     => 'Contratti generati',
         // 'signatures'   => 'Contratti firmati',

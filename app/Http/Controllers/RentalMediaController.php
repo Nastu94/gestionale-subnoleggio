@@ -93,6 +93,13 @@ class RentalMediaController extends Controller
         $parent = $media->model;
         if ($parent instanceof Rental || $parent instanceof RentalChecklist) {
             $this->authorize('view', $parent);
+        } elseif ($parent instanceof Organization) {
+            // scegli la policy corretta per te:
+            // se hai OrganizationPolicy con view:
+            $this->authorize('view', $parent);
+
+            // oppure se preferisci più restrittivo:
+            // $this->authorize('update', $parent);
         } else {
             abort(403, 'Accesso negato.');
         }
@@ -483,14 +490,47 @@ class RentalMediaController extends Controller
             ->usingName('rental-signature-lessor')
             ->toMediaCollection('signature_lessor');
 
+        // ✅ NEW: copia anche su Organization (firma aziendale di default)
+        $this->syncLessorSignatureToOrganization($media, $rental);
+
         return response()->json([
             'ok'       => true,
             'media_id' => $media->id,
             'uuid'     => $media->uuid,
-            'url'      => route('media.open', $media), // usa il tuo open() per permessi + inline
+            'url'      => route('media.open', $media),
             'name'     => $media->file_name,
             'size'     => $media->size,
         ], Response::HTTP_CREATED);
+    }
+    
+    /**
+     * Copia la firma del noleggiante salvata sul Rental anche sull'Organization,
+     * come firma aziendale di default (una sola).
+     *
+     * Regola: copia PRIMA, poi elimina eventuali vecchie firme aziendali.
+     */
+    private function syncLessorSignatureToOrganization(Media $rentalSignature, Rental $rental): void
+    {
+        // L'organizzazione "noleggiante" nel tuo flusso è questa:
+        $orgId = $rental->organization_id ?? null;
+        if (!$orgId) {
+            return;
+        }
+
+        $org = Organization::query()->find($orgId);
+        if (!$org) {
+            return;
+        }
+
+        // Copia su organization.signature_company
+        $copied = $rentalSignature->copy($org, 'signature_company');
+
+        // Mantieni UNA sola firma aziendale (sovrascrittura)
+        foreach ($org->getMedia('signature_company') as $m) {
+            if ((int) $m->id !== (int) $copied->id) {
+                $m->delete();
+            }
+        }
     }
 
     /**
