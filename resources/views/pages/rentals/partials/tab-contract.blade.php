@@ -48,6 +48,13 @@
     // Preview SEMPRE con media.open per evitare "immagine rotta" su dischi non pubblici
     $customerSigUrl = $customerSig ? route('media.open', $customerSig) : null;
     $lessorSigUrl   = $lessorSig ? route('media.open', $lessorSig) : null;
+
+    // ===== PREZZO (override) =====
+    $baseAmount     = (float) ($rental->amount ?? 0);
+    $overrideAmount = $rental->final_amount_override; // può essere null
+    $effectiveAmount = $overrideAmount !== null ? (float) $overrideAmount : $baseAmount;
+
+    $canEditPrice = in_array($rental->status, ['draft','reserved'], true);
 @endphp
 
 <div class="card shadow">
@@ -114,6 +121,92 @@
                     </button>
                 @endif
             @endif
+        </div>
+
+        {{-- ===== PREZZO CONTRATTO (override) ===== --}}
+        <div class="rounded-xl border p-4 space-y-3">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <div class="font-semibold">Prezzo contratto</div>
+                    <div class="text-xs opacity-70">
+                        Mostriamo il prezzo previsto dal listino e puoi impostare un override. Nel PDF verrà usato l’override se presente.
+                    </div>
+                </div>
+
+                <span class="badge {{ $overrideAmount !== null ? 'badge-success' : 'badge-outline' }}">
+                    {{ $overrideAmount !== null ? 'Override attivo' : 'Listino' }}
+                </span>
+            </div>
+
+            <div class="grid md:grid-cols-3 gap-3">
+                <div class="rounded-lg border bg-base-100 p-3">
+                    <div class="text-xs opacity-70">Prezzo previsto (listino)</div>
+                    <div class="text-lg font-semibold">
+                        € {{ number_format($baseAmount, 2, ',', '.') }}
+                    </div>
+                </div>
+
+                <div class="rounded-lg border bg-base-100 p-3">
+                    <div class="text-xs opacity-70">Prezzo applicato</div>
+                    <div class="text-lg font-semibold">
+                        € {{ number_format($effectiveAmount, 2, ',', '.') }}
+                    </div>
+                </div>
+
+                <div class="rounded-lg border bg-base-100 p-3">
+                    <div class="text-xs opacity-70">Override (opzionale)</div>
+
+                    <div class="flex items-center gap-2 mt-2">
+                        <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            wire:model.defer="final_amount_override"
+                            class="input input-bordered input-sm w-full"
+                            placeholder="Lascia vuoto per listino"
+                            @disabled(!$canEditPrice)
+                        />
+
+                        <button
+                            type="button"
+                            class="p-1 btn btn-sm shadow-none
+                                !bg-primary !text-primary-content !border-primary
+                                hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30
+                                disabled:opacity-50 disabled:cursor-not-allowed"
+                            wire:click="saveFinalAmountOverride"
+                            wire:loading.attr="disabled"
+                            wire:target="saveFinalAmountOverride"
+                            @disabled(!$canEditPrice)
+                            title="{{ $canEditPrice ? 'Salva override prezzo' : 'Prezzo modificabile solo in bozza/prenotato' }}"
+                        >
+                            <span wire:loading.remove wire:target="saveFinalAmountOverride">Salva</span>
+                            <span wire:loading wire:target="saveFinalAmountOverride" class="loading loading-spinner loading-sm"></span>
+                        </button>
+
+                        <button
+                            type="button"
+                            class="p-1 btn btn-sm shadow-none
+                                !bg-error !text-error-content !border-error
+                                hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-error/30
+                                disabled:opacity-50 disabled:cursor-not-allowed"
+                            wire:click="clearFinalAmountOverride"
+                            wire:loading.attr="disabled"
+                            wire:target="clearFinalAmountOverride"
+                            @disabled(!$canEditPrice || $overrideAmount === null)
+                            title="{{ $canEditPrice ? 'Rimuovi override e torna al listino' : 'Prezzo modificabile solo in bozza/prenotato' }}"
+                        >
+                            <span wire:loading.remove wire:target="clearFinalAmountOverride">Rimuovi</span>
+                            <span wire:loading wire:target="clearFinalAmountOverride" class="loading loading-spinner loading-sm"></span>
+                        </button>
+                    </div>
+
+                    @if(!$canEditPrice)
+                        <div class="text-xs text-amber-700 mt-2">
+                            Prezzo modificabile solo in <strong>bozza</strong> o <strong>prenotato</strong>.
+                        </div>
+                    @endif
+                </div>
+            </div>
         </div>
 
         {{-- ===== Versioni generate (PDF) + Firmati ===== --}}

@@ -68,15 +68,31 @@ class Show extends Component
      */
     public string $customerQuery = '';
 
+    /**
+     * Override prezzo finale (salvato su rentals.final_amount_override)
+     * - nullable: se vuoto/null, nel contratto useremo il prezzo previsto.
+     * - lo teniamo come string per gestire bene "input vuoto" in Livewire.
+     */
+    public ?string $final_amount_override = null;
+
     public function mount(Rental $rental): void
     {
         $this->rental = $rental->load(['customer','vehicle','checklists','damages']);
+
+        // ✅ Precompilo l’override prezzo (se presente)
+        $this->final_amount_override = $this->rental->final_amount_override !== null
+            ? (string) $this->rental->final_amount_override
+            : null;
     }
 
     public function switch(string $tab): void
     {
         $this->tab = $tab;
     }
+
+    /*--------------------------------------------------------------------------
+    | Gestione Cliente - TAB DATA
+    |--------------------------------------------------------------------------*/
 
     /**
      * Regole di validazione del form cliente.
@@ -315,6 +331,71 @@ class Show extends Component
         $this->customerQuery = '';
     }
 
+    /*--------------------------------------------------------------------------
+    | Gestione Contratto - TAB CONTRATTO
+    |--------------------------------------------------------------------------*/
+
+    /**
+     * Regole validazione override prezzo.
+     */
+    protected function finalAmountRules(): array
+    {
+        return [
+            'final_amount_override' => ['nullable', 'numeric', 'min:0'],
+        ];
+    }
+
+    /**
+     * Salva l'override del prezzo finale sul noleggio.
+     * Usabile in "tab contratto" per modifiche successive.
+     */
+    public function saveFinalAmountOverride(): void
+    {
+        // 🔐 Autorizzazione
+        $this->authorize('update', $this->rental);
+
+        // ✅ Regola business: modificabile solo in draft/reserved
+        if (!in_array($this->rental->status, ['draft', 'reserved'], true)) {
+            $this->dispatch('toast', type: 'error', message: 'Non è possibile modificare il prezzo in questa fase del noleggio.');
+            return;
+        }
+
+        $this->validate($this->finalAmountRules());
+
+        // Normalizzazione: stringa vuota -> null
+        $raw = is_string($this->final_amount_override) ? trim($this->final_amount_override) : $this->final_amount_override;
+        $value = ($raw === '' || $raw === null) ? null : round((float) $raw, 2);
+
+        try {
+            DB::transaction(function () use ($value) {
+                $this->rental->final_amount_override = $value;
+                $this->rental->save();
+            });
+
+            $this->rental->refresh();
+
+            // Riallineo la property (utile se DB casta/formatta)
+            $this->final_amount_override = $this->rental->final_amount_override !== null
+                ? (string) $this->rental->final_amount_override
+                : null;
+
+            $this->dispatch('toast', type: 'success', message: 'Prezzo aggiornato.');
+            $this->dispatch('$refresh');
+        } catch (\Throwable $e) {
+            report($e);
+            $this->dispatch('toast', type: 'error', message: 'Errore durante il salvataggio del prezzo.');
+        }
+    }
+
+    /**
+     * Rimuove l'override: si torna al prezzo previsto.
+     */
+    public function clearFinalAmountOverride(): void
+    {
+        $this->final_amount_override = null;
+        $this->saveFinalAmountOverride();
+    }
+
     /**
      * Genera una nuova versione del contratto (PDF) e la salva su Media Library (collection "contract").
      * - Autorizza l'utente (policy/permessi).
@@ -397,6 +478,10 @@ class Show extends Component
         return method_exists($this->rental, 'getFirstMedia')
             && (bool) $this->rental->getFirstMedia('signature_customer');
     }
+    
+    /*--------------------------------------------------------------------------
+    | Gestione Checklist - TAB CHECKLIST
+    |--------------------------------------------------------------------------*/
 
     /** ✅ Arriva da JS quando viene caricata la checklist firmata */
     #[On('checklist-signed-uploaded')]
