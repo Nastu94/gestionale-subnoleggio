@@ -20,6 +20,11 @@
                 <x-section-border />
             @endif
 
+            @if(auth()->check() && method_exists(auth()->user(), 'hasRole') && auth()->user()->hasRole('admin'))
+                @livewire('profile.update-admin-cargos-form')
+
+                <x-section-border />
+            @endif
 
             @if (Laravel\Fortify\Features::enabled(Laravel\Fortify\Features::updatePasswords()))
                 <div class="mt-10 sm:mt-0">
