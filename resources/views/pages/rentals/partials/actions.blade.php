@@ -455,16 +455,17 @@ document.addEventListener('alpine:init', () => {
       close(){ this.open=false; this.loading=false; },
 
       onKindChange(){
-        // km extra => precompila importo dovuto (non modificabile)
+        // km extra => precompila importo dovuto
         if (this.kind === 'distance_overage') {
           const due = Number(window.__distanceOverageDue || this.distanceOverageDue || 0);
-          if (due > 0) this.amount = due.toFixed(2);
+          if (due > 0) this.amount = Number(due.toFixed(2));
           return;
         }
 
-        // quota base => ripristina importo base (sempre modificabile dall’input)
+        // quota base => precompila importo da contratto
         if (this.kind === 'base') {
           this.amount = Number(defaultAmount || 0);
+          return;
         }
 
         // altri tipi: importo vuoto
