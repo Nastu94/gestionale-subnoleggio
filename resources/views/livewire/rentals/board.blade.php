@@ -384,15 +384,17 @@
             {{-- Griglia base del planner: per ora solo header settimanale / placeholder righe --}}
             @if($plannerMode === 'week')
                 {{-- Vista settimanale: header con colonna veicolo + giorni lun–dom --}}
-                <div class="border rounded-lg overflow-x-auto bg-gray-50 dark:bg-gray-900/40">
+                <div class="border rounded-lg overflow-auto bg-gray-50 dark:bg-gray-900/40 max-h-[70vh]">
                     {{-- min-w-max assicura che header e righe abbiano SEMPRE la stessa larghezza,
                          e che background + griglia si vedano bene anche con scroll orizzontale --}}
                     <div class="min-w-max">
                         {{-- HEADER --}}
                         <div
-                            class="flex border-b border-gray-200 dark:border-gray-700 text-xs font-semibold uppercase text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-900/60">
+                            class="flex border-b border-gray-200 dark:border-gray-700 text-xs font-semibold uppercase text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-900/60 sticky top-0 z-30"
+                        >
                             {{-- Colonna "Veicolo" allineata con le righe sotto --}}
-                            <div class="px-3 py-2 border-r border-gray-200 dark:border-gray-700 min-w-[220px] bg-gray-50 dark:bg-gray-900">
+                            <div class="px-3 py-2 border-r border-gray-200 dark:border-gray-700 w-[220px] min-w-[220px] max-w-[220px] shrink-0
+                                           bg-gray-50 dark:bg-gray-900 sticky left-0 z-40">
                                 Veicolo
                             </div>
 
@@ -443,11 +445,12 @@
 
                                     <div class="flex">
                                         {{-- Colonna veicolo --}}
-                                        <div class="px-3 py-2 border-r border-gray-200 dark:border-gray-700 min-w-[220px] bg-white dark:bg-gray-900">
+                                        <div class="px-3 py-2 border-r border-gray-200 dark:border-gray-700 w-[220px] min-w-[220px] max-w-[220px] shrink-0
+                                            bg-white dark:bg-gray-900 sticky left-0 z-20 overflow-hidden">
                                             <div class="font-medium text-sm">
                                                 {{ $vehicle->plate ?? '—' }}
                                             </div>
-                                            <div class="text-xs opacity-70">
+                                            <div class="text-xs opacity-70 truncate" title="{{ $vehicle->make }} {{ $vehicle->model }}">
                                                 {{ $vehicle->make }} {{ $vehicle->model }}
                                             </div>
                                         </div>
@@ -557,16 +560,17 @@
                     $busyByVehicle = $this->plannerDayBusySlotsByVehicle;
                 @endphp
 
-                <div class="border rounded-lg overflow-x-auto bg-gray-50 dark:bg-gray-900/40">
+                <div class="border rounded-lg overflow-auto bg-gray-50 dark:bg-gray-900/40 max-h-[70vh]">
                     <div class="min-w-max">
                         {{-- HEADER: giorno + ore (altezza allineata alle righe: h-16) --}}
-                        <div class="flex border-b border-gray-200 dark:border-gray-700 text-xs font-semibold uppercase text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-900/60 h-16">
+                        <div class="flex border-b border-gray-200 dark:border-gray-700 text-xs font-semibold uppercase text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-900/60 h-16 sticky top-0 z-30">
                             {{-- Colonna sinistra: giorno corrente (click = torna alla settimana) --}}
                             <div
                                 wire:click="setPlannerMode('week')"
                                 role="button"
                                 tabindex="0"
-                                class="border-r border-gray-200 dark:border-gray-700 min-w-[220px] text-left bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer flex flex-col justify-center px-3"
+                                class="border-r border-gray-200 dark:border-gray-700 w-[220px] min-w-[220px] max-w-[220px] shrink-0 px-3
+                                        bg-gray-50 dark:bg-gray-900 sticky left-0 z-40 overflow-hidden"
                                 title="Torna alla vista settimanale"
                             >
                                 <div class="text-[11px] opacity-70 leading-tight">
@@ -602,11 +606,12 @@
                                     @endphp
                                     <div class="flex">
                                         {{-- Colonna veicolo --}}
-                                        <div class="px-3 py-2 border-r border-gray-200 dark:border-gray-700 min-w-[220px] bg-white dark:bg-gray-900">
+                                        <div class="px-3 py-2 border-r border-gray-200 dark:border-gray-700 w-[220px] min-w-[220px] max-w-[220px] shrink-0
+                                                        bg-white dark:bg-gray-900 sticky left-0 z-20 overflow-hidden">
                                             <div class="font-medium text-sm">
                                                 {{ $vehicle->plate ?? '—' }}
                                             </div>
-                                            <div class="text-xs opacity-70">
+                                            <div class="text-xs opacity-70 truncate" title="{{ $vehicle->make }} {{ $vehicle->model }}">
                                                 {{ $vehicle->make }} {{ $vehicle->model }}
                                             </div>
                                         </div>
