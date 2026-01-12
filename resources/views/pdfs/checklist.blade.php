@@ -207,7 +207,11 @@
         <div class="sign-block mb-6">
             <h3>Firma cliente</h3>
             <div class="muted">Verrà acquisita digitalmente o manualmente in fase di ritiro.</div>
-            <div class="sign-area"></div>
+            <div class="sign-area" style="position:relative;">
+                @if(!empty($signatures['customer']))
+                    <img src="{{ $signatures['customer'] }}" style="height:80px; margin-top:4px;" alt="Firma cliente">
+                @endif
+            </div>
             <div class="sign-label">
                 {{ trim(($customer->name ?? '').' '.($customer->surname ?? '')) ?: ($customer->business_name ?? '—') }}
             </div>
@@ -216,7 +220,11 @@
         <div class="sign-block">
             <h3>Firma noleggiante</h3>
             <div class="muted">Verrà acquisita digitalmente o manualmente in fase di ritiro.</div>
-            <div class="sign-area"></div>
+            <div class="sign-area" style="position:relative;">
+                @if(!empty($signatures['lessor']))
+                    <img src="{{ $signatures['lessor'] }}" style="height:80px; margin-top:4px;" alt="Firma noleggiante">
+                @endif
+            </div>
             <div class="sign-label">
                 {{ optional($rental->organization)->name ?? config('app.name', '—') }}
             </div>

@@ -10,6 +10,10 @@ use App\Services\Contracts\GenerateRentalContract;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
+use App\Models\RentalChecklist;
+use Barryvdh\DomPDF\Facade\Pdf; // se usi barryvdh/laravel-dompdf
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Livewire: Scheda noleggio con tab e Action Drawer.
@@ -541,6 +545,249 @@ class Show extends Component
     /* -------------------------------------------------------------------------
      |  CHECKLIST EVENTS
      * ------------------------------------------------------------------------- */
+    /**
+     * Genera il PDF firmato della checklist
+     */
+    public function generateSignedChecklistPdf(int $checklistId): void
+    {
+        $tmpRelPath = null;
+
+        try {
+            $checklist = RentalChecklist::with([
+                'rental.organization',
+                'rental.customer',
+                'rental.vehicle',
+            ])->findOrFail($checklistId);
+
+            // Se vuoi impedire rigenerazione quando lockata:
+            if ($checklist->isLocked()) {
+                $this->dispatch('toast', type: 'warning', message: 'Checklist già bloccata: rimuovi il firmato per rigenerare.');
+                return;
+            }
+
+            $rental = $checklist->rental;
+
+            // ===== Recupero firme (stessa logica contratto) =====
+            $customerSig = method_exists($rental, 'getFirstMedia')
+                ? $rental->getFirstMedia('signature_customer')
+                : null;
+
+            $lessorOverrideSig = method_exists($rental, 'getFirstMedia')
+                ? $rental->getFirstMedia('signature_lessor')
+                : null;
+
+            $lessorDefaultSig  = ($rental->organization && method_exists($rental->organization, 'getFirstMedia'))
+                ? $rental->organization->getFirstMedia('signature_company')
+                : null;
+
+            $lessorSig = $lessorOverrideSig ?: $lessorDefaultSig;
+
+            if (!$customerSig || !$lessorSig) {
+                $this->dispatch('toast', type: 'error', message: 'Per generare il firmato servono firma cliente e firma noleggiante.');
+                return;
+            }
+
+            // ===== Payload: riusa il TUO builder attuale =====
+            $payload = $this->buildChecklistPayload($checklist);
+
+            $signatures = [
+                'customer' => $this->mediaToDataUri($customerSig),
+                'lessor'   => $this->mediaToDataUri($lessorSig),
+            ];
+
+            $generated_at = now();
+
+            $pdf = Pdf::loadView('pdfs.checklist', [
+                'checklist'    => $checklist,
+                'payload'      => $payload,
+                'generated_at' => $generated_at,
+                'signatures'   => $signatures,
+            ])->setPaper('a4');
+
+            // tmp file
+            Storage::makeDirectory('tmp');
+            $tmpRelPath = "tmp/checklist-{$checklist->id}-signed.pdf";
+            $tmpAbsPath = Storage::path($tmpRelPath);
+
+            file_put_contents($tmpAbsPath, $pdf->output());
+
+            // Salva come "firmato" nella stessa collection usata dal caricamento manuale
+            $signedCollection = $checklist->signedCollectionName();
+
+            DB::transaction(function () use ($checklist, $signedCollection, $tmpAbsPath) {
+                // Tieni 1 solo firmato (opzionale: già singleFile, ma così sei esplicito)
+                $checklist->clearMediaCollection($signedCollection);
+
+                /** @var Media $media */
+                $media = $checklist
+                    ->addMedia($tmpAbsPath)
+                    ->usingName("checklist-{$checklist->type}-signed")
+                    ->usingFileName("checklist-{$checklist->type}-{$checklist->id}-signed.pdf")
+                    ->toMediaCollection($signedCollection);
+
+                // ✅ IMPORTANTISSIMO: lock + riferimento media (allinea la logica al caricamento manuale)
+                $checklist->forceFill([
+                    'signed_media_id'   => $media->id,
+                    'locked_at'         => now(),
+                    'locked_by_user_id' => auth()->id(),
+                    'locked_reason'     => 'generated_signed_pdf',
+                ])->save();
+            });
+
+            // cleanup tmp
+            Storage::delete($tmpRelPath);
+
+            $this->dispatch('toast', type: 'success', message: 'Checklist firmata generata con successo.');
+            $this->dispatch('$refresh');
+        } catch (\Throwable $e) {
+            report($e);
+
+            // prova a pulire il tmp se qualcosa è andato storto
+            if ($tmpRelPath) {
+                try { Storage::delete($tmpRelPath); } catch (\Throwable $ignored) {}
+            }
+
+            $this->dispatch('toast', type: 'error', message: 'Errore durante la generazione del PDF firmato.');
+        }
+    }
+
+    /** Costruisce il payload per il PDF della checklist (riusa la tua logica esistente) */
+    private function buildChecklistPayload(RentalChecklist $checklist): array
+    {
+        // Evita N+1 quando compili danni (VehicleDamage -> firstRentalDamage)
+        $checklist->loadMissing([
+            'rental.damages',
+            'rental.vehicle.damages.firstRentalDamage',
+        ]);
+
+        $base = [
+            'mileage'      => $checklist->mileage !== null ? (int) $checklist->mileage : 0,
+            'fuel_percent' => $checklist->fuel_percent !== null ? (int) $checklist->fuel_percent : 0,
+            'cleanliness'  => $checklist->cleanliness ?: null,
+        ];
+
+        // Nel tuo model è castato ad array, ma normalizziamo uguale per robustezza
+        $json = $this->normalizeChecklistJson($checklist->checklist_json);
+
+        $damages = $this->buildChecklistDamages($checklist);
+
+        return [
+            'base'    => $base,
+            'json'    => $json,
+            'damages' => $damages,
+        ];
+    }
+
+    /**
+     * checklist_json: garantisce struttura attesa dal PDF:
+     * vehicle, documents, equipment, notes
+     */
+    private function normalizeChecklistJson(mixed $raw): array
+    {
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : [];
+        } elseif (!is_array($raw)) {
+            $raw = [];
+        }
+
+        $raw['vehicle']   = isset($raw['vehicle']) && is_array($raw['vehicle']) ? $raw['vehicle'] : [];
+        $raw['documents'] = isset($raw['documents']) && is_array($raw['documents']) ? $raw['documents'] : [];
+        $raw['equipment'] = isset($raw['equipment']) && is_array($raw['equipment']) ? $raw['equipment'] : [];
+        $raw['notes']     = isset($raw['notes']) ? (string) $raw['notes'] : '';
+
+        return $raw;
+    }
+
+    /**
+     * Unisce:
+     * - VehicleDamage OPEN (storici/persistenti del veicolo)
+     * - RentalDamage del noleggio (in base al tipo checklist)
+     *
+     * Output: array di righe compatibili col tuo PDF:
+     * [
+     *   ['area'=>'front','severity'=>'low','description'=>'...'],
+     * ]
+     */
+    private function buildChecklistDamages(RentalChecklist $checklist): array
+    {
+        $rental  = $checklist->rental;
+        $vehicle = $rental?->vehicle;
+
+        // 1) Vehicle open damages (escludo quelli originati dallo STESSO rental, per evitare duplicati)
+        $vehicleRows = collect();
+
+        if ($vehicle) {
+            $vehicleOpen = $vehicle->damages
+                ? $vehicle->damages->where('is_open', true)
+                : collect();
+
+            $vehicleRows = $vehicleOpen
+                ->filter(function ($vd) use ($rental) {
+                    // se il danno del veicolo nasce da un RentalDamage di QUESTO rental,
+                    // lo mostriamo già nella sezione rental -> quindi lo escludiamo qui
+                    $first = $vd->firstRentalDamage ?? null;
+                    return !($first && (int) $first->rental_id === (int) $rental->id);
+                })
+                ->map(function ($vd) {
+                    $area = (string) ($vd->resolved_area ?? $vd->area ?? 'other');
+                    $severity = (string) ($vd->resolved_severity ?? $vd->severity ?? 'low');
+                    $desc = trim((string) ($vd->resolved_description ?? $vd->description ?? '')) ?: '—';
+
+                    return [
+                        'area'        => $area ?: 'other',
+                        'severity'    => $severity ?: 'low',
+                        'description' => $desc,
+                    ];
+                });
+        }
+
+        // 2) Rental damages (filtrati per tipo checklist)
+        $allowedPhases = $checklist->type === 'pickup'
+            ? ['pickup']                       // in pickup: danni rilevati in pickup
+            : ['pickup', 'during', 'return'];  // in return: tutto ciò che è successo nel noleggio
+
+        $rentalRows = ($rental?->damages ?? collect())
+            ->filter(function ($rd) use ($allowedPhases) {
+                $phase = (string) ($rd->phase ?? '');
+                // se phase è null/'' lo includo comunque (scelta “robusta”)
+                return $phase === '' || in_array($phase, $allowedPhases, true);
+            })
+            ->map(function ($rd) {
+                $area = (string) ($rd->area ?? 'other');
+                $severity = (string) ($rd->severity ?? 'low');
+                $desc = trim((string) ($rd->description ?? '')) ?: '—';
+
+                return [
+                    'area'        => $area ?: 'other',
+                    'severity'    => $severity ?: 'low',
+                    'description' => $desc,
+                ];
+            });
+
+        // Merge + dedupe “soft”
+        return $vehicleRows
+            ->merge($rentalRows)
+            ->filter(fn($r) => !empty($r['area']) || !empty($r['description']))
+            ->unique(fn($r) => ($r['area'] ?? '').'|'.($r['severity'] ?? '').'|'.($r['description'] ?? ''))
+            ->values()
+            ->all();
+    }
+
+    /** Converte un media in Data URI per l’embed nel PDF */
+    private function mediaToDataUri(?Media $media): ?string
+    {
+        if (!$media) return null;
+
+        $path = $media->getPath();
+        if (!is_file($path)) return null;
+
+        $mime = $media->mime_type ?: (function_exists('mime_content_type') ? mime_content_type($path) : null) ?: 'image/png';
+        $data = base64_encode(file_get_contents($path));
+
+        return "data:{$mime};base64,{$data}";
+    }
+
     /**
      * Aggiorna la rental quando viene caricato un file firmato per una checklist.
      */

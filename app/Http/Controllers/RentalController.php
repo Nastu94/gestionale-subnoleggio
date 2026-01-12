@@ -419,6 +419,11 @@ class RentalController extends Controller
                 'has_data'    => false,
                 'cents'       => 0,
                 'amount'      => '0.00',
+
+                // ✅ nuovi campi (sempre presenti per UI)
+                'km_total'    => 0,
+                'km_included' => 0,
+                'km_extra'    => 0,
                 'has_payment' => $hasPayment, // ✅ sempre presente
             ]);
         }
@@ -429,6 +434,12 @@ class RentalController extends Controller
             return response()->json([
                 'ok'          => false,
                 'message'     => 'Nessun listino attivo per il renter corrente.',
+
+                // ✅ nuovi campi (coerenti anche in errore)
+                'km_total'    => 0,
+                'km_included' => 0,
+                'km_extra'    => 0,
+
                 'has_payment' => $hasPayment, // ✅ coerente anche in errore
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
@@ -444,11 +455,30 @@ class RentalController extends Controller
         $cents  = (int) ($quote['km_extra'] ?? 0);
         $amount = number_format($cents / 100, 2, '.', '');
 
+        /**
+         * ✅ Calcolo km inclusi e km extra effettivi (da mostrare nel badge)
+         * Coerente con la quote() perché usa gli stessi "days".
+         */
+        $days = (int) ($quote['days'] ?? 1);
+
+        $included = 0;
+        if (!empty($pl->km_included_per_day)) {
+            $included = (int) $pl->km_included_per_day * $days;
+        }
+
+        $kmExtra = max(0, $km - $included);
+
         return response()->json([
             'ok'          => true,
             'has_data'    => true,
             'cents'       => $cents,
             'amount'      => $amount,
+
+            // ✅ nuovi campi per il badge
+            'km_total'    => $km,
+            'km_included' => $included,
+            'km_extra'    => $kmExtra,
+
             'has_payment' => $hasPayment, // ✅ sempre presente
         ]);
     }

@@ -43,6 +43,25 @@
 
                 // URL per "Apri PDF": prima il firmato, poi l'ultimo generato
                 $openUrl = $signed?->getUrl() ?: $lastPdf?->getUrl();
+
+                // ===== FIRME (dal Rental, come contratto) =====
+                $customerSig = method_exists($rental, 'getFirstMedia')
+                    ? $rental->getFirstMedia('signature_customer')
+                    : null;
+
+                $lessorOverrideSig = method_exists($rental, 'getFirstMedia')
+                    ? $rental->getFirstMedia('signature_lessor')
+                    : null;
+
+                $orgModel = $rental->organization ?? $rental->org ?? null;
+
+                $lessorDefaultSig = ($orgModel && method_exists($orgModel, 'getFirstMedia'))
+                    ? $orgModel->getFirstMedia('signature_company')
+                    : null;
+
+                $lessorSig = $lessorOverrideSig ?: $lessorDefaultSig;
+
+                $canGenerateSignedChecklist = (!$isLocked) && (bool)$customerSig && (bool)$lessorSig;
             @endphp
 
             {{-- Azioni --}}
@@ -75,6 +94,24 @@
                             Carica checklist firmata
                         </label>
 
+                        <button
+                            type="button"
+                            class="btn btn-primary shadow-none
+                                !bg-primary !text-primary-content !border-primary
+                                hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30
+                                disabled:opacity-50 disabled:cursor-not-allowed"
+                            wire:click="generateSignedChecklistPdf({{ $checklist->id }})"
+                            wire:loading.attr="disabled"
+                            wire:target="generateSignedChecklistPdf"
+                            @disabled(!$canGenerateSignedChecklist)
+                            title="{{ $canGenerateSignedChecklist
+                                ? 'Genera il PDF della checklist con le firme (cliente + noleggiante)'
+                                : 'Per generare serve la firma cliente e la firma noleggiante (oltre a checklist non bloccata)' }}"
+                        >
+                            <span wire:loading.remove wire:target="generateSignedChecklistPdf">Genera PDF firmato</span>
+                            <span wire:loading wire:target="generateSignedChecklistPdf" class="loading loading-spinner loading-sm"></span>
+                        </button>
+
                         {{-- Apri PDF (preferisce firmato) --}}
                         <a href="{{ $openUrl ?: '#' }}" @if($openUrl) target="_blank" rel="noopener" @endif
                            class="btn btn-primary shadow-none
@@ -102,10 +139,9 @@
                                 ]) }}"
                                 x-cloak
                                 :class="{ 'opacity-50 pointer-events-none': $store.rental.isClosed }"
-                                :disabled="$store.rental.isClosed || loading"
                                 class="btn btn-accent shadow-none
-                                      !bg-accent !text-accent-content !border-accent
-                                      hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-accent/30">
+                                    !bg-accent !text-accent-content !border-accent
+                                    hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-accent/30">
                                 Nuova checklist (sostitutiva)
                             </a>
                         @endif
@@ -409,7 +445,6 @@
                     </div>
                 </form>
             </div>
-
         @endif
     </div>
 </div>

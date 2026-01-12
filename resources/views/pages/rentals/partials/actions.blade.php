@@ -31,7 +31,9 @@
                 <span class="font-medium">Km extra:</span>
                 <span class="opacity-80">devi registrare il pagamento per chiudere</span>
             </div>
-            <span class="badge badge-warning font-semibold text-sm" x-text="formatEuro(overage.amount)"></span>
+
+            {{-- ✅ ora mostra importo + km extra (se disponibili) --}}
+            <span class="badge badge-warning font-semibold text-sm h-auto" x-text="formatOverageBadge()"></span>
         </div>
     </template>
 
@@ -218,7 +220,7 @@ document.addEventListener('alpine:init', () => {
       hasOveragePayment: !!(initial.flags?.hasOveragePayment),
     },
     overageUrl: initial.overageUrl || null,
-    overage: { ready:false, amount:0, cents:0 },
+    overage: { ready:false, amount:0, cents:0, km:0 },
 
     // Label fasi
     phaseLabels: {
@@ -306,11 +308,25 @@ document.addEventListener('alpine:init', () => {
         const data = await res.json();
 
         if (!data.ok || !data.has_data) {
-          this.overage = { ready:true, amount:0, cents:0 };
+          // ✅ reset completo, includo anche km
+          this.overage = { ready:true, amount:0, cents:0, km:0 };
           window.__distanceOverageDue = 0;
         } else {
           const amt = Number(data.amount || 0);
-          this.overage = { ready:true, amount: amt, cents: Number(data.cents || 0) };
+
+          // ✅ Leggo i km extra dal backend (retro-compatibile)
+          const kmExtra = Number(
+            data.km_extra ?? data.extra_km ?? data.km_over ?? data.over_km ?? data.km ?? 0
+          );
+
+          // ✅ Salvo anche km nella state Alpine
+          this.overage = {
+            ready: true,
+            amount: amt,
+            cents: Number(data.cents || 0),
+            km: kmExtra,
+          };
+
           window.__distanceOverageDue = amt;
         }
 
@@ -320,9 +336,24 @@ document.addEventListener('alpine:init', () => {
           window.__hasDistanceOveragePayment = this.flags.hasOveragePayment;
         }
       } catch(_) {
-        this.overage = { ready:true, amount:0, cents:0 };
+        // ✅ reset completo anche in errore
+        this.overage = { ready:true, amount:0, cents:0, km:0 };
         window.__distanceOverageDue = 0;
       }
+    },
+
+    /**
+     * ✅ Testo badge km extra: importo + km (se presenti)
+     * Nota: uso concatenazione stringhe per evitare problemi di parsing con i backtick.
+     */
+    formatOverageBadge(){
+      var amt = this.formatEuro(this.overage.amount);
+      var km  = Number(this.overage.km || 0);
+
+      // Se il backend non fornisce i km, mostro solo l’importo (comportamento attuale)
+      if (km <= 0) return amt;
+
+      return amt + ' (+' + km.toLocaleString('it-IT') + ' km)';
     },
 
     formatEuro(v){ return Number(v??0).toLocaleString('it-IT',{style:'currency',currency:'EUR'}) },
