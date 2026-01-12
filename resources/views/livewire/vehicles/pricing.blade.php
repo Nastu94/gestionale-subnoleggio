@@ -410,7 +410,7 @@
             <h3 class="font-semibold mb-1">Simulatore dettagliato</h3>
             <p class="text-xs text-gray-500 mb-3">
                 Inserisci periodo e km previsti per ottenere un <strong>preventivo</strong> secondo il listino selezionato
-                (base + stagioni + weekend + eventuali tiers). Il pulsante <em>Stampa</em> creerà in futuro un layout
+                (base + stagioni + weekend + eventuali tiers). Il pulsante <em>Stampa</em> creerà un layout
                 adatto da condividere con il cliente.
             </p>
 
@@ -437,8 +437,11 @@
                             class="inline-flex h-9 items-center rounded-md bg-slate-800 px-3 text-white hover:bg-slate-900">
                         Calcola
                     </button>
-                    <button type="button" disabled title="Layout stampa in sviluppo"
-                            class="inline-flex h-9 items-center rounded-md border px-3 text-gray-600 dark:text-gray-300">
+                    <button type="button"
+                            wire:click="printQuote"
+                            @disabled(!$quote)
+                            title="{{ $quote ? 'Scarica PDF preventivo' : 'Calcola prima il preventivo' }}"
+                            class="inline-flex h-9 items-center rounded-md border px-3 text-gray-600 dark:text-gray-300 disabled:opacity-50">
                         Stampa
                     </button>
                 </div>

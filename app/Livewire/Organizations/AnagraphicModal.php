@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
 use Livewire\Component;
+use Illuminate\Validation\Rule;
 
 /**
  * Modale Livewire: Anagrafica + Licenza per Organization di tipo "renter".

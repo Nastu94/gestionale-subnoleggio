@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Url;
 use Livewire\WithPagination;
 use Livewire\Component;
+use App\Domain\Pricing\VehicleQuotePdfService;
 
 class Pricing extends Component
 {
@@ -485,6 +486,67 @@ class Pricing extends Component
 
         $this->quote = $svc->quote($this->pricelist, $pickup, $dropoff, (int)$this->expected_km);
         $this->dispatch('toast', type:'success', message:'Calcolo effettuato.');
+    }
+
+    /**
+     * Genera e scarica il PDF del preventivo usando la quote già calcolata.
+     * NON ricalcola nulla: si basa su $this->quote.
+     */
+    public function printQuote(VehicleQuotePdfService $pdfSvc)
+    {
+        // Autorizzazione coerente con l’accesso alla pagina listini
+        if (!auth()->user()->can('vehicle_pricing.viewAny')) {
+            abort(403);
+        }
+
+        // Serve un listino e una quote già calcolata
+        if (!$this->pricelist) {
+            $this->dispatch('toast', type: 'error', message: 'Nessun listino selezionato.');
+            return null;
+        }
+
+        if (!$this->quote) {
+            $this->dispatch('toast', type: 'error', message: 'Calcola prima il preventivo.');
+            return null;
+        }
+
+        // Recupero le date dal form (solo per intestazione/nome file PDF)
+        $pickup  = $this->parseDateTimeLocal($this->pickup_at);
+        $dropoff = $this->parseDateTimeLocal($this->dropoff_at);
+
+        if (!$pickup || !$dropoff || $dropoff <= $pickup) {
+            $this->dispatch('toast', type: 'error', message: 'Periodo non valido per la stampa.');
+            return null;
+        }
+
+        /**
+         * ✅ PDF basato sulla quote già presente.
+         * Nota: il service esclude campi interni (margini, costo L/T, ecc.)
+         */
+        $binary = $pdfSvc->render(
+            $this->vehicle,
+            $this->pricelist,
+            $pickup,
+            $dropoff,
+            (int) $this->expected_km,
+            $this->quote
+        );
+
+        $filename = $pdfSvc->filename($this->vehicle, $pickup, $dropoff);
+
+        /**
+         * Livewire (v3) può ritornare una Response per effettuare il download.
+         * StreamDownload evita di salvare file temporanei sul server.
+         */
+        return response()->streamDownload(
+            function () use ($binary) {
+                echo $binary;
+            },
+            $filename,
+            [
+                'Content-Type' => 'application/pdf',
+            ]
+        );
     }
 
     public function render()

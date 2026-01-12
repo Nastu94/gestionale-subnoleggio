@@ -42,8 +42,8 @@ class VehiclePricelist extends Model
 
     public function vehicle() { return $this->belongsTo(Vehicle::class); }
     public function renter()  { return $this->belongsTo(Organization::class, 'renter_org_id'); }
-    public function seasons() { return $this->hasMany(VehiclePricelistSeason::class)->orderByDesc('priority'); }
-    public function tiers()   { return $this->hasMany(VehiclePricelistTier::class)->orderByDesc('priority'); }
+    public function seasons() { return $this->hasMany(VehiclePricelistSeason::class)->orderBy('priority'); }
+    public function tiers()   { return $this->hasMany(VehiclePricelistTier::class)->orderBy('priority'); }
 
     /**
      * Accessor: etichetta italiana dello stato listino.
