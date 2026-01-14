@@ -83,6 +83,19 @@ class Index extends Component
         ];
     }
 
+    /**
+     * Init:
+     * - Enforce scoping: i renter non possono usare il filtro organizzazione.
+     */
+    public function mount(): void
+    {
+        $this->authorizeView();
+
+        if (!Auth::user()->can('vehicle_documents.manage')) {
+            $this->orgId = null;
+        }
+    }
+
     // Reset pagina quando cambiano i filtri
     public function updated($name, $value): void
     {
@@ -312,11 +325,24 @@ class Index extends Component
         if (!Auth::user()->can('vehicle_documents.viewAny')) abort(403);
     }
 
-    /** Utente appartiene a un'organizzazione di tipo renter? */
+    /**
+     * Utente appartiene a un'organizzazione di tipo renter?
+     * Nota di sicurezza:
+     * - Se l'utente ha permesso "manage", lo trattiamo come admin-like (no scoping renter).
+     * - Questo evita casi in cui l'org non è valorizzata/caricata e il renter finisce per vedere tutto.
+     */
     protected function isRenter(): bool
     {
+        // Admin-like: può vedere tutto, quindi non lo consideriamo renter.
+        if (Auth::user()->can('vehicle_documents.manage')) {
+            return false;
+        }
+
         $org = Auth::user()->organization;
-        return $org && method_exists($org, 'isRenter') ? $org->isRenter() : ($org?->type === 'renter');
+
+        return $org && method_exists($org, 'isRenter')
+            ? $org->isRenter()
+            : ($org?->type === 'renter');
     }
 
     /** Verifica se il veicolo è assegnato *ora* al renter corrente */
@@ -381,7 +407,9 @@ class Index extends Component
         // Filtri
         if ($this->type && in_array($this->type, $this->allowedTypes, true)) $q->where('vehicle_documents.type', $this->type);
         if ($this->vehicleId)    $q->where('vehicles.id', $this->vehicleId);
-        if ($this->orgId)        $q->where('vehicles.admin_organization_id', $this->orgId);
+        if ($this->orgId && Auth::user()->can('vehicle_documents.manage')) {
+            $q->where('vehicles.admin_organization_id', $this->orgId);
+        }
         if ($this->locId)        $q->where('vehicles.default_pickup_location_id', $this->locId);
         if ($this->from)         $q->whereDate('vehicle_documents.expiry_date', '>=', $this->from);
         if ($this->to)           $q->whereDate('vehicle_documents.expiry_date', '<=', $this->to);

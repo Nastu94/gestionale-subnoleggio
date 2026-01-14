@@ -13,68 +13,72 @@
     {{-- Toolbar filtri --}}
     <div class="rounded-lg border bg-white p-3">
         <div class="grid grid-cols-12 gap-3">
-            {{-- Ricerca con cancella veloce --}}
-            <div class="col-span-3">
-                <label class="block text-xs text-gray-500">Ricerca</label>
-                <div class="relative mt-1">
-                    <input x-ref="search" type="text" class="w-full rounded border-gray-300 pr-8"
-                           placeholder="Targa, VIN, numero..."
-                           wire:model.live.debounce.400ms="search">
-                    <button type="button"
-                            class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
-                            x-on:click="$wire.set('search',''); $refs.search.focus()"
-                            x-show="$wire.search"
-                            aria-label="Cancella">
-                        &times;
-                    </button>
+            <div class="grid grid-cols-12 gap-3 col-span-12">
+                {{-- Ricerca con cancella veloce --}}
+                <div class="col-span-3">
+                    <label class="block text-xs text-gray-500">Ricerca</label>
+                    <div class="relative mt-1">
+                        <input x-ref="search" type="text" class="w-full rounded border-gray-300 pr-8"
+                            placeholder="Targa, VIN, numero..."
+                            wire:model.live.debounce.400ms="search">
+                        <button type="button"
+                                class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                                x-on:click="$wire.set('search',''); $refs.search.focus()"
+                                x-show="$wire.search"
+                                aria-label="Cancella">
+                            &times;
+                        </button>
+                    </div>
                 </div>
-            </div>
 
-            <div class="col-span-2">
-                <label class="block text-xs text-gray-500">Tipo</label>
-                <select class="mt-1 w-full rounded border-gray-300" wire:model.live="type">
-                    <option value="">Tutti</option>
-                    @foreach($docLabels as $k => $lbl)
-                        <option value="{{ $k }}">{{ $lbl }}</option>
-                    @endforeach
-                </select>
-            </div>
+                <div class="col-span-2">
+                    <label class="block text-xs text-gray-500">Tipo</label>
+                    <select class="mt-1 w-full rounded border-gray-300" wire:model.live="type">
+                        <option value="">Tutti</option>
+                        @foreach($docLabels as $k => $lbl)
+                            <option value="{{ $k }}">{{ $lbl }}</option>
+                        @endforeach
+                    </select>
+                </div>
 
-            <div class="col-span-2">
-                <label class="block text-xs text-gray-500">Stato</label>
-                <select class="mt-1 w-full rounded border-gray-300" wire:model.live="state">
-                    <option value="">Tutti</option>
-                    <option value="expired">Scaduti</option>
-                    <option value="soon30">≤ 30 giorni</option>
-                    <option value="soon60">≤ 60 giorni</option>
-                    <option value="ok">Oltre 60 giorni</option>
-                    <option value="no_date">Senza data</option>
-                </select>
-            </div>
+                <div class="col-span-2">
+                    <label class="block text-xs text-gray-500">Stato</label>
+                    <select class="mt-1 w-full rounded border-gray-300" wire:model.live="state">
+                        <option value="">Tutti</option>
+                        <option value="expired">Scaduti</option>
+                        <option value="soon30">≤ 30 giorni</option>
+                        <option value="soon60">≤ 60 giorni</option>
+                        <option value="ok">Oltre 60 giorni</option>
+                        <option value="no_date">Senza data</option>
+                    </select>
+                </div>
 
-            <div class="col-span-2">
-                <label class="block text-xs text-gray-500">Organizzazione</label>
-                <select class="mt-1 w-full rounded border-gray-300" wire:model.live="orgId">
-                    <option value="">Tutte</option>
-                    @foreach($orgs as $o)
-                        <option value="{{ $o->id }}">{{ $o->name }}</option>
-                    @endforeach
-                </select>
-            </div>
+                @if($canManage)
+                    <div class="col-span-2">
+                        <label class="block text-xs text-gray-500">Organizzazione</label>
+                        <select class="mt-1 w-full rounded border-gray-300" wire:model.live="orgId">
+                            <option value="">Tutte</option>
+                            @foreach($orgs as $o)
+                                <option value="{{ $o->id }}">{{ $o->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                @endif
 
-            <div class="col-span-2">
-                <label class="block text-xs text-gray-500">Sede</label>
-                <select class="mt-1 w-full rounded border-gray-300" wire:model.live="locId">
-                    <option value="">Tutte</option>
-                    @foreach($locs as $l)
-                        <option value="{{ $l->id }}">{{ $l->name }}</option>
-                    @endforeach
-                </select>
-            </div>
-
-            <div class="col-span-1">
-                <label class="block text-xs text-gray-500">ID veicolo</label>
-                <input type="number" class="mt-1 w-full rounded border-gray-300" wire:model.live="vehicleId" min="1">
+                <div class="col-span-2">
+                    <label class="block text-xs text-gray-500">Sede</label>
+                    <select class="mt-1 w-full rounded border-gray-300" wire:model.live="locId">
+                        <option value="">Tutte</option>
+                        @foreach($locs as $l)
+                            <option value="{{ $l->id }}">{{ $l->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                
+                <div class="col-span-1">
+                    <label class="block text-xs text-gray-500">ID veicolo</label>
+                    <input type="number" class="mt-1 w-full rounded border-gray-300" wire:model.live="vehicleId" min="1">
+                </div>
             </div>
 
             <div class="col-span-2">
