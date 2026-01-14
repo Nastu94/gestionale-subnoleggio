@@ -201,6 +201,7 @@ class GenerateRentalContract
 
         $signatureCustomerDataUri = $this->mediaToDataUri($customerSignatureMedia);
         $signatureLessorDataUri   = $this->mediaToDataUri($lessorSignatureMedia);
+        $logoAmdDataUri = $this->fileToDataUri(public_path('images/logo-amd.png'));
 
         // ---------------------------------------------------------------------
         // 5) DTO PER BLADE (ESTESO, NON ROTTO)
@@ -251,6 +252,10 @@ class GenerateRentalContract
                 'plate' => $vehicle?->plate ?? null,
                 'color' => $vehicle?->color ?? null,
                 'vin'   => $vehicle?->vin ?? null,
+            ],
+
+            'logos' => [
+                'amd'    => $logoAmdDataUri,
             ],
 
             'pricing'    => $pricingData,
@@ -335,6 +340,25 @@ class GenerateRentalContract
             ?: 'image/png';
 
         $bin = @file_get_contents($path);
+        if ($bin === false) {
+            return null;
+        }
+
+        return 'data:' . $mime . ';base64,' . base64_encode($bin);
+    }
+
+    /**
+     * Converte un file locale (es. public/images/logo.png) in data-uri DOMPDF friendly.
+     */
+    private function fileToDataUri(string $absolutePath): ?string
+    {
+        if (!is_file($absolutePath)) {
+            return null;
+        }
+
+        $mime = (function_exists('mime_content_type') ? mime_content_type($absolutePath) : null) ?: 'image/png';
+
+        $bin = @file_get_contents($absolutePath);
         if ($bin === false) {
             return null;
         }

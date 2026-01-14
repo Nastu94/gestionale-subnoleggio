@@ -44,9 +44,14 @@
 
 <body>
 
-    {{-- NEW — BOX LOGHI (solo posizionamento, nessun file) --}}
-    <div style="position:absolute; top:20px; right:20px; width:180px; height:80px; border:1px dashed #bbb; text-align:center; font-size:10px; line-height:80px;">
-        Spazio loghi
+    {{-- BOX LOGHI (DOMPDF safe) --}}
+    <div style="position:absolute; top:20px; right:20px; width:180px; height:80px; text-align:right;">
+        @if(!empty($logos['amd']))
+            <div style="height:38px; margin-bottom:4px;">
+                <img src="{{ $logos['amd'] }}" alt="Logo AMD"
+                    style="max-width:180px; max-height:38px;">
+            </div>
+        @endif
     </div>
 
     <h1>Contratto di noleggio veicolo</h1>
