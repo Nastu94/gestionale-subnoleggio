@@ -2,7 +2,7 @@
 
 <div class="space-y-4">
     {{-- Form upload (solo admin con permesso vehicles.update|vehicles.create) --}}
-    @canany(['vehicles.update','vehicles.create'])
+    @can('uploadPhoto', $vehicle)
         <form method="POST"
               action="{{ route('vehicles.photos.store', $vehicle) }}"
               enctype="multipart/form-data"
@@ -23,7 +23,7 @@
                 <div class="text-sm text-red-600">{{ $message }}</div>
             @enderror
         </form>
-    @endcanany
+    @endcan
 
     {{-- Galleria --}}
     @php
@@ -39,14 +39,16 @@
             @foreach ($photos as $media)
                 <div class="group relative overflow-hidden rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
                     <a href="{{ $media->getUrl('preview') }}" target="_blank" class="block">
-                        <img src="{{ $media->getUrl('thumb_160') }}" class="w-full h-full object-contain" alt="">
+                        <img src="{{ $media->hasGeneratedConversion('thumb_160') ? $media->getUrl('thumb_160') : $media->getUrl('thumb') }}"
+                            class="w-full h-full object-contain"
+                            alt="">
                     </a>
 
                     <div class="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 p-2 bg-black/50 opacity-0 group-hover:opacity-100 transition">
                         <a href="{{ $media->getUrl() }}" target="_blank"
                            class="text-xs text-white underline">Originale</a>
 
-                        @canany(['vehicles.update','vehicles.create'])
+                        @can('uploadPhoto', $vehicle)
                             <form method="POST"
                                   action="{{ route('vehicles.photos.destroy', [$vehicle, $media]) }}"
                                   onsubmit="return confirm('Eliminare definitivamente questa foto?')">
@@ -57,7 +59,7 @@
                                     Elimina
                                 </button>
                             </form>
-                        @endcanany
+                        @endcan
                     </div>
                 </div>
             @endforeach

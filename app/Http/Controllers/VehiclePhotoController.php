@@ -17,8 +17,8 @@ class VehiclePhotoController extends Controller
      */
     public function store(Request $request, Vehicle $vehicle)
     {
-        // Se usi le policy, puoi tenere anche questo:
-        // $this->authorize('update', $vehicle);
+        // Autorizzazione upload foto veicolo (admin o renter assegnato)
+        $this->authorize('uploadPhoto', $vehicle);
 
         $validated = $request->validate([
             'photo' => 'required|image|mimes:jpg,jpeg,png,webp|max:5120',

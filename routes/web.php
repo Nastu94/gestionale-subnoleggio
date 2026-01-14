@@ -155,8 +155,7 @@ Route::middleware([
 
     // Upload foto (serve permesso admin: vehicles.update O vehicles.create)
     Route::post('/vehicles/{vehicle}/photos', [VehiclePhotoController::class, 'store'])
-        ->name('vehicles.photos.store')
-        ->middleware('permission:vehicles.update|vehicles.create');
+        ->name('vehicles.photos.store');
 
     // Elimina foto (stessi permessi)
     Route::delete('/vehicles/{vehicle}/photos/{media}', [VehiclePhotoController::class, 'destroy'])

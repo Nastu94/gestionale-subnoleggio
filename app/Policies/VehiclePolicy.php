@@ -37,6 +37,34 @@ class VehiclePolicy
         return $user->can('vehicles.update');
     }
 
+    /**
+     * Permesso GRANULARE: caricare foto veicolo (collection vehicle_photos).
+     * - Richiede permesso 'media.upload'.
+     * - Admin: basta il permesso.
+     * - Renter: permesso + veicolo assegnato "ora".
+     * - Vietato su veicolo archiviato (soft delete).
+     */
+    public function uploadPhoto(User $user, Vehicle $vehicle): bool
+    {
+        // Permesso base per upload media
+        if (! $user->can('media.upload')) {
+            return false;
+        }
+
+        // Veicolo archiviato: niente upload
+        if (method_exists($vehicle, 'trashed') && $vehicle->trashed()) {
+            return false;
+        }
+
+        // Renter: deve essere assegnato ora
+        if ($user->organization->isRenter()) {
+            return $this->vehicleAssignedToRenterNow($vehicle->id, (int) $user->organization_id);
+        }
+
+        // Admin: ok
+        return true;
+    }
+
     public function delete(User $user, Vehicle $vehicle): bool
     {
         return $user->can('vehicles.delete');

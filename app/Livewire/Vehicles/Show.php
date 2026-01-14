@@ -295,8 +295,6 @@ class Show extends Component
         $this->ensureNewDamageShape();
     }
 
-    /* ===================== Blocchi esistenti (tuo codice) ===================== */
-
     public function updatedDocType($value): void
     {
         if ($value === '' || $value === null) { $this->docType = null; return; }
