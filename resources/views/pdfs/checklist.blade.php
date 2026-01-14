@@ -60,7 +60,7 @@
         <div>
             <h1>Checklist — {{ $titleType }}</h1>
             <div class="muted">
-                Noleggio #{{ $rental->id ?? '—' }} · Checklist #{{ $checklist->id ?? '—' }}<br>
+                Noleggio {{ $rental->display_number_label ?? '—' }} · Checklist #{{ $checklist->id ?? '—' }}<br>
                 Generata il {{ optional($generated_at)->format('d/m/Y H:i') }}
             </div>
             @if($checklist->replaces_checklist_id)

@@ -450,6 +450,14 @@
                             <span class="text-red-500 text-xs">{{ $message }}</span>
                         @enderror
                     </label>
+                    <div class="flex gap-2">
+                        <button class="{{ $btnSoft }}"
+                                wire:click="saveDraft"
+                                @disabled(!$vehSelected)
+                                title="{{ $vehSelected ? 'Salva bozza' : 'Seleziona prima un veicolo' }}">
+                            Salva bozza
+                        </button>
+                    </div>
                 </div>
 
                 <div class="grid md:grid-cols-2 gap-4">
@@ -686,6 +694,7 @@
 
     {{-- Footer azioni --}}
     <div class="flex items-center justify-between">
+        @if($step!==3)
         <div class="flex gap-2">
             <button class="{{ $btnSoft }}"
                     wire:click="saveDraft"
@@ -694,6 +703,7 @@
                 Salva bozza
             </button>
         </div>
+        @endif
         <div class="flex gap-2">
             @if($step > 1)
                 <button class="{{ $btnSoft }}" wire:click="prev">Indietro</button>

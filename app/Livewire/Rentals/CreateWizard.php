@@ -12,6 +12,7 @@ use App\Models\{Rental, Customer, Vehicle, Location, VehicleAssignment}; // Loca
 use App\Services\Contracts\GenerateRentalContract;
 use App\Domain\Pricing\VehiclePricingService;
 use Illuminate\Database\Eloquent\Builder;
+use App\Services\Rentals\RentalNumberAllocator;
 
 class CreateWizard extends Component
 {
@@ -349,10 +350,11 @@ class CreateWizard extends Component
             $this->validationAttributes()
         );
 
-        $rental = $this->rentalId
-            ? Rental::query()->findOrFail($this->rentalId)
-            : new Rental();
+        $orgId = auth()->user()->organization_id;
 
+        if (!$orgId) {
+            throw new \RuntimeException('Organization ID mancante durante la creazione del rental');
+        }
 
         // recupero l'assegnazione del veicolo selezionato
         $assignment = VehicleAssignment::query()
@@ -361,83 +363,145 @@ class CreateWizard extends Component
             ->latest('start_at')
             ->first();
 
-        // Applica i campi (nomi invariati)
-        $rental->vehicle_id         = $this->rentalData['vehicle_id'] ?? null;
-        $rental->pickup_location_id = $this->rentalData['pickup_location_id'] ?? null;
-        $rental->return_location_id = $this->rentalData['return_location_id'] ?? null;
-        $rental->planned_pickup_at  = $this->castDate($this->rentalData['planned_pickup_at'] ?? null);
-        $rental->planned_return_at  = $this->castDate($this->rentalData['planned_return_at'] ?? null);
-        $rental->organization_id    = auth()->user()->organization_id;
-        $rental->assignment_id      = $assignment->id ?? null;
-        $rental->notes              = $this->rentalData['notes'] ?? null;
         // final_amount_override (se vuoto → null)
         $override = $this->rentalData['final_amount_override'] ?? null;
         $override = (is_string($override) && trim($override) === '') ? null : $override;
+        $finalAmountOverride = is_null($override) ? null : round((float) $override, 2);
 
-        $rental->final_amount_override = is_null($override) ? null : round((float)$override, 2);
-
-
-        if ($this->customer_id) {
-            $rental->customer_id = $this->customer_id;
-        }
+        // Cast date una volta sola (evita parse ripetuti)
+        $plannedPickupAt = $this->castDate($this->rentalData['planned_pickup_at'] ?? null);
+        $plannedReturnAt = $this->castDate($this->rentalData['planned_return_at'] ?? null);
 
         /**
          * 💶 Denormalizzazione importo base del noleggio su rentals.amount
-         * - Serve per precompilare il modale "Quota base" senza inserimento manuale.
-         * - Usiamo VehiclePricingService::quote() e prendiamo solo 'total' (in centesimi).
-         * - Se manca listino o dati, NON blocchiamo il wizard: lasciamo amount invariato.
+         * - calcolata prima, poi assegnata al model (create o update)
          */
-        try {
-            if ($rental->vehicle_id && $rental->planned_pickup_at && $rental->planned_return_at) {
+        $amountEuro = null;
 
-                // Recupero veicolo (serve per trovare il listino attivo del renter corrente)
-                $vehicle = Vehicle::query()->find($rental->vehicle_id);
+        try {
+            if (($this->rentalData['vehicle_id'] ?? null) && $plannedPickupAt && $plannedReturnAt) {
+
+                $vehicle = Vehicle::query()->find($this->rentalData['vehicle_id']);
 
                 if ($vehicle) {
                     /** @var VehiclePricingService $pricing */
                     $pricing = app(VehiclePricingService::class);
 
-                    // Listino attivo per il renter corrente
                     $pl = $pricing->findActivePricelistForCurrentRenter($vehicle);
 
                     if ($pl) {
-                        // Km previsti: se la property non è ancora impostata, fallback a 0
                         $expectedKm = (int) ($this->expectedKm ?? 0);
 
-                        // Preventivo: total è in cents
                         $quote = $pricing->quote(
                             $pl,
-                            $rental->planned_pickup_at,
-                            $rental->planned_return_at,
+                            $plannedPickupAt,
+                            $plannedReturnAt,
                             $expectedKm
                         );
 
                         $totalCents = (int) ($quote['total'] ?? 0);
-
-                        // Salviamo in euro su campo DECIMAL(10,2)
-                        $rental->amount = round($totalCents / 100, 2);
+                        $amountEuro = round($totalCents / 100, 2);
                     }
                 }
             }
         } catch (\Throwable $e) {
             report($e);
-            // Non blocchiamo la creazione bozza: amount resta quello precedente (o 0 di default)
+            // Non blocchiamo la bozza: amount resta invariato
         }
 
-        if($rental->status === 'draft' || $rental->status === null) {
-            $rental->status = 'draft';
+        /**
+         * ✅ CREATE: se non esiste ancora un rental, lo creiamo tramite allocatore
+         * (lock su organizations + progressivo per organization_id + insert audit ledger).
+         */
+        if (!$this->rentalId) {
+
+            /** @var RentalNumberAllocator $allocator */
+            $allocator = app(RentalNumberAllocator::class);
+
+            $rental = $allocator->allocateAndCreate(
+                $orgId,
+                (int) auth()->id(),
+                function (int $numberId) use ($assignment, $plannedPickupAt, $plannedReturnAt, $finalAmountOverride, $amountEuro) {
+
+                    $rental = new Rental();
+
+                    // Campi (nomi invariati)
+                    $rental->vehicle_id         = $this->rentalData['vehicle_id'] ?? null;
+                    $rental->pickup_location_id = $this->rentalData['pickup_location_id'] ?? null;
+                    $rental->return_location_id = $this->rentalData['return_location_id'] ?? null;
+                    $rental->planned_pickup_at  = $plannedPickupAt;
+                    $rental->planned_return_at  = $plannedReturnAt;
+
+                    $rental->organization_id    = auth()->user()->organization_id;
+                    $rental->assignment_id      = $assignment->id ?? null;
+
+                    $rental->notes              = $this->rentalData['notes'] ?? null;
+                    $rental->final_amount_override = $finalAmountOverride;
+
+                    // ✅ Numero progressivo per noleggiatore (NUOVO)
+                    $rental->number_id = $numberId;
+
+                    // Cliente (se già scelto)
+                    if ($this->customer_id) {
+                        $rental->customer_id = $this->customer_id;
+                    }
+
+                    // amount (se calcolato)
+                    if (!is_null($amountEuro)) {
+                        $rental->amount = $amountEuro;
+                    }
+
+                    // Bozza
+                    $rental->status = 'draft';
+
+                    $rental->save();
+
+                    return $rental;
+                }
+            );
+
+            $this->rentalId = $rental->id;
+
+        } else {
+
+            /**
+             * ✅ UPDATE: rental già esistente → aggiorniamo normalmente
+             * (number_id non si tocca mai qui)
+             */
+            $rental = Rental::query()->findOrFail($this->rentalId);
+
+            $rental->vehicle_id         = $this->rentalData['vehicle_id'] ?? null;
+            $rental->pickup_location_id = $this->rentalData['pickup_location_id'] ?? null;
+            $rental->return_location_id = $this->rentalData['return_location_id'] ?? null;
+            $rental->planned_pickup_at  = $plannedPickupAt;
+            $rental->planned_return_at  = $plannedReturnAt;
+
+            $rental->organization_id    = auth()->user()->organization_id;
+            $rental->assignment_id      = $assignment->id ?? null;
+
+            $rental->notes              = $this->rentalData['notes'] ?? null;
+            $rental->final_amount_override = $finalAmountOverride;
+
+            if ($this->customer_id) {
+                $rental->customer_id = $this->customer_id;
+            }
+
+            if (!is_null($amountEuro)) {
+                $rental->amount = $amountEuro;
+            }
+
+            if ($rental->status === 'draft' || $rental->status === null) {
+                $rental->status = 'draft';
+            }
+
+            $rental->save();
         }
-        $rental->save();
-        $this->rentalId = $rental->id;
-        
+
         // === Coverage 1:1 (creazione idempotente) ===============================
-        // Garantisce l'esistenza della riga su rental_coverages per questo rental.
-        // Usiamo firstOrCreate per rispettare la unique(rental_id) e non creare duplicati.
-        // Default: rca=true, altri false, franchigie/null (verranno aggiornate in step successivi).
         $rental->coverage()->firstOrCreate(
             ['rental_id' => $rental->id],
             [
-                'rca'                        => true,   // obbligatoria nel tuo flusso
+                'rca'                        => true,
                 'kasko'                      => $this->coverage['kasko'] ?? false,
                 'furto_incendio'             => $this->coverage['furto_incendio'] ?? false,
                 'cristalli'                  => $this->coverage['cristalli'] ?? false,
@@ -448,9 +512,8 @@ class CreateWizard extends Component
                 'franchise_cristalli'        => $this->franchise['cristalli'] ?? null,
             ]
         );
-        // ========================================================================
+        // =======================================================================
 
-        // Feedback UI
         $this->dispatch('toast', type:'success', message:'Bozza salvata.');
     }
 
@@ -680,6 +743,9 @@ class CreateWizard extends Component
     /**
      * Verifica sovrapposizioni per lo stesso veicolo nelle date scelte.
      * Overlap rule: A.start < B.end && A.end > B.start
+     *
+     * Esclusioni:
+     * - status in ['cancelled', 'no_show'] NON blocca nuove prenotazioni.
      */
     protected function assertVehicleAvailability(): void
     {
@@ -687,13 +753,20 @@ class CreateWizard extends Component
         $start     = $this->castDate($this->rentalData['planned_pickup_at'] ?? null);
         $end       = $this->castDate($this->rentalData['planned_return_at'] ?? null);
 
-        if (!$vehicleId || !$start || !$end) return; // mancano dati => non blocchiamo qui
+        if (!$vehicleId || !$start || !$end) return;
+
+        /**
+         * Stati da ignorare per l'overlap.
+         * NB: presuppone che in DB siano salvati come stringhe tipo 'cancelled' / 'no_show'.
+         */
+        $ignoreStatuses = ['cancelled', 'no_show'];
 
         $exists = Rental::query()
             ->where('vehicle_id', $vehicleId)
             ->when($this->rentalId, fn(Builder $q) => $q->where('id','!=',$this->rentalId))
-            // qualsiasi stato (compresi draft/reserved/checked_*)
-            // se vuoi escludere cancelled/no_show, filtra qui.
+            // ✅ Ignora noleggi annullati / no-show
+            ->whereNotIn('status', $ignoreStatuses)
+            // Overlap interval
             ->where(function (Builder $q) use ($start, $end) {
                 $q->where('planned_pickup_at', '<', $end)
                 ->where('planned_return_at', '>', $start);
@@ -711,6 +784,9 @@ class CreateWizard extends Component
 
     /**
      * Verifica che lo stesso cliente non abbia già una prenotazione nello stesso periodo.
+     *
+     * Esclusioni:
+     * - status in ['cancelled', 'no_show'] NON blocca nuove prenotazioni.
      */
     protected function assertCustomerNoOverlap(): void
     {
@@ -720,9 +796,14 @@ class CreateWizard extends Component
 
         if (!$customerId || !$start || !$end) return;
 
+        /** Stati da ignorare per l'overlap (vedi nota nel metodo veicolo). */
+        $ignoreStatuses = ['cancelled', 'no_show'];
+
         $exists = Rental::query()
             ->where('customer_id', $customerId)
             ->when($this->rentalId, fn(Builder $q) => $q->where('id','!=',$this->rentalId))
+            // ✅ Ignora noleggi annullati / no-show
+            ->whereNotIn('status', $ignoreStatuses)
             ->where(function (Builder $q) use ($start, $end) {
                 $q->where('planned_pickup_at', '<', $end)
                 ->where('planned_return_at', '>', $start);

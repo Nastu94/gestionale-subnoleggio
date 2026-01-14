@@ -31,6 +31,7 @@ class Rental extends Model implements SpatieHasMedia
         'amount','admin_fee_percent','admin_fee_amount',
         'second_driver_id',
         'final_amount_override',
+        'number_id',
     ];
 
     protected $casts = [
@@ -44,6 +45,7 @@ class Rental extends Model implements SpatieHasMedia
         'mileage_in'        => 'integer',
         'fuel_out_percent'  => 'integer',
         'fuel_in_percent'   => 'integer',
+        'number_id'         => 'integer',
         'final_amount_override' => 'decimal:2',
     ];
 
@@ -195,6 +197,28 @@ class Rental extends Model implements SpatieHasMedia
             return false;
         }
         return true;
+    }
+
+    /**
+     * Numero contratto “da mostrare” in UI.
+     * - Usa number_id se presente (progressivo per organization_id)
+     * - Fallback su id (compatibilità con contratti vecchi / edge-case)
+     *
+     * @return int
+     */
+    public function getDisplayNumberAttribute(): int
+    {
+        return (int) ($this->number_id ?? $this->id ?? 0);
+    }
+
+    /**
+     * Numero contratto formattato per UI (prefisso #).
+     *
+     * @return string
+     */
+    public function getDisplayNumberLabelAttribute(): string
+    {
+        return '#'.$this->display_number;
     }
 
     // -------------------------

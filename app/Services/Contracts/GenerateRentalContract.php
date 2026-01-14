@@ -217,7 +217,7 @@ class GenerateRentalContract
             ],
 
             // NEW
-            'vehicle_owner_name' => $vehicleOrg?->name ?? $org?->name ?? '—',
+            'vehicle_owner_name' => $rental->organization->name,
             'final_amount'       => $finalAmount,
             'second_driver'      => $secondDriver,
             'second_driver_fee'  => $secondDriverFeeDaily,
@@ -230,6 +230,7 @@ class GenerateRentalContract
                 'return_at'       => optional($rental->planned_return_at)->timezone('Europe/Rome')?->format('d/m/Y H:i'),
                 'pickup_location' => $pickup?->name,
                 'return_location' => $return?->name,
+                'number_label'    => $rental->display_number_label,
             ],
 
             'customer' => [

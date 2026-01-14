@@ -45,9 +45,9 @@
 
                     {{-- ID contratto (sortabile) --}}
                     <th class="px-6 py-2">
-                        <button type="button" wire:click="setSort('id')" class="inline-flex items-center gap-1">
-                            ID
-                            @if($sort === 'id')
+                        <button type="button" wire:click="setSort('number_id')" class="inline-flex items-center gap-1">
+                            N°
+                            @if($sort === 'number_id')
                                 <i class="fas fa-sort-numeric-{{ $dir === 'asc' ? 'down' : 'up' }}"></i>
                             @else
                                 <i class="fas fa-sort text-gray-500"></i>
@@ -96,7 +96,10 @@
                     @endphp
                     <tr class="hover:bg-gray-200 dark:hover:bg-gray-700">
                         <td class="px-6 py-2 whitespace-nowrap">{{ $rowNum }}</td>
-                        <td class="px-6 py-2 whitespace-nowrap">#{{ $r->id }}</td>
+                        <td class="px-6 py-2 whitespace-nowrap">
+                            {{-- Numero progressivo per noleggiatore (fallback a id per sicurezza) --}}
+                            #{{ $r->number_id ?? $r->id }}
+                        </td>
                         <td class="px-6 py-2 whitespace-nowrap">
                             {{ $plate }}
                             <span class="text-[11px] text-gray-500 dark:text-gray-400 ml-1">{{ $model }}</span>

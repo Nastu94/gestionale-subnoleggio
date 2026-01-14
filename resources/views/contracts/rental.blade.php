@@ -25,7 +25,7 @@
 <html lang="it">
 <head>
     <meta charset="utf-8">
-    <title>Contratto di noleggio #{{ $rental['id'] }}</title>
+    <title>Contratto di noleggio {{ $rental['number_label'] }}</title>
     <style>
         body { font-family: DejaVu Sans, Arial, sans-serif; font-size: 12px; color: #111; }
         h1, h2 { margin: 0 0 6px; }
@@ -54,7 +54,7 @@
     {{-- NEW — Nome noleggiatore descrittivo --}}
     <div class="muted">
         Nome Noleggiante: <strong>{{ $vehicle_owner_name }}</strong><br>
-        Numero contratto: <strong>#{{ $rental['id'] }}</strong> —
+        Numero contratto: <strong>{{ $rental['number_label'] }}</strong> —
         Data: {{ $rental['issued_at'] ?? now()->format('d/m/Y') }}
     </div>
 

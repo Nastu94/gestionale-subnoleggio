@@ -54,7 +54,7 @@
             <dl class="grid md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
                 <div>
                     <dt class="opacity-70">Riferimento</dt>
-                    <dd class="font-medium">{{ $rental->reference ?? ('#'.$rental->id) }}</dd>
+                    <dd class="font-medium">{{ $rental->reference ?? $rental->display_number_label }}</dd>
                 </div>
 
                 <div>

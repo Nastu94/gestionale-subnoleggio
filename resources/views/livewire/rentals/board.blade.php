@@ -108,7 +108,7 @@
 
                         <tr class="align-middle hover:bg-gray-50/50 dark:hover:bg-gray-700/30">
                             <td class="font-medium">
-                                {{ $r->reference ?? ('#'.$r->id) }}
+                                {{ $r->reference ?? ($r->display_number_label) }}
                                 {{-- Chip: piccoli indicatori inline --}}
                                 <div class="mt-1 flex flex-wrap gap-1.5 text-[11px]">
                                     {{-- Contratto generato --}}
@@ -225,7 +225,7 @@
 
                             <div class="rounded-xl border p-3 bg-base-200">
                                 <div class="flex items-center justify-between">
-                                    <div class="font-semibold">{{ $r->reference ?? ('#'.$r->id) }}</div>
+                                    <div class="font-semibold">{{ $r->reference ?? $r->display_number_label }}</div>
                                     <a href="{{ route('rentals.show', $r) }}"
                                     class="inline-flex items-center px-2 py-1 rounded-md bg-indigo-600 text-white text-[11px] font-semibold uppercase
                                             hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition">
@@ -524,7 +524,7 @@
                                                         @endif
 
                                                         <div class="font-semibold truncate">
-                                                            {{ $rental->reference ?? ('#'.$rental->id) }}
+                                                            {{ $rental->reference ?? ($rental->display_number_label) }}
                                                         </div>
                                                     </div>
                                                     <div class="text-[9px] opacity-80 truncate">
@@ -678,7 +678,7 @@
                                                         left:  calc({{ $left }} * (100% / {{ $hoursCount }}));
                                                         width: calc({{ $span }} * (100% / {{ $hoursCount }}));
                                                 "
-                                                title="#{{ $rental->reference ?? $rental->id }} · {{ optional($rental->customer)->name ?? '—' }} · {{ $pickup ? $pickup->format('H:i') : '—' }} → {{ $return ? $return->format('H:i') : '—' }}"
+                                                title="#{{ $rental->reference ?? $rental->display_number_label }} · {{ optional($rental->customer)->name ?? '—' }} · {{ $pickup ? $pickup->format('H:i') : '—' }} → {{ $return ? $return->format('H:i') : '—' }}"
                                                 >
                                                     <div class="flex items-center justify-start gap-1">
                                                         @if($isOverbooked)
@@ -687,7 +687,7 @@
                                                             </span>
                                                         @endif
                                                         <div class="font-semibold truncate">
-                                                            {{ $rental->reference ?? ('#'.$rental->id) }}
+                                                            {{ $rental->reference ?? $rental->display_number_label }}
                                                         </div>
                                                     </div>
                                                     <div class="text-[9px] opacity-80 truncate">

@@ -74,7 +74,7 @@
             <div class="flex items-center justify-between gap-3 flex-wrap">
                 <div>
                     <h1 class="text-xl md:text-2xl font-semibold flex items-center gap-2">
-                        Noleggio {{ $rental->reference ?? ('#'.$rental->id) }}
+                        Noleggio {{ $rental->reference ?? $rental->display_number_label }}
                         <span class="badge {{ $statusBadgeClass }}">{{ $statusLabel }}</span>
                     </h1>
                     <p class="opacity-70 text-xs md:text-sm mt-1 flex flex-wrap gap-x-3 gap-y-1">

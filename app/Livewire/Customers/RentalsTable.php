@@ -47,7 +47,7 @@ class RentalsTable extends Component
     /** Toggle ordinamento (limitato a colonne sicure) */
     public function setSort(string $column): void
     {
-        if (! in_array($column, ['id', 'status', 'created_at'], true)) return;
+        if (! in_array($column, ['id', 'number_id', 'status', 'created_at'], true)) return;
 
         if ($this->sort === $column) {
             $this->dir = $this->dir === 'asc' ? 'desc' : 'asc';
@@ -98,16 +98,15 @@ class RentalsTable extends Component
              * altrimenti possono bypassare i vincoli sopra (tenant/customer).
              */
             ->when($term, function (Builder $q) use ($term, $like) {
-                $q->where(function (Builder $w) use ($term, $like) {
-                    $w->whereRaw('LOWER(status) LIKE ?', [$like])
-                    ->orWhere('id', (int) $term)
-                    ->orWhereHas('vehicle', fn (Builder $v) =>
-                        $v->whereRaw('LOWER(plate) LIKE ?', [$like])
-                    );
-                });
+                $q->whereRaw('LOWER(status) LIKE ?', [$like])
+                ->orWhere('id', (int) $term)
+                ->orWhere('number_id', (int) $term)
+                ->orWhereHas('vehicle', fn (Builder $w) =>
+                    $w->whereRaw('LOWER(plate) LIKE ?', [$like])
+                );
             })
 
-            ->when(in_array($this->sort, ['id', 'status', 'created_at'], true),
+            ->when(in_array($this->sort, ['id', 'number_id', 'status', 'created_at'], true),
                 fn (Builder $q) => $q->orderBy($this->sort, $this->dir === 'asc' ? 'asc' : 'desc'),
                 fn (Builder $q) => $q->orderBy('id', 'desc')
             );
