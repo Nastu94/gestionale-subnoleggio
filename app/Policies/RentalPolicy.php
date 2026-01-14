@@ -83,8 +83,28 @@ class RentalPolicy
     // Media sul Rental
     public function uploadMedia(User $user, Rental $rental): bool
     {
-        return $user->can('media.upload');
+        // deve avere il permesso (vale per admin e renter)
+        if (! $user->can('media.attach.rental_document')) {
+            return false;
+        }
+
+        // Admin-like: ok (adatta i ruoli ai tuoi)
+        if (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['admin', 'super-admin'])) {
+            return true;
+        }
+
+        // Renter: SOLO se il noleggio appartiene alla sua organizzazione
+        // (se nel tuo DB il campo è diverso, sostituisci qui)
+        $rentalOrgId = (int) ($rental->organization_id ?? 0);
+        $userOrgId   = (int) ($user->organization_id ?? 0);
+
+        if ($rentalOrgId === 0 || $userOrgId === 0) {
+            return false;
+        }
+
+        return $rentalOrgId === $userOrgId;
     }
+    
     public function deleteMedia(User $user, Rental $rental): bool
     {
         return $user->can('media.delete');

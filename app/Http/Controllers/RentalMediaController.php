@@ -292,7 +292,6 @@ class RentalMediaController extends Controller
     {
         // Autorizzazioni coerenti con il tuo flusso
         $this->authorize('uploadMedia', $rental);
-        Gate::authorize('attachRentalDocument', $rental); // se lo usi davvero
 
         // ✅ Validazioni: collection opzionale ma vincolata; file fino a 20MB
         $validated = $request->validate([
