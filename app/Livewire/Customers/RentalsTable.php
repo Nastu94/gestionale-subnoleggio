@@ -70,14 +70,43 @@ class RentalsTable extends Component
 
         $query = Rental::query()
             ->with(['vehicle']) // relazione tipica; non rinomino
-            ->where('customer_id', $this->customer->id)
-            ->when($term, function (Builder $q) use ($term, $like) {
-                $q->whereRaw('LOWER(status) LIKE ?', [$like])
-                  ->orWhere('id', (int) $term)
-                  ->orWhereHas('vehicle', fn (Builder $w) =>
-                      $w->whereRaw('LOWER(plate) LIKE ?', [$like])
-                  );
+
+            /**
+             * Tenant-scope:
+             * - Se chi guarda è un renter, deve vedere SOLO i rentals della sua organization.
+             * - Se è admin, può vedere tutto (nessun filtro).
+             */
+            ->when(auth()->user()?->organization?->isRenter(), function (Builder $q) {
+                $q->where('organization_id', auth()->user()->organization_id);
             })
+
+            /**
+             * Il customer può comparire:
+             * - come intestatario (customer_id)
+             * - come seconda guida (second_driver_id)
+             *
+             * Raggruppo con una closure per mantenere la logica corretta in SQL.
+             */
+            ->where(function (Builder $q) {
+                $q->where('customer_id', $this->customer->id)
+                ->orWhere('second_driver_id', $this->customer->id);
+            })
+
+            /**
+             * Ricerca:
+             * IMPORTANTISSIMO: raggruppare le OR in una sotto-clausola,
+             * altrimenti possono bypassare i vincoli sopra (tenant/customer).
+             */
+            ->when($term, function (Builder $q) use ($term, $like) {
+                $q->where(function (Builder $w) use ($term, $like) {
+                    $w->whereRaw('LOWER(status) LIKE ?', [$like])
+                    ->orWhere('id', (int) $term)
+                    ->orWhereHas('vehicle', fn (Builder $v) =>
+                        $v->whereRaw('LOWER(plate) LIKE ?', [$like])
+                    );
+                });
+            })
+
             ->when(in_array($this->sort, ['id', 'status', 'created_at'], true),
                 fn (Builder $q) => $q->orderBy($this->sort, $this->dir === 'asc' ? 'asc' : 'desc'),
                 fn (Builder $q) => $q->orderBy('id', 'desc')

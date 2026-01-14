@@ -69,6 +69,8 @@
                         </button>
                     </th>
 
+                    <th class="px-6 py-2">Ruolo</th>
+
                     {{-- Creato il (sortabile) --}}
                     <th class="px-6 py-2">
                         <button type="button" wire:click="setSort('created_at')" class="inline-flex items-center gap-1">
@@ -99,6 +101,34 @@
                             {{ $plate }}
                             <span class="text-[11px] text-gray-500 dark:text-gray-400 ml-1">{{ $model }}</span>
                         </td>
+                        @php
+                            /**
+                            * Ruolo del customer nel contratto:
+                            * - Intestatario: customer_id
+                            * - Seconda guida: second_driver_id
+                            * Nota: cast a int per evitare mismatch tra string/int.
+                            */
+                            $isMain   = (int) $r->customer_id === (int) $customer->id;
+                            $isSecond = (int) $r->second_driver_id === (int) $customer->id;
+                        @endphp
+
+                        <td class="px-6 py-2 whitespace-nowrap">
+                            @if($isMain && $isSecond)
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200">
+                                    Intestatario + 2ª guida
+                                </span>
+                            @elseif($isMain)
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200">
+                                    Intestatario
+                                </span>
+                            @elseif($isSecond)
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
+                                    2ª guida
+                                </span>
+                            @else
+                                <span class="text-xs text-gray-400 italic">—</span>
+                            @endif
+                        </td>
                         <td class="px-6 py-2 whitespace-nowrap">{{ strtoupper($r->status) }}</td>
                         <td class="px-6 py-2 whitespace-nowrap">
                             {{ optional($r->created_at)->format('d/m/Y H:i') }}
@@ -112,7 +142,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                        <td colspan="7" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
                             Nessun contratto trovato per questo cliente.
                         </td>
                     </tr>

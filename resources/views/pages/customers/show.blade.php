@@ -10,7 +10,7 @@
             
             <a href="{{ route('customers.index') }}"
                 class="inline-flex items-center px-3 py-1.5 rounded-md border text-xs font-semibold
-                        uppercase hover:bg-gray-100 dark:hover:bg-gray-700">
+                        uppercase bg-white hover:bg-gray-100 dark:hover:bg-gray-700">
                 <i class="fas fa-arrow-left mr-1"></i> Indietro
             </a>
         </div>

@@ -205,7 +205,7 @@
         </form>
     </section>
 
-    {{-- TAB: Contratti (readonly) --}}
+    {{-- TAB: Contratti --}}
     <section x-show="tab === 'contratti'" x-cloak id="tab-contratti" role="tabpanel" aria-labelledby="Contratti">
         <livewire:customers.rentals-table :customer="$customer" />
     </section>
