@@ -152,9 +152,13 @@ class Index extends Component
     {
         $this->authorizeView();
 
-        $doc = VehicleDocument::query()
-            ->with(['vehicle' => fn($q) => $q->withTrashed()->select('id','deleted_at')])
-            ->findOrFail($id);
+        /**
+         * Tenant-safe: il documento deve essere visibile nel perimetro dell'utente corrente.
+         * Se non lo è → 404 (non leakiamo l'esistenza dell'ID).
+         */
+        $doc = $this->scopedDocsBaseQuery()
+            ->where('vehicle_documents.id', $id)
+            ->firstOrFail();
 
         $this->editingVehicleArchived = method_exists($doc->vehicle, 'trashed') && $doc->vehicle->trashed();
 
@@ -195,21 +199,61 @@ class Index extends Component
 
         // Se renter → può solo UPDATE e solo per veicoli assegnati *ora*
         if ($this->editingId) {
+            /**
+             * Tenant-safe:
+             * - Il documento deve essere visibile nel perimetro dell'utente (admin vs renter).
+             * - Se l'ID non è visibile → 404 (evita leak dell'esistenza dell'ID).
+             */
+            $doc = $this->scopedDocsBaseQuery()
+                ->where('vehicle_documents.id', $this->editingId)
+                ->firstOrFail();
+
+            /**
+             * Sicurezza: vehicle_id NON deve mai essere cambiabile in update.
+             * Anche se il campo è disabled in UI, può essere manomesso via request.
+             * Quindi forziamo il vehicle_id reale dal record DB.
+             */
+            $this->form['vehicle_id'] = (int) $doc->vehicle_id;
+
+            // Veicolo (anche archiviato) già caricato nello scope; se manca, recupero safe.
+            $vehicle = $doc->vehicle ?: Vehicle::withTrashed()->findOrFail($doc->vehicle_id);
+
+            /**
+             * Veicolo non deve essere archiviato:
+             * - la UI già disabilita, ma qui è il vero guardrail.
+             */
+            if (method_exists($vehicle, 'trashed') && $vehicle->trashed()) {
+                $this->dispatch('toast', ['type' => 'warning', 'message' => 'Veicolo archiviato: non puoi modificare i documenti.']);
+                return;
+            }
+
+            /**
+             * Permesso update:
+             * - admin-like: ok
+             * - renter: ok solo se ha update/manage (già gestito da userCanUpdate).
+             */
             if (!$this->userCanUpdate()) {
                 $this->dispatch('toast', ['type' => 'warning', 'message' => 'Non hai i permessi per aggiornare.']);
                 return;
             }
+
+            /**
+             * Doppio controllo per renter:
+             * - Lo scope già limita ai veicoli assegnati *ora*,
+             *   ma questa check rende esplicita la regola di business e protegge da future modifiche allo scope.
+             */
             if ($this->isRenter() && !$this->vehicleAssignedToRenterNow($vehicle->id)) {
                 $this->dispatch('toast', ['type' => 'warning', 'message' => 'Documento non appartenente alla tua flotta attuale.']);
                 return;
             }
 
-            $doc = VehicleDocument::findOrFail($this->editingId);
+            // Update campi consentiti
             $doc->update([
                 'type'        => $this->form['type'],
                 'number'      => $this->form['number'],
                 'expiry_date' => $this->form['expiry_date'],
             ]);
+
             $msg = 'Documento aggiornato.';
         } else {
             // CREATE: solo admin (o chi ha create/manage)
@@ -235,9 +279,13 @@ class Index extends Component
             return;
         }
 
-        $doc = VehicleDocument::query()
-            ->with(['vehicle' => fn($q) => $q->withTrashed()->select('id','deleted_at')])
-            ->findOrFail($id);
+        /**
+         * Tenant-safe: il documento deve essere visibile nel perimetro dell'utente corrente.
+         * Se non lo è → 404 (non leakiamo l'esistenza dell'ID).
+         */
+        $doc = $this->scopedDocsBaseQuery()
+            ->where('vehicle_documents.id', $id)
+            ->firstOrFail();
 
         if ($doc->vehicle && method_exists($doc->vehicle, 'trashed') && $doc->vehicle->trashed()) {
             $this->dispatch('toast', ['type' => 'warning', 'message' => 'Veicolo archiviato: non puoi eliminare documenti.']);
@@ -323,6 +371,65 @@ class Index extends Component
     protected function authorizeView(): void
     {
         if (!Auth::user()->can('vehicle_documents.viewAny')) abort(403);
+    }
+
+    /**
+     * Query base tenant-safe per singoli record:
+     * - Applica SOLO i vincoli di visibilità (admin vs renter + archiviati),
+     *   senza dipendere dai filtri correnti (search/type/state/...).
+     * - Serve per evitare IDOR: accesso a record per ID fuori dal proprio perimetro.
+     */
+    protected function scopedDocsBaseQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        $q = VehicleDocument::query()
+            ->select('vehicle_documents.*')
+            ->join('vehicles', 'vehicles.id', '=', 'vehicle_documents.vehicle_id')
+            ->with([
+                /**
+                 * Carico il veicolo anche se archiviato per poter:
+                 * - disabilitare editing su veicoli soft-deleted
+                 * - mostrare dati coerenti nel drawer
+                 */
+                'vehicle' => fn ($v) => $v->withTrashed()
+                    ->select(
+                        'id',
+                        'plate',
+                        'make',
+                        'model',
+                        'vin',
+                        'admin_organization_id',
+                        'default_pickup_location_id',
+                        'deleted_at'
+                    ),
+            ]);
+
+        // Renter: SOLO veicoli assegnati *ora*
+        if ($this->isRenter()) {
+            $q->whereExists(function ($sub) {
+                $sub->selectRaw('1')
+                    ->from('vehicle_assignments as va')
+                    ->whereColumn('va.vehicle_id', 'vehicles.id')
+                    ->where('va.renter_org_id', Auth::user()->organization_id)
+                    ->where('va.status', 'active')
+                    ->where('va.start_at', '<=', now())
+                    ->where(function ($q) {
+                        $q->whereNull('va.end_at')->orWhere('va.end_at', '>', now());
+                    });
+            });
+
+            /**
+             * Nota: per i renter non filtriamo per deleted_at del veicolo,
+             * perché possono dover "vedere" documenti di veicoli assegnati anche se archiviati,
+             * ma l'editing resta disabilitato (gestito altrove).
+             */
+        } else {
+            // Admin-like: mostra archiviati solo se flag attivo (coerenza con lista)
+            if (!$this->showArchived) {
+                $q->whereNull('vehicles.deleted_at');
+            }
+        }
+
+        return $q;
     }
 
     /**
