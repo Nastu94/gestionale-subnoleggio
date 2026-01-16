@@ -18,6 +18,8 @@ class RentalCharge extends Model
     public const KIND_SURCHARGE        = 'surcharge';
     public const KIND_FINE             = 'fine';
     public const KIND_OTHER            = 'other';
+    public const KIND_ACCONTO          = 'acconto';
+    public const KIND_BASE_PLUS_DISTANCE_OVERAGE = 'base+distance_overage';
 
     protected $fillable = [
         'rental_id',

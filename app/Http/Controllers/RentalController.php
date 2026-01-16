@@ -334,6 +334,8 @@ class RentalController extends Controller
             RentalCharge::KIND_SURCHARGE,
             RentalCharge::KIND_FINE,
             RentalCharge::KIND_OTHER,
+            RentalCharge::KIND_ACCONTO,
+            RentalCharge::KIND_BASE_PLUS_DISTANCE_OVERAGE,
         ];
 
         $data = $request->validate([
@@ -367,6 +369,8 @@ class RentalController extends Controller
                 : in_array($data['kind'], [
                     RentalCharge::KIND_BASE,
                     RentalCharge::KIND_DISTANCE_OVERAGE,
+                    RentalCharge::KIND_BASE_PLUS_DISTANCE_OVERAGE,
+                    RentalCharge::KIND_ACCONTO,
                 ], true) && $rental->assignment_id !== null;
 
             RentalCharge::create([
@@ -393,6 +397,16 @@ class RentalController extends Controller
                 'needs_distance_overage'       => $rental->needs_distance_overage_payment,
                 'has_distance_overage_payment' => $rental->has_distance_overage_payment,
             ],
+
+            /**
+             * ✅ Totale acconti PAGATI sul noleggio (serve alla UI per calcolare il residuo quota base).
+             * Lo ricalcoliamo sempre a DB dopo il refresh così è fonte unica e aggiornata.
+             */
+            'acconto_paid_total' => (float) $rental->charges()
+                ->where('kind', RentalCharge::KIND_ACCONTO)
+                ->where('payment_recorded', true)
+                ->sum('amount'),
+
             'status'  => $rental->status,
         ], Response::HTTP_OK);
     }

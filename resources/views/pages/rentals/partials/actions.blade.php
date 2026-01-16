@@ -8,11 +8,25 @@
             hasBasePayment:      @js($rental->has_base_payment),
             hasOveragePayment:   @js($rental->has_distance_overage_payment),
         },
+        // ✅ Totale acconti già PAGATI (iniziale)
+        accontoPaid: {{ (float) $rental->charges()->where('kind','acconto')->where('payment_recorded', true)->sum('amount') }},
+
         overageUrl: '{{ route('rentals.distance_overage', $rental) }}'
     })"
     x-init="init()"
     class="space-y-3"
 >
+    {{-- BADGE acconto registrato (live) --}}
+    <template x-if="Number(accontoPaid) > 0">
+        <div class="flex items-center justify-between rounded-md border border-info/30 bg-info/10 px-3 py-2">
+            <div class="text-sm">
+                <span class="font-medium">Acconto:</span>
+            </div>
+
+            <span class="badge badge-info font-semibold text-sm" x-text="formatEuro(accontoPaid)"></span>
+        </div>
+    </template>
+
     {{-- BADGE pagamento base mancante (serve per chiudere) --}}
     <template x-if="phase !== 'close' && !flags.hasBasePayment">
         <div class="flex items-center justify-between rounded-md border border-warning/30 bg-warning/10 px-3 py-2">
@@ -110,12 +124,17 @@
         {{ (float)($rental->amount ?? 0) }},
         {
             hasBasePayment: @js($rental->has_base_payment),
+            // ✅ Totale acconti già PAGATI (serve per calcolare il residuo quota base)
+            accontoPaid: {{ (float) $rental->charges()->where('kind','acconto')->where('payment_recorded', true)->sum('amount') }},
+
             kinds: [
                 {val:'base',              label:'Quota base (contratto)'},
                 {val:'distance_overage',  label:'Km extra'},
+                {val:'base+distance_overage', label:'Quota base + Km extra'},
                 {val:'damage',            label:'Danni'},
                 {val:'surcharge',         label:'Sovrapprezzo'},
                 {val:'fine',              label:'Multe'},
+                {val:'acconto',          label:'Acconto'},
                 {val:'other',             label:'Altro'},
             ],
         }
@@ -219,6 +238,7 @@ document.addEventListener('alpine:init', () => {
       hasBasePayment:    !!(initial.flags?.hasBasePayment),
       hasOveragePayment: !!(initial.flags?.hasOveragePayment),
     },
+    accontoPaid: Number(initial.accontoPaid || 0),
     overageUrl: initial.overageUrl || null,
     overage: { ready:false, amount:0, cents:0, km:0 },
 
@@ -253,6 +273,7 @@ document.addEventListener('alpine:init', () => {
         const f = e.detail || {};
         if ('has_base_payment' in f)               this.flags.hasBasePayment    = !!f.has_base_payment;
         if ('has_distance_overage_payment' in f)   this.flags.hasOveragePayment = !!f.has_distance_overage_payment;
+        if ('acconto_paid_total' in f) this.accontoPaid = Number(f.acconto_paid_total || 0);
       });
     },
 
@@ -369,9 +390,11 @@ document.addEventListener('alpine:init', () => {
     const defaultKinds = [
       {val:'base',             label:'Quota base (contratto)'},
       {val:'distance_overage', label:'Km extra'},
+      {val:'base+distance_overage', label:'Quota base + Km extra'},
       {val:'damage',           label:'Danni'},
       {val:'surcharge',        label:'Sovrapprezzo'},
       {val:'fine',             label:'Multe'},
+      {val:'acconto',          label:'Acconto'},
       {val:'other',            label:'Altro'},
     ];
     const kindsFromArgs = Array.isArray(arg3?.kinds) ? arg3.kinds
@@ -379,6 +402,9 @@ document.addEventListener('alpine:init', () => {
 
     const initialHasBasePayment =
       !!(arg3?.hasBasePayment ?? arg1?.hasBasePayment ?? false);
+
+    const initialAccontoPaid =
+      Number(arg3?.accontoPaid ?? arg1?.accontoPaid ?? 0);
 
     return {
       open:false,
@@ -389,21 +415,51 @@ document.addEventListener('alpine:init', () => {
       payment_notes:'',
       payment_reference:'',
       description:'', // retro-compat
-
+      accontoPaid: initialAccontoPaid,
       kindsAll: kindsFromArgs || defaultKinds,
       kinds: [],
       hasBasePayment: initialHasBasePayment,
       distanceOverageDue: 0,
+      
+      /**
+       * ✅ Residuo quota base = importo contratto - acconti già pagati.
+       * Non scende mai sotto 0.
+       */
+      baseDue(){
+        const base = Number(defaultAmount || 0);
+        const acc  = Number(this.accontoPaid || 0);
+        return Math.max(0, +(base - acc).toFixed(2));
+      },
+
+      /**
+       * ✅ Residuo "quota base + km extra" (tenendo conto dell'acconto).
+       */
+      basePlusOverageDue(){
+        const over = Number(window.__distanceOverageDue || this.distanceOverageDue || 0);
+        return Math.max(0, +(this.baseDue() + over).toFixed(2));
+      },
 
       // applica filtro “niente quota base se già pagata”
       applyKindsFilter(){
+        const over = Number(window.__distanceOverageDue || this.distanceOverageDue || 0);
+
         this.kinds = this.kindsAll.filter(k => {
+          // base: mostrala solo se NON già pagata
           if (k.val === 'base') return !this.hasBasePayment;
+
+          // ✅ base+distance_overage: mostrala solo se ci sono km extra dovuti
+          if (k.val === 'base+distance_overage') return over > 0;
+
           return true;
         });
 
-        // Se per qualche motivo eri su "base" e diventa pagata, resetto
+        // Se la base diventa pagata mentre sono nel modale, reset tipo
         if (this.hasBasePayment && this.kind === 'base') {
+          this.kind = '';
+        }
+
+        // Se non ci sono km extra, non ha senso restare su "base+distance_overage"
+        if (over <= 0 && this.kind === 'base+distance_overage') {
           this.kind = '';
         }
       },
@@ -434,6 +490,7 @@ document.addEventListener('alpine:init', () => {
 
         this.distanceOverageDue = due;
         this.open = true;
+        this.applyKindsFilter();
 
         const alreadyPaid = !!window.__hasDistanceOveragePayment;
 
@@ -448,7 +505,7 @@ document.addEventListener('alpine:init', () => {
         if (!this.kind && !this.hasBasePayment) {
           this.kind = 'base';
           // ✅ nuovo: prefill esplicito della quota base (modificabile)
-          this.amount = Number(defaultAmount || 0);
+          this.amount = Number(this.baseDue() || 0);
         }
       },
 
@@ -462,9 +519,15 @@ document.addEventListener('alpine:init', () => {
           return;
         }
 
-        // quota base => precompila importo da contratto
+        // quota base => precompila residuo (base - acconto)
         if (this.kind === 'base') {
-          this.amount = Number(defaultAmount || 0);
+          this.amount = Number(this.baseDue() || 0);
+          return;
+        }
+
+        // quota base + km extra => precompila residuo (base - acconto) + km extra
+        if (this.kind === 'base+distance_overage') {
+          this.amount = Number(this.basePlusOverageDue() || 0);
           return;
         }
 
@@ -504,6 +567,32 @@ document.addEventListener('alpine:init', () => {
 
           // Aggiorna i flag in pagina (sicuro anche senza refresh)
           if (data?.flags) window.dispatchEvent(new CustomEvent('rental-flags-updated', { detail: data.flags }));
+          // passa anche il totale acconti pagati ai listener della pagina (badge in alto)
+          if (typeof data?.acconto_paid_total !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('rental-flags-updated', {
+              detail: { acconto_paid_total: Number(data.acconto_paid_total || 0) }
+            }));
+          }
+
+          /**
+           * Aggiorna totale acconti pagati lato UI.
+           * Nota: accontoPaid iniziale arriva da Blade, ma dopo un pagamento non cambia
+           * finché non lo aggiorniamo con la risposta del backend.
+           */
+          if (typeof data?.acconto_paid_total !== 'undefined') {
+            this.accontoPaid = Number(data.acconto_paid_total || 0);
+          }
+
+          /**
+           * Se l’utente sta registrando un pagamento "base" o "base+km extra",
+           * riallineiamo l’importo precompilato ai nuovi dati (base - acconto).
+           */
+          if (this.kind === 'base') {
+            this.amount = Number(this.baseDue() || 0);
+          }
+          if (this.kind === 'base+distance_overage') {
+            this.amount = Number(this.basePlusOverageDue() || 0);
+          }
           if (this.kind === 'distance_overage') {
             window.dispatchEvent(new CustomEvent('rental-flags-updated', {
               detail: { has_distance_overage_payment: true }
