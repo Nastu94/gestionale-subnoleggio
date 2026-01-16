@@ -58,9 +58,9 @@
             */
             $tabs = [
                 'data'        => 'Dati',
+                'pickup'      => 'Checklist Uscita',
                 'contract'    => 'Contratto',
-                'pickup'      => 'Checklist Pickup',
-                'return'      => 'Checklist Return',
+                'return'      => 'Checklist Rientro',
                 'damages'     => 'Danni',
                 'attachments' => 'Allegati',
                 'timeline'    => 'Timeline',
@@ -125,12 +125,12 @@
                 @include('pages.rentals.partials.tab-data', ['rental'=>$rental])
                 @break
 
-            @case('contract')
-                @include('pages.rentals.partials.tab-contract', ['rental'=>$rental])
-                @break
-
             @case('pickup')
                 @include('pages.rentals.partials.tab-checklist', ['rental'=>$rental, 'type'=>'pickup'])
+                @break
+
+            @case('contract')
+                @include('pages.rentals.partials.tab-contract', ['rental'=>$rental])
                 @break
 
             @case('return')

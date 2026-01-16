@@ -483,14 +483,22 @@ class GenerateRentalContract
             ? $rental->getFirstMedia('signature_customer')
             : null;
 
-        $organization = $lessorOrg;
+        // Organization del rental (renter) - fallback coerente con tab-contract
+        $renterOrg = $rental->organization;
 
-        $lessorSignatureMedia = null;
-        if ($organization && method_exists($organization, 'getFirstMedia')) {
-            $lessorSignatureMedia = $organization->getFirstMedia('signature_company');
+        // 1) override sul rental (se presente) vince
+        $lessorSignatureMedia = method_exists($rental, 'getFirstMedia')
+            ? $rental->getFirstMedia('signature_lessor')
+            : null;
+
+        // 2) firma dell’effettivo noleggiante (lessorOrg)
+        if (!$lessorSignatureMedia && $lessorOrg && method_exists($lessorOrg, 'getFirstMedia')) {
+            $lessorSignatureMedia = $lessorOrg->getFirstMedia('signature_company');
         }
-        if (!$lessorSignatureMedia && method_exists($rental, 'getFirstMedia')) {
-            $lessorSignatureMedia = $rental->getFirstMedia('signature_lessor');
+
+        // 3) fallback: firma del renter (coerente con la tab)
+        if (!$lessorSignatureMedia && $renterOrg && method_exists($renterOrg, 'getFirstMedia')) {
+            $lessorSignatureMedia = $renterOrg->getFirstMedia('signature_company');
         }
 
         $signatureCustomerDataUri = $this->mediaToDataUri($customerSignatureMedia);
