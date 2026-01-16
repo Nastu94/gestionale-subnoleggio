@@ -95,6 +95,24 @@
                                     text-gray-900 dark:text-gray-100 w-full">
                         @error('doc_id_number') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
                     </div>
+                    
+                    {{-- Codice fiscale --}}
+                    <div>
+                        <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Codice fiscale</label>
+                        <input type="text" wire:model.defer="tax_code"
+                            class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
+                                    text-gray-900 dark:text-gray-100 w-full">
+                        @error('tax_code') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
+                    </div>
+
+                    {{-- Partita IVA --}}
+                    <div>
+                        <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Partita IVA</label>
+                        <input type="text" wire:model.defer="vat"
+                            class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
+                                    text-gray-900 dark:text-gray-100 w-full">
+                        @error('vat') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
+                    </div>
 
                     {{-- Numero patente (nuovo) --}}
                     <div>

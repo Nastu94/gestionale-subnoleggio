@@ -284,12 +284,12 @@
 
                         <div class="grid md:grid-cols-2 gap-3">
                             <label>
-                                <span class="block mb-1 text-sm">Email</span>
+                                <span class="block mb-1 text-sm">Email *</span>
                                 <input type="email" wire:model.defer="customerForm.email" class="{{ $input }}" />
                                 @error('customerForm.email') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                             </label>
                             <label>
-                                <span class="block mb-1 text-sm">Telefono</span>
+                                <span class="block mb-1 text-sm">Telefono *</span>
                                 <input type="text" wire:model.defer="customerForm.phone" class="{{ $input }}" />
                                 @error('customerForm.phone') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                             </label>
@@ -297,7 +297,7 @@
 
                         <div class="grid md:grid-cols-2 gap-3">
                             <label>
-                                <span class="block mb-1 text-sm">Tipo Documento d'identità *</span>
+                                <span class="block mb-1 text-sm">Tipo Documento d'identità</span>
                                 <select wire:model.defer="customerForm.doc_id_type" class="{{ $input }}">
                                     <option value="">— Seleziona —</option>
                                     <option value="id">Carta d'identità</option>
@@ -307,9 +307,23 @@
                             </label>
 
                             <label>
-                                <span class="block mb-1 text-sm">Numero documento d'identità *</span>
+                                <span class="block mb-1 text-sm">Numero documento d'identità</span>
                                 <input type="text" wire:model.defer="customerForm.doc_id_number" class="{{ $input }}" />
                                 @error('customerForm.doc_id_number') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                            </label>
+                        </div>
+
+                        <div class="grid md:grid-cols-2 gap-3">
+                            <label>
+                                <span class="block mb-1 text-sm">Codice fiscale</span>
+                                <input type="text" wire:model.defer="customerForm.tax_code" class="{{ $input }}" />
+                                @error('customerForm.tax_code') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                            </label>
+
+                            <label>
+                                <span class="block mb-1 text-sm">Partita IVA</span>
+                                <input type="text" wire:model.defer="customerForm.vat" class="{{ $input }}" />
+                                @error('customerForm.vat') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                             </label>
                         </div>
 

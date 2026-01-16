@@ -57,22 +57,38 @@
                     <dd class="font-medium">{{ $rental->reference ?? $rental->display_number_label }}</dd>
                 </div>
 
-                <div>
+                <div class="col-span-2">
                     <dt class="opacity-70">Cliente</dt>
                     <dd class="font-medium flex items-center justify-between gap-2">
                         <span>{{ optional($rental->customer)->name ?? '—' }}</span>
 
                         @if(in_array($rental->status, ['draft','reserved'], true))
-                            <button
-                                type="button"
-                                class="btn btn-xs shadow-none
-                                        !bg-neutral !text-neutral-content !border-neutral
-                                        hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-neutral/30
-                                        disabled:opacity-50 disabled:cursor-not-allowed p-2"
-                                wire:click="openCustomerModal('primary')"
-                            >
-                                {{ empty($rental->customer_id) ? 'Aggiungi cliente' : 'Modifica cliente' }}
-                            </button>
+                            <div class="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    class="btn btn-xs shadow-none
+                                            !bg-neutral !text-neutral-content !border-neutral
+                                            hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-neutral/30
+                                            disabled:opacity-50 disabled:cursor-not-allowed p-2"
+                                    wire:click="openCustomerModal('primary')"
+                                >
+                                    {{ empty($rental->customer_id) ? 'Aggiungi Cliente' : 'Modifica Cliente' }}
+                                </button>
+
+                                @if(!empty($rental->customer_id))
+                                    <button
+                                        type="button"
+                                        class="btn btn-xs shadow-none
+                                            !bg-rose-600 !text-white !border-rose-600
+                                            hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-rose-300/40
+                                            disabled:opacity-50 disabled:cursor-not-allowed p-2"
+                                        onclick="confirm('Rimuovere il cliente dal noleggio?') || event.stopImmediatePropagation()"
+                                        wire:click="detachPrimaryCustomer"
+                                    >
+                                        Rimuovi
+                                    </button>
+                                @endif
+                            </div>
                         @endif
                     </dd>
                 </div>
@@ -84,16 +100,32 @@
                             <span>{{ optional($rental->secondDriver)->name ?? '—' }}</span>
 
                             @if(in_array($rental->status, ['draft','reserved'], true))
-                                <button
-                                    type="button"
-                                    class="btn btn-xs shadow-none
-                                            !bg-neutral !text-neutral-content !border-neutral
-                                            hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-neutral/30
-                                            disabled:opacity-50 disabled:cursor-not-allowed p-2"
-                                    wire:click="openCustomerModal('second')"
-                                >
-                                    {{ empty($rental->second_driver_id) ? 'Aggiungi seconda guida' : 'Modifica seconda guida' }}
-                                </button>
+                                <div class="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        class="btn btn-xs shadow-none
+                                                !bg-neutral !text-neutral-content !border-neutral
+                                                hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-neutral/30
+                                                disabled:opacity-50 disabled:cursor-not-allowed p-2"
+                                        wire:click="openCustomerModal('second')"
+                                    >
+                                        {{ optional($rental->secondDriver)->id ? 'Modifica seconda guida' : 'Aggiungi seconda guida' }}
+                                    </button>
+
+                                    @if(optional($rental->secondDriver)->id)
+                                        <button
+                                            type="button"
+                                            class="btn btn-xs shadow-none
+                                                !bg-rose-600 !text-white !border-rose-600
+                                                hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-rose-300/40
+                                                disabled:opacity-50 disabled:cursor-not-allowed p-2"
+                                            onclick="confirm('Rimuovere la seconda guida dal noleggio?') || event.stopImmediatePropagation()"
+                                            wire:click="detachSecondDriver"
+                                        >
+                                            Rimuovi
+                                        </button>
+                                    @endif
+                                </div>
                             @endif
                         </dd>
                     </div>
@@ -301,8 +333,28 @@
             <div class="modal-box max-w-5xl">
                 <div class="flex items-start justify-between gap-4">
                     <div>
+                        @php
+                            /**
+                            * Titolo coerente con il contesto del modale:
+                            * - primary: cliente principale
+                            * - second : seconda guida
+                            *
+                            * Nota: $this->customerRole viene impostato in openCustomerModal().
+                            */
+                            $isSecond = ($this->customerRole ?? 'primary') === 'second';
+
+                            // Determina se esiste già un record collegato al rental per il ruolo corrente.
+                            $hasLinked = $isSecond
+                                ? !empty($rental->secondDriver)
+                                : !empty($rental->customer);
+
+                            $title = $isSecond
+                                ? ($hasLinked ? 'Modifica seconda guida' : 'Aggiungi seconda guida')
+                                : ($hasLinked ? 'Modifica cliente' : 'Aggiungi cliente');
+                        @endphp
+
                         <h3 class="text-lg font-semibold">
-                            {{ $rental->customer ? 'Cambia Cliente' : 'Aggiungi Cliente' }}
+                            {{ $title }}
                         </h3>
                         <p class="text-sm opacity-70">
                             Seleziona un cliente esistente per precompilare i dati, oppure creane uno nuovo.
@@ -372,21 +424,46 @@
 
                             <div class="grid md:grid-cols-2 gap-3">
                                 <label class="block">
-                                    <span class="block mb-1 text-sm">Email</span>
+                                    <span class="block mb-1 text-sm">Email *</span>
                                     <input type="email" wire:model.defer="customerForm.email" class="{{ $input }}" />
                                     @error('customerForm.email') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                                 </label>
 
                                 <label class="block">
-                                    <span class="block mb-1 text-sm">Telefono</span>
+                                    <span class="block mb-1 text-sm">Telefono *</span>
                                     <input type="text" wire:model.defer="customerForm.phone" class="{{ $input }}" />
                                     @error('customerForm.phone') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                                 </label>
                             </div>
 
+                            {{-- Dati fiscali (opzionali) --}}
                             <div class="grid md:grid-cols-2 gap-3">
                                 <label class="block">
-                                    <span class="block mb-1 text-sm">Tipo Documento d'identità *</span>
+                                    <span class="block mb-1 text-sm">Codice fiscale</span>
+                                    <input
+                                        type="text"
+                                        wire:model.defer="customerForm.tax_code"
+                                        class="{{ $input }}"
+                                        placeholder="Inserisci CF"
+                                    />
+                                    @error('customerForm.tax_code') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                                </label>
+
+                                <label class="block">
+                                    <span class="block mb-1 text-sm">Partita IVA</span>
+                                    <input
+                                        type="text"
+                                        wire:model.defer="customerForm.vat"
+                                        class="{{ $input }}"
+                                        placeholder="Inserisci P.IVA"
+                                    />
+                                    @error('customerForm.vat') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                                </label>
+                            </div>
+
+                            <div class="grid md:grid-cols-2 gap-3">
+                                <label class="block">
+                                    <span class="block mb-1 text-sm">Tipo Documento d'identità</span>
                                     <select wire:model.defer="customerForm.doc_id_type" class="{{ $input }}">
                                         <option value="">— Seleziona —</option>
                                         <option value="id">Carta d'identità</option>
@@ -396,7 +473,7 @@
                                 </label>
 
                                 <label class="block">
-                                    <span class="block mb-1 text-sm">Numero documento d'identità *</span>
+                                    <span class="block mb-1 text-sm">Numero documento d'identità</span>
                                     <input type="text" wire:model.defer="customerForm.doc_id_number" class="{{ $input }}" />
                                     @error('customerForm.doc_id_number') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                                 </label>

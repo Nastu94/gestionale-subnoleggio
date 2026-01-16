@@ -25,7 +25,15 @@ class Show extends Component
     // Bind form (campi esistenti)
     public ?string $name = null;
     public ?string $doc_id_type = null;         // select UI: id|passport (altri valori preservati in sola lettura)
-    public ?string $doc_id_number = null;
+    public ?string $doc_id_number = null;    /**
+     * Codice Fiscale (IT) - 16 caratteri tipici.
+     */
+    public ?string $tax_code = null;
+
+    /**
+     * Partita IVA (IT) - 11 cifre tipiche.
+     */
+    public ?string $vat = null;
     public ?string $birthdate = null;           // Y-m-d
     public ?string $email = null;
     public ?string $phone = null;
@@ -52,7 +60,7 @@ class Show extends Component
         // Precarico valori dal model (nessun rename)
         $this->fill($customer->only([
             'name','doc_id_type','doc_id_number','email','phone',
-            'driver_license_number','address_line','city','province','postal_code','country_code','notes',
+            'driver_license_number','address_line','city','province','postal_code','country_code','notes','tax_code','vat',
         ]));
 
         // Normalizza date per input[type=date]
@@ -86,6 +94,9 @@ class Show extends Component
             // Patente (nuovi)
             'driver_license_number'      => ['nullable','string','max:64'],
             'driver_license_expires_at'  => ['nullable','date','after:1900-01-01'],
+            
+            'tax_code' => ['nullable', 'string', 'max:32'],
+            'vat'      => ['nullable', 'string', 'max:32'],
 
             // Residenza (unico indirizzo)
             'address_line'  => ['nullable','string','max:191'],
@@ -109,6 +120,21 @@ class Show extends Component
 
         $data = $this->validate();
 
+        /**
+         * Normalizzazione:
+         * - tax_code: trim + uppercase + rimozione spazi
+         * - vat: trim + rimozione spazi
+         */
+        if (array_key_exists('tax_code', $data) && is_string($data['tax_code'])) {
+            $v = strtoupper(preg_replace('/\s+/', '', trim($data['tax_code'])));
+            $data['tax_code'] = $v !== '' ? $v : null;
+        }
+
+        if (array_key_exists('vat', $data) && is_string($data['vat'])) {
+            $v = preg_replace('/\s+/', '', trim($data['vat']));
+            $data['vat'] = $v !== '' ? $v : null;
+        }
+
         // Assign & save (se il Model ha cast sulle date, la stringa Y-m-d è ok)
         $this->customer->fill($data)->save();
 
@@ -116,7 +142,7 @@ class Show extends Component
         $this->customer->refresh();
         $this->fill($this->customer->only([
             'name','doc_id_type','doc_id_number','email','phone',
-            'driver_license_number','address_line','city','province','postal_code','country_code','notes',
+            'driver_license_number','address_line','city','province','postal_code','country_code','notes','tax_code','vat',
         ]));
         $this->birthdate = optional($this->customer->birthdate)->format('Y-m-d');
         $this->driver_license_expires_at = optional($this->customer->driver_license_expires_at)->format('Y-m-d');

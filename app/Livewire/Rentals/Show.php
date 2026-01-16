@@ -79,6 +79,8 @@ class Show extends Component
         'name'                     => null,
         'email'                    => null,
         'phone'                    => null,
+        'tax_code'                 => null, // Codice fiscale
+        'vat'                      => null, // Partita IVA
         'doc_id_type'              => null,
         'doc_id_number'            => null,
         'birthdate'                => null,
@@ -177,6 +179,8 @@ class Show extends Component
             'name'                     => $c->name,
             'email'                    => $c->email,
             'phone'                    => $c->phone,
+            'tax_code'                 => $c->tax_code,
+            'vat'                      => $c->vat,
             'doc_id_type'              => $c->doc_id_type,
             'doc_id_number'            => $c->doc_id_number,
 
@@ -200,17 +204,24 @@ class Show extends Component
     protected function customerRules(): array
     {
         return [
+            // ✅ Minimo obbligatorio (coerente con wizard)
             'customerForm.name'          => ['required', 'string', 'max:255'],
-            'customerForm.email'         => ['nullable', 'email', 'max:255'],
-            'customerForm.phone'         => ['nullable', 'string', 'max:32'],
+            'customerForm.email'         => ['required', 'email', 'max:255'],
+            'customerForm.phone'         => ['required', 'string', 'max:32'],
 
-            'customerForm.doc_id_type'   => ['required', 'in:id,passport'],
-            'customerForm.doc_id_number' => ['required', 'string', 'max:64'],
+            // ✅ NUOVI CAMPI FISCALI (opzionali)
+            'customerForm.tax_code'      => ['nullable', 'string', 'max:32'],
+            'customerForm.vat'           => ['nullable', 'string', 'max:32'],
 
+            // ✅ Documento (ora opzionale)
+            'customerForm.doc_id_type'   => ['nullable', 'in:id,passport'],
+            'customerForm.doc_id_number' => ['nullable', 'string', 'max:64'],
+
+            // Patente (opzionale)
             'customerForm.driver_license_number'     => ['nullable', 'string', 'max:64'],
             'customerForm.driver_license_expires_at' => ['nullable', 'date'],
 
-            // ✅ DB fields reali
+            // Dati anagrafici/residenza (opzionali)
             'customerForm.birthdate'     => ['nullable', 'date'],
             'customerForm.address_line'  => ['nullable', 'string', 'max:191'],
             'customerForm.city'          => ['nullable', 'string', 'max:128'],
@@ -291,6 +302,99 @@ class Show extends Component
     }
 
     /* -------------------------------------------------------------------------
+     |  RIMOZIONE ASSOCIAZIONE CLIENTE / SECONDA GUIDA
+     * ------------------------------------------------------------------------- */
+
+    /**
+     * Scollega il cliente principale dal noleggio.
+     *
+     * Regole:
+     * - consentito solo in status draft/reserved
+     * - se esiste una seconda guida, blocchiamo: va rimossa prima la seconda guida
+     *   per evitare stati “strani” (seconda guida senza cliente principale).
+     */
+    public function detachPrimaryCustomer(): void
+    {
+        $this->authorize('update', $this->rental);
+
+        if (!in_array($this->rental->status, ['draft', 'reserved'], true)) {
+            $this->dispatch('toast', type: 'error', message: 'Non è possibile modificare i dati conducente in questa fase del noleggio.');
+            return;
+        }
+
+        // Se c'è una seconda guida, prima va rimossa lei.
+        $fkSecond = $this->secondDriverForeignKey();
+        if (!empty($this->rental->{$fkSecond})) {
+            $this->dispatch('toast', type: 'warning', message: 'Rimuovi prima la seconda guida, poi potrai rimuovere il cliente principale.');
+            return;
+        }
+
+        try {
+            DB::transaction(function () {
+                // Scollega FK cliente
+                $this->rental->customer_id = null;
+                $this->rental->save();
+            });
+
+            // Refresh relazioni per aggiornare subito UI
+            $this->rental->refresh();
+            $this->rental->load(['customer', 'secondDriver']);
+
+            // Reset stato modale/form per evitare residui in UI
+            $this->customerModalOpen = false;
+            $this->resetCustomerForm();
+
+            $this->dispatch('toast', type: 'success', message: 'Cliente rimosso dal noleggio.');
+            $this->dispatch('$refresh');
+        } catch (\Throwable $e) {
+            report($e);
+            $this->dispatch('toast', type: 'error', message: 'Errore durante la rimozione del cliente.');
+        }
+    }
+
+    /**
+     * Scollega la seconda guida dal noleggio.
+     *
+     * Regole:
+     * - consentito solo in status draft/reserved
+     */
+    public function detachSecondDriver(): void
+    {
+        $this->authorize('update', $this->rental);
+
+        if (!in_array($this->rental->status, ['draft', 'reserved'], true)) {
+            $this->dispatch('toast', type: 'error', message: 'Non è possibile modificare i dati conducente in questa fase del noleggio.');
+            return;
+        }
+
+        $fk = $this->secondDriverForeignKey();
+
+        try {
+            DB::transaction(function () use ($fk) {
+                // Scollega FK seconda guida (supporta sia second_driver_customer_id che second_driver_id)
+                $this->rental->{$fk} = null;
+                $this->rental->save();
+            });
+
+            // Se avevi logica che ricalcola l'importo quando cambia la seconda guida, riallineiamo
+            $this->rental->refresh();
+            $this->rental->load(['customer', 'secondDriver']);
+
+            $this->syncRentalAmountFromSnapshot();
+
+            // Reset stato modale/form per evitare residui in UI
+            $this->customerModalOpen = false;
+            $this->resetCustomerForm();
+
+            $this->dispatch('toast', type: 'success', message: 'Seconda guida rimossa dal noleggio.');
+            $this->dispatch('$refresh');
+        } catch (\Throwable $e) {
+            report($e);
+            $this->dispatch('toast', type: 'error', message: 'Errore durante la rimozione della seconda guida.');
+        }
+    }
+
+    /* -------------------------------------------------------------------------
      |  SALVATAGGIO CUSTOMER (primary/second)
      * ------------------------------------------------------------------------- */
 
@@ -308,6 +412,12 @@ class Show extends Component
         // Normalizzazione country ISO2
         if (!empty($this->customerForm['country_code'])) {
             $this->customerForm['country_code'] = strtoupper(trim((string) $this->customerForm['country_code']));
+        }
+        if (!empty($this->customerForm['tax_code'])) {
+            $this->customerForm['tax_code'] = strtoupper(trim((string) $this->customerForm['tax_code']));
+        }
+        if (!empty($this->customerForm['vat'])) {
+            $this->customerForm['vat'] = strtoupper(trim((string) $this->customerForm['vat']));
         }
 
         $fk = $this->rentalForeignKeyForRole();

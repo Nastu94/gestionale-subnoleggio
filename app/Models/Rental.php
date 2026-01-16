@@ -160,18 +160,104 @@ class Rental extends Model implements SpatieHasMedia
         return $row?->payment_recorded_at;
     }
 
-    /** Km eccedenti (se non hai le checklist, cade su mileage_in/out) */
+    /**
+     * Km eccedenti:
+     * - Preferisce i km delle checklist (campo "mileage"), fallback su mileage_in/out del rental.
+     * - I km inclusi vengono risolti da snapshot contrattuale (freeze-once) se presente,
+     *   altrimenti fallback a 0 (nessun incluso noto).
+     */
     public function getDistanceOverageKmAttribute(): int
     {
-        $pickupKm   = optional($this->pickupChecklist)->odometer ?? $this->mileage_out;
-        $returnKm   = optional($this->returnChecklist)->odometer ?? $this->mileage_in;
-        $includedKm = $this->included_km ?? 0;
+        // ✅ Checklist: nel tuo progetto il campo è "mileage" (non "odometer")
+        $pickupKm = optional($this->pickupChecklist)->mileage ?? $this->mileage_out;
+        $returnKm = optional($this->returnChecklist)->mileage ?? $this->mileage_in;
 
-        if ($pickupKm === null || $returnKm === null) return 0;
+        // Km inclusi: prova da snapshot dedicato (se presente), altrimenti 0
+        $includedKm = (int) ($this->resolveIncludedKm() ?? 0);
 
-        $delta = (int) $returnKm - (int) $pickupKm - (int) $includedKm;
+        // Se mancano dati km, niente overage
+        if ($pickupKm === null || $returnKm === null) {
+            return 0;
+        }
+
+        // Se per qualche motivo i km tornano "invertiti", non generiamo overage
+        $deltaRaw = (int) $returnKm - (int) $pickupKm;
+        if ($deltaRaw <= 0) {
+            return 0;
+        }
+
+        $delta = $deltaRaw - $includedKm;
+
         return $delta > 0 ? $delta : 0;
     }
+
+/**
+ * Risolve i km inclusi nel noleggio.
+ * Fonte preferita: tabella snapshot (freeze-once) -> campo JSON pricing_snapshot.
+ *
+ * @return int|null
+ */
+protected function resolveIncludedKm(): ?int
+{
+    /**
+     * ✅ Fonte primaria: RentalContractSnapshot.pricing_snapshot (castato ad array).
+     * NB: nel tuo model RentalContractSnapshot NON esiste una colonna "included_km".
+     */
+    $snapModel = null;
+
+    if ($this->relationLoaded('contractSnapshot')) {
+        $snapModel = $this->getRelation('contractSnapshot');
+    }
+
+    if (!$snapModel) {
+        try {
+            $snapModel = $this->contractSnapshot()->first();
+        } catch (\Throwable $e) {
+            // Non blocchiamo mai: valore accessorio
+            $snapModel = null;
+        }
+    }
+
+    if (!$snapModel) {
+        return null;
+    }
+
+    /** @var array $snap */
+    $snap = is_array($snapModel->pricing_snapshot ?? null) ? $snapModel->pricing_snapshot : [];
+
+    /**
+     * ✅ Chiavi possibili (dipende da come hai salvato lo snapshot nel generator):
+     * - included_km_total (molto probabile)
+     * - included_km (fallback)
+     * - km_included_total (fallback)
+     */
+    $candidates = [
+        $snap['included_km_total'] ?? null,
+        $snap['included_km'] ?? null,
+        $snap['km_included_total'] ?? null,
+    ];
+
+    foreach ($candidates as $v) {
+        if (is_numeric($v)) {
+            $n = (int) $v;
+            return $n > 0 ? $n : 0;
+        }
+    }
+
+    /**
+     * ✅ Fallback ragionato:
+     * se esistono km_daily_limit e days, ricostruiamo gli inclusi.
+     */
+    $kmDaily = $snap['km_daily_limit'] ?? null;
+    $days    = $snap['days'] ?? null;
+
+    if (is_numeric($kmDaily) && is_numeric($days)) {
+        $computed = (int) $kmDaily * max(1, (int) $days);
+        return $computed > 0 ? $computed : 0;
+    }
+
+    return null;
+}
 
     /** Serve un pagamento per overage? */
     public function getNeedsDistanceOveragePaymentAttribute(): bool

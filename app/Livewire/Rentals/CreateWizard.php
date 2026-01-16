@@ -46,6 +46,8 @@ class CreateWizard extends Component
         'phone'         => null,
         'doc_id_type'   => null,
         'doc_id_number' => null,
+        'tax_code'     => null,
+        'vat'          => null,
         'birth_date'    => null,
         'address'       => null,
         'city'          => null,
@@ -253,23 +255,36 @@ class CreateWizard extends Component
         ];
     }
 
-    /** Regole per creazione/aggiornamento cliente */
+    /**
+     * Regole per creazione/aggiornamento cliente nello Wizard.
+     *
+     * In questa fase richiediamo solo i contatti minimi.
+     * Tutti gli altri dati sono compilabili in un secondo momento (Customer/Show).
+     */
     protected function rulesCustomerCreate(): array
     {
         return [
-            'customerForm.name'          => ['required','string','max:255'], //obbligratorio
-            'customerForm.email'         => ['required','email','max:255'],  //obbligratorio
-            'customerForm.phone'         => ['required','string','max:50'],  //obbligratorio
-            'customerForm.doc_id_type'   => ['required','in:id,passport'],
-            'customerForm.doc_id_number' => ['required','string','max:100'],
-            'customerForm.birth_date'    => ['required','date'],
-            'customerForm.address'       => ['required','string','max:255'],
-            'customerForm.city'          => ['required','string','max:100'],
-            'customerForm.province'      => ['required','string','max:10'],
-            'customerForm.zip'           => ['required','string','max:20'],
-            'customerForm.country_code'  => ['required','string','max:2'],
-            'customerForm.driver_license_number'      => ['required','string','max:64'],
-            'customerForm.driver_license_expires_at'  => ['required','date'],
+            // ✅ MINIMO OBBLIGATORIO
+            'customerForm.name'  => ['required','string','max:255'],
+            'customerForm.email' => ['required','email','max:255'],
+            'customerForm.phone' => ['required','string','max:50'],
+
+            // ✅ OPZIONALI
+            'customerForm.doc_id_type'   => ['nullable','in:id,passport'],
+            'customerForm.doc_id_number' => ['nullable','string','max:100'],
+
+            'customerForm.tax_code'      => ['nullable','string','max:32'],
+            'customerForm.vat'           => ['nullable','string','max:32'],
+
+            'customerForm.birth_date'    => ['nullable','date'],
+            'customerForm.address'       => ['nullable','string','max:255'],
+            'customerForm.city'          => ['nullable','string','max:100'],
+            'customerForm.province'      => ['nullable','string','max:10'],
+            'customerForm.zip'           => ['nullable','string','max:20'],
+            'customerForm.country_code'  => ['nullable','string','max:2'],
+
+            'customerForm.driver_license_number'      => ['nullable','string','max:64'],
+            'customerForm.driver_license_expires_at'  => ['nullable','date'],
         ];
     }
 
@@ -575,6 +590,8 @@ class CreateWizard extends Component
             'phone'         => $customer->phone,
             'doc_id_type'   => $customer->doc_id_type,
             'doc_id_number' => $customer->doc_id_number,
+            'tax_code'     => $customer->tax_code,
+            'vat'          => $customer->vat,
             'birth_date'    => optional($customer->birthdate)->format('Y-m-d'),
             'address'       => $customer->address_line,
             'city'          => $customer->city,
@@ -607,9 +624,10 @@ class CreateWizard extends Component
             'name'                        => $this->customerForm['name'],
             'email'                       => $this->customerForm['email'],
             'phone'                       => $this->customerForm['phone'],
-            'doc_id_type'                 => $this->customerForm['doc_id_type'],
-            'doc_id_number'               => $this->customerForm['doc_id_number'],
-
+            'doc_id_type'                 => $this->nullIfBlank($this->customerForm['doc_id_type']),
+            'doc_id_number'               => $this->nullIfBlank($this->customerForm['doc_id_number']),
+            'tax_code'                    => $this->normalizeTaxCode($this->customerForm['tax_code'] ?? null),
+            'vat'                         => $this->normalizeVat($this->customerForm['vat'] ?? null),
             // ⚠️ QUI ERA IL PROBLEMA
             'birthdate'                   => $this->castDate($this->customerForm['birth_date']),
             'address_line'                => $this->customerForm['address'],
@@ -617,7 +635,7 @@ class CreateWizard extends Component
 
             'city'                        => $this->customerForm['city'],
             'province'                    => $this->customerForm['province'],
-            'country_code'                => $this->customerForm['country_code'],
+            'country_code'                => $this->nullIfBlank($this->customerForm['country_code']),
 
             'driver_license_number'       => $this->customerForm['driver_license_number'],
             'driver_license_expires_at'   => $this->castDate($this->customerForm['driver_license_expires_at']),
@@ -636,6 +654,43 @@ class CreateWizard extends Component
         $this->customerPopulated = true;
         $this->saveDraft();
     }
+
+    /**
+     * Ritorna null se stringa vuota, altrimenti trimmed.
+     */
+    protected function nullIfBlank(?string $v): ?string
+    {
+        if ($v === null) return null;
+        $t = trim($v);
+        return $t === '' ? null : $t;
+    }
+
+    /**
+     * Normalizza Codice Fiscale:
+     * - trim, rimuove spazi, uppercase
+     */
+    protected function normalizeTaxCode(?string $v): ?string
+    {
+        if ($v === null) return null;
+
+        $norm = strtoupper(preg_replace('/\s+/', '', trim($v)));
+
+        return $norm !== '' ? $norm : null;
+    }
+
+    /**
+     * Normalizza Partita IVA:
+     * - trim, rimuove spazi
+     */
+    protected function normalizeVat(?string $v): ?string
+    {
+        if ($v === null) return null;
+
+        $norm = preg_replace('/\s+/', '', trim($v));
+
+        return $norm !== '' ? $norm : null;
+    }
+
 
     /** Genera il contratto (step 3) */
     public function generateContract(GenerateRentalContract $service): void
@@ -828,23 +883,22 @@ class CreateWizard extends Component
         // Data/ora di riconsegna pianificata
         $end = $this->castDate($this->rentalData['planned_return_at'] ?? null);
 
-        // Scadenza patente (solo data) dal form cliente
-        $expires = $this->castDate($this->customerForm['driver_license_expires_at'] ?? null);
-
-        // Se mancano i dati necessari, non blocchiamo qui
-        if (!$end || !$expires) {
+        // Se non ho una riconsegna, non posso validare
+        if (!$end) {
             return;
         }
 
-        // Consideriamo valida la patente fino alle 23:59:59 del giorno di scadenza
+        // Se non ho scadenza patente, in questa fase non blocchiamo
+        $expires = $this->castDate($this->customerForm['driver_license_expires_at'] ?? null);
+        if (!$expires) {
+            return;
+        }
+
         $expiresEndOfDay = $expires->copy()->endOfDay();
 
-        // Se la riconsegna è successiva al termine della giornata di scadenza → blocco
         if ($end->greaterThan($expiresEndOfDay)) {
-            // Feedback UI immediato
             $this->dispatch('toast', type: 'error', message: 'La patente del cliente risulta scadere prima della fine del noleggio.');
 
-            // Errori di validazione associati sia alla patente sia alla data di riconsegna
             throw ValidationException::withMessages([
                 'customerForm.driver_license_expires_at' => 'La patente deve essere valida almeno fino alla data/ora di riconsegna.',
                 'rentalData.planned_return_at'           => 'La riconsegna non può essere successiva alla scadenza della patente.',

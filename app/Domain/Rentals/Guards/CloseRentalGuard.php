@@ -58,7 +58,15 @@ class CloseRentalGuard
         }
 
         // 5) Km extra dovuti ⇒ deve esistere un pagamento distance_overage
-        if ($rental->needs_distance_overage_payment && !$rental->has_distance_overage_payment) {
+        $overageKm = (int) ($rental->distance_overage_km ?? 0);
+
+        /**
+         * ✅ Guardia robusta:
+         * - Non ci fidiamo solo del booleano needs_distance_overage_payment,
+         *   ma del numero reale di km extra calcolati.
+         * - Se overageKm è 0, NON può bloccare la chiusura.
+         */
+        if ($overageKm > 0 && !$rental->has_distance_overage_payment) {
             return $this->fail('overage_unpaid', 'Devi registrare il pagamento dei km extra prima di chiudere.');
         }
 
