@@ -727,6 +727,14 @@ class Show extends Component
              */
             $generator->handle($this->rental, null, null, null, false, true);
 
+            // ✅ NEW: genera pickup checklist firmata se manca
+            try {
+                $this->ensurePickupChecklistSignedPdf();
+            } catch (\Throwable $e) {
+                report($e);
+                $this->dispatch('toast', type: 'warning', message: 'Contratto firmato generato, ma non sono riuscito a generare la checklist pickup firmata.');
+            }
+
             $this->rental->refresh();
 
             $this->dispatch('toast', type: 'success', message: 'Contratto firmato generato.');
@@ -899,6 +907,37 @@ class Show extends Component
         $raw['notes']     = isset($raw['notes']) ? (string) $raw['notes'] : '';
 
         return $raw;
+    }
+
+    /** Garantisce che esista il PDF firmato per la checklist di pickup più recente */
+    private function ensurePickupChecklistSignedPdf(): void
+    {
+        $this->rental->loadMissing(['checklists.media']);
+
+        /** @var \App\Models\RentalChecklist|null $pickup */
+        $pickup = $this->rental->checklists
+            ->where('type', 'pickup')
+            ->sortByDesc('created_at')
+            ->first();
+
+        if (!$pickup) {
+            return; // nessuna pickup checklist
+        }
+
+        // ✅ Se esiste già il PDF firmato in questa collection, stop
+        if (method_exists($pickup, 'getMedia')) {
+            if ($pickup->getMedia('checklist_pickup_signed')->isNotEmpty()) {
+                return;
+            }
+        }
+
+        // Se è lockata, il tuo metodo impedisce rigenerazione
+        if (method_exists($pickup, 'isLocked') && $pickup->isLocked()) {
+            return;
+        }
+
+        // Best-effort: genera il firmato
+        $this->generateSignedChecklistPdf((int) $pickup->id);
     }
 
     /**
