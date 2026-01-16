@@ -495,8 +495,8 @@ document.addEventListener('alpine:init', () => {
         this.applyKindsFilter();
 
         const due = (detail && typeof detail.distanceOverage !== 'undefined')
-          ? Number(detail.distanceOverage || 0)
-          : Number(window.__distanceOverageDue || 0);
+          ? Number(window.__distanceOverageDue || 0)
+          : Number(this.basePlusOverageDue() || 0);
 
         this.distanceOverageDue = due;
         this.open = true;
@@ -506,7 +506,7 @@ document.addEventListener('alpine:init', () => {
 
         // 1) Se ci sono km extra da pagare e non risultano pagati => precompilo km extra
         if (due > 0 && !alreadyPaid) {
-          this.kind = 'distance_overage';
+          this.kind = 'base+distance_overage';
           this.amount = due.toFixed(2);
           return;
         }

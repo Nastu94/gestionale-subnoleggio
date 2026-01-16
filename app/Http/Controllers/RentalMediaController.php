@@ -94,12 +94,7 @@ class RentalMediaController extends Controller
         if ($parent instanceof Rental || $parent instanceof RentalChecklist) {
             $this->authorize('view', $parent);
         } elseif ($parent instanceof Organization) {
-            // scegli la policy corretta per te:
-            // se hai OrganizationPolicy con view:
-            $this->authorize('view', $parent);
-
-            // oppure se preferisci più restrittivo:
-            // $this->authorize('update', $parent);
+            // non devo controllare niente in particolare
         } else {
             abort(403, 'Accesso negato.');
         }

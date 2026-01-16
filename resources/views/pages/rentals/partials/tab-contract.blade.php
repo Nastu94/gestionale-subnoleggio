@@ -396,6 +396,7 @@
             </div>
 
             {{-- FIRMA NOLEGGIANTE --}}
+            @if($rental->organization->rental_license === true)
             <div class="rounded-xl border p-4 space-y-3 overflow-hidden">
                 <div class="flex items-start justify-between gap-4">
                     <div>
@@ -470,6 +471,7 @@
                     @endif
                 </div>
             </div>
+            @endif  
         </div>
     </div>
 </div>

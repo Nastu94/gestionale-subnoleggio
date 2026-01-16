@@ -144,16 +144,22 @@ class Rental extends Model implements SpatieHasMedia
     public function getHasBasePaymentAttribute(): bool
     {
         return $this->charges()
-            ->ofKind(RentalCharge::KIND_BASE)
             ->paid()
+            ->whereIn('kind', [
+                RentalCharge::KIND_BASE,
+                RentalCharge::KIND_BASE_PLUS_DISTANCE_OVERAGE,
+            ])
             ->exists();
     }
 
     public function getBasePaymentAtAttribute(): ?Carbon
     {
         $row = $this->charges()
-            ->ofKind(RentalCharge::KIND_BASE)
             ->paid()
+            ->whereIn('kind', [
+                RentalCharge::KIND_BASE,
+                RentalCharge::KIND_BASE_PLUS_DISTANCE_OVERAGE,
+            ])
             ->latest('payment_recorded_at')
             ->first();
 
@@ -270,6 +276,7 @@ protected function resolveIncludedKm(): ?int
     {
         return $this->charges()
             ->where('kind', RentalCharge::KIND_DISTANCE_OVERAGE)
+            ->orWhere('kind', RentalCharge::KIND_BASE_PLUS_DISTANCE_OVERAGE)
             ->where('payment_recorded', true)
             ->exists();
     }
