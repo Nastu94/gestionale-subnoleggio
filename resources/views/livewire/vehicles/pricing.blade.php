@@ -210,6 +210,18 @@
                     </select>
                 </div>
 
+                <div>
+                    <label class="block text-xs text-gray-500">Seconda guida (€/giorno)</label>
+                    <input type="number"
+                        step="0.01"
+                        min="0"
+                        class="mt-1 w-full rounded border-gray-300"
+                        wire:model.live="second_driver_daily_eur">
+                    @error('second_driver_daily_eur')
+                        <div class="mt-1 text-xs text-rose-600">{{ $message }}</div>
+                    @enderror
+                </div>
+
                 <div class="sm:col-span-2">
                     <label class="block text-sm font-medium">Note (opz.)</label>
                     <textarea wire:model.defer="notes" rows="2" @disabled(!$this->canEdit)

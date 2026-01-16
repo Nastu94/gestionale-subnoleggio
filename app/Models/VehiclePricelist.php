@@ -25,6 +25,7 @@ class VehiclePricelist extends Model
         'km_included_per_day','extra_km_cents',
         'deposit_cents','rounding',
         'notes',
+        'second_driver_daily_cents',
         // versioning
         'version','status','active_flag','published_at',
         'is_active', // legacy: ancora nel DB, ma non più usato in UI
@@ -38,6 +39,7 @@ class VehiclePricelist extends Model
         'version' => 'integer',
         'active_flag' => 'boolean',
         'published_at' => 'datetime',
+        'second_driver_daily_cents' => 'integer',
     ];
 
     public function vehicle() { return $this->belongsTo(Vehicle::class); }

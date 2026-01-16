@@ -14,6 +14,7 @@
     /** @var string|null $vehicle_owner_name */
     /** @var \App\Models\Customer|null $second_driver */
     /** @var float|null $final_amount */
+    /** @var bool|null $render_signatures */
 
     // ✅ Condizioni da config/rental.php (nuovo formato “sezioni”)
     // NB: se non esiste, rimane array vuoto e usiamo fallback su $clauses.
@@ -39,6 +40,9 @@
         .table th, .table td { border: 1px solid #e5e5e5; padding: 6px; vertical-align: top; }
         .small { font-size: 11px; }
         .page-break { page-break-before: always; }
+        .avoid-break { page-break-inside: avoid; }
+        .table thead { display: table-header-group; }
+        .table tr { page-break-inside: avoid; }
     </style>
 </head>
 
@@ -69,7 +73,7 @@
                 <h2>Noleggiante</h2>
                 <div><strong>{{ $org['name'] }}</strong></div>
                 <div>P.IVA/CF: {{ $org['vat'] ?? '—' }}</div>
-                <div>{{ $org['address'] ?? '' }} {{ $org['zip'] ?? '' }} {{ $org['city'] ?? '' }}</div>
+                <div>Indirizzo: {{ trim(($org['address'] ?? '') . ' ' . ($org['zip'] ?? '') . ' ' . ($org['city'] ?? '')) ?: '—' }}</div>
                 <div class="small">{{ $org['phone'] ?? '' }} {{ $org['email'] ?? '' }}</div>
             </div>
         </div>
@@ -77,14 +81,44 @@
             <div class="box">
                 <h2>Cliente</h2>
                 <div><strong>{{ $customer['name'] }}</strong></div>
-                <div>Doc: {{ $customer['doc_id_type'] ?? 'ID' }} {{ $customer['doc_id_number'] ?? '' }}</div>
-                <div>{{ $customer['address'] ?? '' }} {{ $customer['zip'] ?? '' }} {{ $customer['city'] ?? '' }} {{ $customer['province'] ?? '' }}</div>
+
+                <div>P.IVA/CF: {{ $customer['tax_id'] ?? '—' }}</div>
+                <div>Patente n.: {{ $customer['driver_license_number'] ?? '—' }}</div>
+
+                <div>Doc: {{ $customer['doc_id_type'] ?? 'ID' }} {{ $customer['doc_id_number'] ?? '—' }}</div>
+
+                <div>
+                    Indirizzo:
+                    {{ trim(($customer['address'] ?? '') . ' ' . ($customer['zip'] ?? '') . ' ' . ($customer['city'] ?? '') . ' ' . ($customer['province'] ?? '')) ?: '—' }}
+                </div>
+
                 <div class="small">{{ $customer['phone'] ?? '' }} {{ $customer['email'] ?? '' }}</div>
             </div>
         </div>
     </div>
 
-    <div class="box">
+    {{-- NEW — SECONDA GUIDA --}}
+    @if($second_driver)
+        <div class="box">
+            <h2>Seconda guida</h2>
+            <table class="table">
+                <tr>
+                    <th>Nome</th>
+                    <td>{{ $second_driver->name }}</td>
+                </tr>
+                <tr>
+                    <th>Documento</th>
+                    <td>{{ $second_driver->doc_id_type }} {{ $second_driver->doc_id_number }}</td>
+                </tr>
+                <tr>
+                    <th>Supplemento</th>
+                    <td>€ {{ number_format(($pricing_totals['second_driver_total'] ?? 0) / 100, 2, ',', '.') }}</td>
+                </tr>
+            </table>
+        </div>
+    @endif
+
+    <div class="box row avoid-break">
         <h2>Veicolo</h2>
         <table class="table">
             <tr>
@@ -107,7 +141,7 @@
         </div>
     </div>
 
-    <div class="box">
+    <div class="box row avoid-break">
         <h2>Dettagli noleggio</h2>
         <table class="table">
             <tr>
@@ -120,7 +154,7 @@
                 <th>Giorni</th>
                 <td>{{ $pricing['days'] ?? '—' }}</td>
                 <th>Tariffa</th>
-                <td>{{ number_format($final_amount, 2, ',', '.') }} (IVA incl.)</td>
+                <td>{{ number_format($pricing_totals['tariff_total_cents'] / 100, 2, ',', '.') }} (IVA incl.)</td>
             </tr>
             <tr>
                 <th>Chilometraggio incluso</th>
@@ -137,7 +171,7 @@
         </table>
     </div>
 
-    <div class="box">
+    <div class="box row avoid-break">
         <h2>Coperture e franchigie</h2>
         <table class="table">
             <tr>
@@ -190,22 +224,28 @@
         </div>
     </div>
 
-    {{-- NEW — SECONDA GUIDA --}}
-    @if($second_driver)
-        <div class="box">
-            <h2>Seconda guida</h2>
+    @if($second_driver && !empty($pricing_totals))
+        @php
+            $cur = $pricing_totals['currency'] ?? 'EUR';
+            $money = function(int $cents) use ($cur) {
+                return number_format($cents / 100, 2, ',', '.') . ' ' . $cur;
+            };
+        @endphp
+
+        <div class="box row avoid-break">
+            <h2>Riepilogo costi</h2>
             <table class="table">
                 <tr>
-                    <th>Nome</th>
-                    <td>{{ $second_driver->name }}</td>
+                    <th>Tariffa noleggio</th>
+                    <td>{{ $money((int) $pricing_totals['tariff_total_cents']) }}</td>
                 </tr>
                 <tr>
-                    <th>Documento</th>
-                    <td>{{ $second_driver->doc_id_type }} {{ $second_driver->doc_id_number }}</td>
+                    <th>Seconda guida</th>
+                    <td>{{ $money((int) $pricing_totals['second_driver_cents']) }}</td>
                 </tr>
                 <tr>
-                    <th>Supplemento</th>
-                    <td>€ {{ number_format($second_driver_total, 2, ',', '.') }}</td>
+                    <th><strong>Totale</strong></th>
+                    <td><strong>{{ $money((int) $pricing_totals['computed_total_cents']) }}</strong></td>
                 </tr>
             </table>
         </div>
@@ -246,7 +286,7 @@
                 <h2>Firma cliente</h2>
                 <div class="small muted">La firma sottostante vale come accettazione integrale del contratto e delle condizioni generali.</div>
 
-                @if(!empty($signature_customer))
+                @if(!empty($render_signatures) && !empty($signature_customer))
                     <div style="margin-top:8px; border:1px solid #e5e5e5; border-radius:6px; padding:8px; height:80px; display:flex; align-items:center; justify-content:center;">
                         <img
                             src="{{ $signature_customer }}"
@@ -267,7 +307,7 @@
                 <h2>Firma noleggiante</h2>
                 <div class="small muted">La firma sottostante vale come accettazione integrale del contratto e delle condizioni generali.</div>
 
-                @if(!empty($signature_lessor))
+                @if(!empty($render_signatures) && !empty($signature_lessor))
                     <div style="margin-top:8px; border:1px solid #e5e5e5; border-radius:6px; padding:8px; height:80px; display:flex; align-items:center; justify-content:center;">
                         <img
                             src="{{ $signature_lessor }}"

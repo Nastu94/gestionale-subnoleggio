@@ -257,9 +257,9 @@ class CreateWizard extends Component
     protected function rulesCustomerCreate(): array
     {
         return [
-            'customerForm.name'          => ['required','string','max:255'],
-            'customerForm.email'         => ['required','email','max:255'],
-            'customerForm.phone'         => ['required','string','max:50'],
+            'customerForm.name'          => ['required','string','max:255'], //obbligratorio
+            'customerForm.email'         => ['required','email','max:255'],  //obbligratorio
+            'customerForm.phone'         => ['required','string','max:50'],  //obbligratorio
             'customerForm.doc_id_type'   => ['required','in:id,passport'],
             'customerForm.doc_id_number' => ['required','string','max:100'],
             'customerForm.birth_date'    => ['required','date'],

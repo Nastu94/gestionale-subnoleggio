@@ -68,9 +68,10 @@
             </div>
         </div>
 
-        {{-- CTA: genera / rigenera --}}
+        {{-- CTA: base (rigenerabile) + firmato --}}
         <div class="flex flex-wrap items-center justify-end gap-2">
-            @if(!$hasGenerated)
+            {{-- ✅ CONTRATTO BASE: visibile finché NON esiste firmato --}}
+            @if(!$hasSigned)
                 @if($hasCustomer)
                     <button
                         class="p-2 btn btn-primary shadow-none
@@ -80,9 +81,11 @@
                         wire:click="generateContract"
                         wire:loading.attr="disabled"
                         wire:target="generateContract"
-                        title="Genera una nuova versione del contratto (PDF)"
+                        title="{{ $hasGenerated ? 'Rigenera una nuova versione del contratto base (senza firme)' : 'Genera il contratto base (senza firme)' }}"
                     >
-                        <span wire:loading.remove wire:target="generateContract">Genera contratto (PDF)</span>
+                        <span wire:loading.remove wire:target="generateContract">
+                            {{ $hasGenerated ? 'Rigenera contratto base (PDF)' : 'Genera contratto base (PDF)' }}
+                        </span>
                         <span wire:loading wire:target="generateContract" class="loading loading-spinner loading-sm"></span>
                     </button>
                 @else
@@ -92,34 +95,34 @@
                         </span>
                     </div>
                 @endif
+            @endif
+
+            {{-- ✅ CONTRATTO FIRMATO: disponibile quando c’è firma cliente --}}
+            @if($hasCustomerSignature)
+                <button
+                    class="p-2 btn btn-primary shadow-none
+                        !bg-primary !text-primary-content !border-primary
+                        hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30
+                        disabled:opacity-50 disabled:cursor-not-allowed"
+                    wire:click="regenerateContractWithSignatures"
+                    wire:loading.attr="disabled"
+                    wire:target="regenerateContractWithSignatures"
+                    title="Genera una nuova versione del PDF firmato (se manca il base verrà generato automaticamente)"
+                >
+                    <span wire:loading.remove wire:target="regenerateContractWithSignatures">
+                        {{ $hasSigned ? 'Rigenera PDF firmato' : 'Genera PDF firmato' }}
+                    </span>
+                    <span wire:loading wire:target="regenerateContractWithSignatures" class="loading loading-spinner loading-sm"></span>
+                </button>
             @else
-                {{-- ✅ (2) metodo corretto: chiama quello che hai davvero nel Livewire --}}
-                @if($hasCustomerSignature)
-                    <button
-                        class="p-2 btn btn-primary shadow-none
-                            !bg-primary !text-primary-content !border-primary
-                            hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30
-                            disabled:opacity-50 disabled:cursor-not-allowed"
-                        wire:click="regenerateContractWithSignatures"
-                        wire:loading.attr="disabled"
-                        wire:target="regenerateContractWithSignatures"
-                        title="Rigenera una nuova versione del PDF includendo anche la firma grafica del cliente"
-                    >
-                        <span wire:loading.remove wire:target="regenerateContractWithSignatures">
-                            Rigenera PDF con firma cliente
-                        </span>
-                        <span wire:loading wire:target="regenerateContractWithSignatures" class="loading loading-spinner loading-sm"></span>
-                    </button>
-                @else
-                    <button
-                        class="p-2 btn btn-primary shadow-none opacity-60 cursor-not-allowed
-                            !bg-primary !text-primary-content !border-primary"
-                        disabled
-                        title="Prima acquisisci la firma del cliente (Carica o Firma su schermo)"
-                    >
-                        Rigenera PDF con firma cliente
-                    </button>
-                @endif
+                <button
+                    class="p-2 btn btn-primary shadow-none opacity-60 cursor-not-allowed
+                        !bg-primary !text-primary-content !border-primary"
+                    disabled
+                    title="Prima acquisisci la firma del cliente (Carica o Firma su schermo)"
+                >
+                    Genera PDF firmato
+                </button>
             @endif
         </div>
 
@@ -214,13 +217,23 @@
             {{-- Colonna: versioni generate (PDF) --}}
             <div class="space-y-2">
                 <div class="font-semibold">Versioni generate (PDF)</div>
+                @php
+                    $baseMedia = method_exists($rental,'getMedia')
+                        ? $rental->getMedia('contract')->sortByDesc('created_at')
+                        : collect();
+                @endphp
 
-                @forelse($rental->getMedia('contract') as $m)
-                    <div class="flex items-center justify-between rounded-xl border p-3">
+                @forelse($baseMedia as $m)
+                    @php $isCurrent = (bool) $m->getCustomProperty('current'); @endphp
+                    <div class="flex items-center justify-between rounded-xl border p-3 {{ $isCurrent ? 'ring-1 ring-primary/30' : '' }}">
                         <div class="text-sm">
                             <span class="mr-2">📄</span>
-                            <span class="font-medium">{{ $m->name }}</span>
+                            <span class="font-medium">{{ $m->file_name }}</span>
                             <span class="opacity-70">· {{ $m->created_at->format('d/m/Y H:i') }}</span>
+
+                            @if($isCurrent)
+                                <span class="badge badge-success ml-2">Corrente</span>
+                            @endif
                         </div>
                         <div class="flex gap-2">
                             <a href="{{ $m->getUrl() }}" target="_blank"
@@ -257,12 +270,24 @@
             <div class="space-y-2">
                 <div class="font-semibold">Firmati</div>
 
+                @php
+                    $signedMedia = method_exists($rental,'getMedia')
+                        ? $rental->getMedia('signatures')->sortByDesc('created_at')
+                        : collect();
+                @endphp
+
                 @forelse($signedMedia as $m)
-                    <div class="flex items-center justify-between rounded-xl border p-3">
+                    @php $isCurrent = (bool) $m->getCustomProperty('current'); @endphp
+
+                    <div class="flex items-center justify-between rounded-xl border p-3 {{ $isCurrent ? 'ring-1 ring-primary/30' : '' }}">
                         <div class="text-sm">
-                            <span class="mr-2">✍️</span>
+                            <span class="mr-2">📄</span>
                             <span class="font-medium">{{ $m->file_name }}</span>
                             <span class="opacity-70">· {{ $m->created_at->format('d/m/Y H:i') }}</span>
+
+                            @if($isCurrent)
+                                <span class="badge badge-success ml-2">Corrente</span>
+                            @endif
                         </div>
                         <div class="flex gap-2">
                             <a href="{{ route('media.open', $m) }}" target="_blank"

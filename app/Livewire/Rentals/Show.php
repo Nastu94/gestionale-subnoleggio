@@ -346,6 +346,10 @@ class Show extends Component
 
             $this->rental->refresh();
             $this->rental->load(['customer', 'secondDriver']);
+            
+            if ($this->isSecondDriverContext()) {
+                $this->syncRentalAmountFromSnapshot();
+            }
 
             $this->customerModalOpen = false;
 
@@ -425,6 +429,69 @@ class Show extends Component
         $this->customerQuery = '';
     }
 
+    /**
+     * Trova lo snapshot pricing dal media del contratto (firmato > non firmato).
+     */
+    private function getContractPricingSnapshot(): ?array
+    {
+        if (!method_exists($this->rental, 'getMedia')) return null;
+
+        foreach (['signatures', 'contract'] as $col) {
+            $items = $this->rental->getMedia($col)->sortByDesc('created_at');
+
+            foreach ($items as $m) {
+                $snap = $m->getCustomProperty('pricing_snapshot');
+                if (is_array($snap)) return $snap;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Aggiorna rentals.amount = tariffa (congelata) + seconda guida (se presente).
+     * NON usa il listino attivo se esiste snapshot.
+     */
+    private function syncRentalAmountFromSnapshot(): void
+    {
+        if (!in_array($this->rental->status, ['draft','reserved'], true)) {
+            return;
+        }
+
+        $snap = $this->getContractPricingSnapshot();
+
+        // base tariffa (cents) e giorni
+        $days = (int) ($snap['days'] ?? 0);
+        $tariffTotalCents = isset($snap['tariff_total_cents']) ? (int) $snap['tariff_total_cents'] : null;
+
+        // fallback “vecchi contratti senza snapshot”: usa amount attuale come tariffa congelata
+        if ($tariffTotalCents === null && $this->rental->amount !== null) {
+            $tariffTotalCents = (int) round(((float)$this->rental->amount) * 100);
+        }
+
+        // se ancora non ho base, non posso aggiornare in modo affidabile
+        if ($tariffTotalCents === null) {
+            return;
+        }
+
+        $days = max(1, $days ?: 1);
+
+        $secondDailyCents = (int) ($snap['second_driver_daily_cents'] ?? 0);
+
+        $fk = $this->secondDriverForeignKey();
+        $hasSecond = !empty($this->rental->{$fk});
+
+        $secondTotalCents = $hasSecond ? ($secondDailyCents * $days) : 0;
+        $computedCents = $tariffTotalCents + $secondTotalCents;
+
+        DB::transaction(function () use ($computedCents) {
+            $this->rental->amount = round($computedCents / 100, 2);
+            $this->rental->save();
+        });
+
+        $this->rental->refresh();
+    }
+
     /* -------------------------------------------------------------------------
      |  CONTRATTO / PREZZO OVERRIDE
      * ------------------------------------------------------------------------- */
@@ -478,7 +545,7 @@ class Show extends Component
         $this->saveFinalAmountOverride();
     }
 
-    /** Genera il contratto di noleggio. */
+    /** Genera il contratto base (sempre rigenerabile, versionato). */
     public function generateContract(GenerateRentalContract $generator): void
     {
         if (!auth()->user()?->can('rentals.contract.generate') || !auth()->user()?->can('media.attach.contract')) {
@@ -497,7 +564,11 @@ class Show extends Component
         }
 
         try {
-            $generator->handle($this->rental);
+            /**
+             * ✅ Forzo "unsigned" per salvare SEMPRE in collection contract,
+             * anche se sono presenti firme (così base = base).
+             */
+            $generator->handle($this->rental, null, null, null, true, false);
 
             if ($this->rental->status === 'draft') {
                 $this->rental->status = 'reserved';
@@ -505,7 +576,7 @@ class Show extends Component
             }
 
             $this->rental->refresh();
-            $this->dispatch('toast', type: 'success', message: 'Contratto generato.');
+            $this->dispatch('toast', type: 'success', message: 'Contratto base generato.');
             $this->dispatch('$refresh');
         } catch (\Throwable $e) {
             report($e);
@@ -513,7 +584,7 @@ class Show extends Component
         }
     }
 
-    /** Rigenera il contratto includendo le firme caricate. */
+    /** Genera/Rigenera il contratto firmato. Se manca il base/snapshot, genera anche il base prima. */
     public function regenerateContractWithSignatures(GenerateRentalContract $generator): void
     {
         $this->authorize('contractGenerate', $this->rental);
@@ -524,15 +595,35 @@ class Show extends Component
         }
 
         if (!$this->hasCustomerSignature()) {
-            $this->dispatch('toast', type: 'warning', message: 'Inserisci prima la firma del cliente per rigenerare il contratto con firme.');
+            $this->dispatch('toast', type: 'warning', message: 'Inserisci prima la firma del cliente per generare il contratto firmato.');
             return;
         }
 
-        $generator->handle($this->rental);
+        try {
+            /**
+             * ✅ Se non esiste ancora un contratto base (o è stato cancellato),
+             * lo genero PRIMA senza firme, così rispettiamo la logica interna.
+             */
+            $hasBase = method_exists($this->rental, 'getMedia')
+                && $this->rental->getMedia('contract')->isNotEmpty();
 
-        $this->rental->refresh();
+            if (!$hasBase) {
+                $generator->handle($this->rental, null, null, null, true, false);
+            }
 
-        $this->dispatch('toast', type: 'success', message: 'Contratto rigenerato con le firme.');
+            /**
+             * ✅ Ora genero il firmato (forzato) in collection signatures.
+             */
+            $generator->handle($this->rental, null, null, null, false, true);
+
+            $this->rental->refresh();
+
+            $this->dispatch('toast', type: 'success', message: 'Contratto firmato generato.');
+            $this->dispatch('$refresh');
+        } catch (\Throwable $e) {
+            report($e);
+            $this->dispatch('toast', type: 'error', message: 'Errore durante la generazione del contratto firmato.');
+        }
     }
 
     /** Verifica se il noleggio ha la firma del cliente caricata. */  

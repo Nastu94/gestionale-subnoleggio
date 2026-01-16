@@ -43,6 +43,7 @@ class Pricing extends Component
     public ?float $deposit_eur = null;
     public string $rounding = 'none';
     public ?string $notes = null;
+    public ?float $second_driver_daily_eur = null;
 
     // simulatore
     public ?string $pickup_at = null;
@@ -113,6 +114,9 @@ class Pricing extends Component
             $this->base_daily_eur = $pl->base_daily_cents / 100;
             $this->extra_km_eur   = $pl->extra_km_cents !== null ? $pl->extra_km_cents / 100 : null;
             $this->deposit_eur    = $pl->deposit_cents !== null ? $pl->deposit_cents / 100 : null;
+            $this->second_driver_daily_eur = $pl->second_driver_daily_cents !== null
+                ? $pl->second_driver_daily_cents / 100
+                : null;
         }
 
         $now = now();
@@ -142,6 +146,7 @@ class Pricing extends Component
             'deposit_eur' => ['nullable','numeric','min:0'],
             'rounding' => ['required','in:none,up_1,up_5'],
             'notes' => ['nullable','string','max:255'],
+            'second_driver_daily_eur' => ['nullable','numeric','min:0'],
         ];
     }
 
@@ -201,6 +206,9 @@ class Pricing extends Component
             'status' => 'draft',
             'is_active' => 0,              // 👈 FIX
             'active_flag' => null,
+            'second_driver_daily_cents' => $this->second_driver_daily_eur !== null
+                ? (int) round($this->second_driver_daily_eur * 100)
+                : null,
         ];
 
         if ($this->pricelist && $this->pricelist->status === 'draft') {
@@ -374,6 +382,9 @@ class Pricing extends Component
         $this->base_daily_eur = $pl->base_daily_cents / 100;
         $this->extra_km_eur   = $pl->extra_km_cents !== null ? $pl->extra_km_cents / 100 : null;
         $this->deposit_eur    = $pl->deposit_cents !== null ? $pl->deposit_cents / 100 : null;
+        $this->second_driver_daily_eur = $pl->second_driver_daily_cents !== null
+            ? $pl->second_driver_daily_cents / 100
+            : null;
 
         $this->recomputeFlags();
         $this->dispatch('toast', type:'info', message:'Versione caricata.');

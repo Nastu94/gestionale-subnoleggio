@@ -166,7 +166,7 @@
                 <x-media-uploader
                     label="Contratto (PDF)"
                     :action="route('rentals.media.contract.store', $rental)"
-                    accept="application/pdf"
+                    accept="application/pdf,image/jpeg,image/png"
                 />
 
                 {{-- Upload CONTRATTO firmato: chiama il controller che duplica su Rental e Checklist(pickup) --}}

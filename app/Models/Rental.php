@@ -93,6 +93,14 @@ class Rental extends Model implements SpatieHasMedia
     {
         return $this->hasOne(RentalChecklist::class)->where('type', 'return');
     }
+    
+    /**
+     * Snapshot contrattuale congelato (freeze-once).
+     */
+    public function contractSnapshot(): HasOne
+    {
+        return $this->hasOne(RentalContractSnapshot::class);
+    }
 
     // -------------------------
     // Righe economiche (pagamenti eseguiti)
