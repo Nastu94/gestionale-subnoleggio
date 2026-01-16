@@ -371,62 +371,35 @@ class Index extends Component
         }
     }
 
-    /** Sedi disponibili per il filtro (scoped per renter) */
-    protected function locationsForFilter(): Collection
-    {
-        // Admin-like: tutte le sedi
-        if (!$this->isRenter()) {
-            return Location::query()
-                ->select('id', 'name')
-                ->orderBy('name')
-                ->get();
+/** Sedi disponibili per il filtro (semplice: per organizzazione utente) */
+protected function locationsForFilter(): \Illuminate\Support\Collection
+{
+    $q = Location::query()->select('id', 'name')->orderBy('name');
+
+    // Admin-like: tutto, oppure filtra per orgId se selezionata
+    if (!$this->isRenter()) {
+        if ($this->orgId && Auth::user()->can('vehicle_documents.manage')) {
+            $q->where('organization_id', $this->orgId);
         }
-
-        // Renter: solo sedi dei veicoli assegnati *ora*
-        $now = now();
-
-        return Location::query()
-            ->select('locations.id', 'locations.name')
-            ->join('vehicles', 'vehicles.default_pickup_location_id', '=', 'locations.id')
-            ->whereExists(function ($sub) use ($now) {
-                $sub->selectRaw('1')
-                    ->from('vehicle_assignments as va')
-                    ->whereColumn('va.vehicle_id', 'vehicles.id')
-                    ->where('va.renter_org_id', Auth::user()->organization_id)
-                    ->where('va.status', 'active')
-                    ->where('va.start_at', '<=', $now)
-                    ->where(function ($q) use ($now) {
-                        $q->whereNull('va.end_at')->orWhere('va.end_at', '>', $now);
-                    });
-            })
-            ->distinct()
-            ->orderBy('locations.name')
-            ->get();
+        return $q->get();
     }
+
+    // Renter: solo sedi della sua organizzazione
+    return $q->where('organization_id', Auth::user()->organization_id)->get();
+}
+
 
     /** Verifica se una sede è visibile al renter corrente */
-    protected function locationVisibleToUser(int $locationId): bool
-    {
-        if (!$this->isRenter()) return true;
+protected function locationVisibleToUser(int $locationId): bool
+{
+    if (!$this->isRenter()) return true;
 
-        $now = now();
+    return Location::query()
+        ->whereKey($locationId)
+        ->where('organization_id', Auth::user()->organization_id)
+        ->exists();
+}
 
-        return Location::query()
-            ->whereKey($locationId)
-            ->whereExists(function ($sub) use ($now) {
-                $sub->selectRaw('1')
-                    ->from('vehicles')
-                    ->join('vehicle_assignments as va', 'va.vehicle_id', '=', 'vehicles.id')
-                    ->whereColumn('vehicles.default_pickup_location_id', 'locations.id')
-                    ->where('va.renter_org_id', Auth::user()->organization_id)
-                    ->where('va.status', 'active')
-                    ->where('va.start_at', '<=', $now)
-                    ->where(function ($q) use ($now) {
-                        $q->whereNull('va.end_at')->orWhere('va.end_at', '>', $now);
-                    });
-            })
-            ->exists();
-    }
 
     // ---------------- Query / auth helpers ----------------
 
