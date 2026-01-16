@@ -112,7 +112,7 @@
                 </tr>
                 <tr>
                     <th>Supplemento</th>
-                    <td>€ {{ number_format(($pricing_totals['second_driver_total'] ?? 0) / 100, 2, ',', '.') }}</td>
+                    <td>€ {{ number_format(($pricing_totals['second_driver_cents'] ?? 0) / 100, 2, ',', '.') }}</td>
                 </tr>
             </table>
         </div>
@@ -154,7 +154,12 @@
                 <th>Giorni</th>
                 <td>{{ $pricing['days'] ?? '—' }}</td>
                 <th>Tariffa</th>
-                <td>{{ number_format($pricing_totals['tariff_total_cents'] / 100, 2, ',', '.') }} (IVA incl.)</td>
+                @php
+                    $tariffEff = (int) ($pricing_totals['tariff_effective_cents'] ?? $pricing_totals['tariff_total_cents'] ?? 0);
+                @endphp
+                <td>
+                    {{ number_format($tariffEff / 100, 2, ',', '.') }} (IVA incl.)
+                </td>
             </tr>
             <tr>
                 <th>Chilometraggio incluso</th>
@@ -230,6 +235,9 @@
             $money = function(int $cents) use ($cur) {
                 return number_format($cents / 100, 2, ',', '.') . ' ' . $cur;
             };
+            $tariffEff = (int) ($pricing_totals['tariff_effective_cents'] ?? $pricing_totals['tariff_total_cents'] ?? 0);
+            $tariffBase = (int) ($pricing_totals['tariff_total_cents'] ?? 0);
+            $tariffOv = $pricing_totals['tariff_override_cents'] ?? null;
         @endphp
 
         <div class="box row avoid-break">
@@ -237,7 +245,7 @@
             <table class="table">
                 <tr>
                     <th>Tariffa noleggio</th>
-                    <td>{{ $money((int) $pricing_totals['tariff_total_cents']) }}</td>
+                    <td>{{ $money((int) ($pricing_totals['tariff_effective_cents'] ?? $pricing_totals['tariff_total_cents'] ?? 0)) }}</td>
                 </tr>
                 <tr>
                     <th>Seconda guida</th>

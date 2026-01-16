@@ -199,6 +199,7 @@ class GenerateRentalContract
                         'extra_km_cents'            => $pl->extra_km_cents,
                         'deposit_cents'             => $q['deposit'] ?? null,
                         'second_driver_daily_cents' => (int) ($pl->second_driver_daily_cents ?? 0),
+                        'tariff_override_cents'     => null,
                     ];
                 }
             }
@@ -215,14 +216,20 @@ class GenerateRentalContract
                 'extra_km_cents'            => null,
                 'deposit_cents'             => null,
                 'second_driver_daily_cents' => 0,
+                'tariff_override_cents'     => null,
             ];
         }
+
+        // ✅ NEW — applico l'override tariffa (se presente) come unico campo mutabile dello snapshot
+        $pricingSnapshot = $this->applyTariffOverrideToSnapshot($rental, $pricingSnapshot);
 
         /**
          * ✅ Freeze-once: se non esiste snapshot in tabella lo salvo ORA,
          * prima di generare qualsiasi PDF, così anche il firmato "auto" userà lo stesso snapshot.
          */
         $this->persistPricingSnapshotOnce($rental, $pricingSnapshot);
+        // ✅ NEW — se lo snapshot esiste già, aggiorno SOLO tariff_override_cents
+        $this->syncTariffOverrideOnly($rental);
 
         // ---------------------------------------------------------------------
         // 2.b) NEW — SECONDA GUIDA (da listino attivo del veicolo)
@@ -291,6 +298,12 @@ class GenerateRentalContract
         // Tariffa congelata nello snapshot (NO seconda guida)
         $tariffTotalCents = (int) ($pricingSnapshot['tariff_total_cents'] ?? ($quoteTotalCents ?? 0));
 
+        // ✅ NEW — tariffa effettiva: override (se presente) > tariffa listino congelata
+        $tariffOverrideCents = $pricingSnapshot['tariff_override_cents'] ?? null;
+        $tariffEffectiveCents = is_int($tariffOverrideCents)
+            ? (int) $tariffOverrideCents
+            : (int) $tariffTotalCents;
+
         // Seconda guida: calcolo da daily congelato nello snapshot
         $snapSecondDriverDailyCents = (int) ($pricingSnapshot['second_driver_daily_cents'] ?? 0);
 
@@ -298,10 +311,10 @@ class GenerateRentalContract
             ? ($snapSecondDriverDailyCents * $snapDays)
             : 0;
 
-        $snapComputedTotalCents = $tariffTotalCents + $snapSecondDriverTotalCents;
+        $snapComputedTotalCents = $tariffEffectiveCents + $snapSecondDriverTotalCents;
 
         // Coerenza per le variabili usate in 2.c e nel DTO
-        $baseTotalCents = $tariffTotalCents;               // tariffa (congelata)
+        $baseTotalCents = $tariffEffectiveCents;               // tariffa (congelata)
         $secondDriverTotalCents = $snapSecondDriverTotalCents; // seconda guida (congelata)
         $secondDriverFeeDailyCents = $snapSecondDriverDailyCents; // daily (congelato)
 
@@ -511,10 +524,22 @@ class GenerateRentalContract
             ],
 
             'pricing_totals' => [
-                'currency'              => (string) $quoteCurrency,
-                'tariff_total_cents'    => (int) $baseTotalCents,
-                'second_driver_cents'   => (int) $secondDriverTotalCents,
-                'computed_total_cents'  => (int) ($baseTotalCents + $secondDriverTotalCents),
+                'currency'                 => (string) $snapCurrency,
+
+                // ✅ base congelata (listino)
+                'tariff_total_cents'       => (int) $tariffTotalCents,
+
+                // ✅ override (unico campo mutabile)
+                'tariff_override_cents'    => isset($tariffOverrideCents) && is_int($tariffOverrideCents) ? (int) $tariffOverrideCents : null,
+
+                // ✅ tariffa effettiva usata nei calcoli/PDF
+                'tariff_effective_cents'   => (int) $tariffEffectiveCents,
+
+                // seconda guida congelata
+                'second_driver_cents'      => (int) $secondDriverTotalCents,
+
+                // totale effettivo
+                'computed_total_cents'     => (int) ($tariffEffectiveCents + $secondDriverTotalCents),
             ],
 
             // NEW
@@ -668,6 +693,78 @@ class GenerateRentalContract
                 'pricing_snapshot'    => $pricingSnapshot,
                 'created_by_user_id'  => auth()->id(),
             ]);
+        });
+    }    
+    
+    /**
+     * Converte rentals.final_amount_override in cents, in modo robusto.
+     * - null / '' => null
+     * - numerico => round * 100
+     */
+    private function overrideToCents(mixed $raw): ?int
+    {
+        if ($raw === null) return null;
+
+        if (is_string($raw)) {
+            $v = trim($raw);
+            if ($v === '') return null;
+            // accetta anche virgola
+            $v = str_replace(',', '.', $v);
+            if (!is_numeric($v)) return null;
+            return (int) round(((float) $v) * 100);
+        }
+
+        if (is_int($raw) || is_float($raw)) {
+            return (int) round(((float) $raw) * 100);
+        }
+
+        return null;
+    }
+
+    /**
+     * ✅ Unico campo "mutabile" nello snapshot:
+     * - tariff_override_cents (derivato da rentals.final_amount_override)
+     *
+     * Non tocca nessun altro campo.
+     */
+    private function applyTariffOverrideToSnapshot(Rental $rental, array $snapshot): array
+    {
+        $overrideCents = $this->overrideToCents($rental->final_amount_override);
+
+        // la chiave deve sempre esistere nello snapshot (anche null), per coerenza
+        $snapshot['tariff_override_cents'] = $overrideCents;
+
+        return $snapshot;
+    }
+
+    /**
+     * ✅ Aggiorna SOLO tariff_override_cents nello snapshot in tabella.
+     * Se lo snapshot non esiste ancora, non fa nulla (perché lo crea persistPricingSnapshotOnce).
+     */
+    private function syncTariffOverrideOnly(Rental $rental): void
+    {
+        if (!method_exists($rental, 'contractSnapshot')) {
+            return;
+        }
+
+        $overrideCents = $this->overrideToCents($rental->final_amount_override);
+
+        DB::transaction(function () use ($rental, $overrideCents) {
+            /** @var RentalContractSnapshot|null $row */
+            $row = $rental->contractSnapshot()->lockForUpdate()->first();
+            if (!$row) return;
+
+            $snap = $row->pricing_snapshot;
+            if (!is_array($snap)) $snap = [];
+
+            $current = $snap['tariff_override_cents'] ?? null;
+
+            // Normalizzo "null vs 0": 0 è un valore valido (tariffa gratis), quindi confronto strettamente
+            if ($current !== $overrideCents) {
+                $snap['tariff_override_cents'] = $overrideCents;
+                $row->pricing_snapshot = $snap;
+                $row->save();
+            }
         });
     }
 

@@ -121,7 +121,7 @@
 <div
     x-data="paymentModal(
         '{{ route('rentals.record_payment', $rental) }}',
-        {{ (float)($rental->amount ?? 0) }},
+        {{ (float)($rental->final_amount_override ?? $rental->amount) }},
         {
             hasBasePayment: @js($rental->has_base_payment),
             // ✅ Totale acconti già PAGATI (serve per calcolare il residuo quota base)
@@ -385,7 +385,7 @@ document.addEventListener('alpine:init', () => {
   Alpine.data('paymentModal', (arg1, arg2 = 0, arg3 = null) => {
     const isString     = typeof arg1 === 'string';
     const actionUrl    = isString ? arg1 : (arg1?.actionUrl ?? '');
-    const defaultAmount= isString ? Number(arg2 ?? 0) : Number(arg1?.defaultAmount ?? 0);
+    let baseAmount = isString ? Number(arg2 ?? 0) : Number(arg1?.defaultAmount ?? 0);
 
     const defaultKinds = [
       {val:'base',             label:'Quota base (contratto)'},
@@ -420,13 +420,14 @@ document.addEventListener('alpine:init', () => {
       kinds: [],
       hasBasePayment: initialHasBasePayment,
       distanceOverageDue: 0,
-      
+      baseAmount: Number(baseAmount || 0),
+
       /**
        * ✅ Residuo quota base = importo contratto - acconti già pagati.
        * Non scende mai sotto 0.
        */
       baseDue(){
-        const base = Number(defaultAmount || 0);
+        const base = Number(this.baseAmount || 0);
         const acc  = Number(this.accontoPaid || 0);
         return Math.max(0, +(base - acc).toFixed(2));
       },
@@ -469,11 +470,20 @@ document.addEventListener('alpine:init', () => {
         this.applyKindsFilter();
 
         // ascolta aggiornamenti da backend (dopo storePayment)
-        window.addEventListener('rental-flags-updated', (e) => {
-          const f = e.detail || {};
-          if ('has_base_payment' in f) {
-            this.hasBasePayment = !!f.has_base_payment;
-            this.applyKindsFilter();
+        window.addEventListener('rental-amount-updated', (e) => {
+          const d = e.detail || {};
+
+          // ✅ nuovo importo base aggiornato (post-override)
+          if (typeof d.base_amount !== 'undefined') {
+            this.baseAmount = Number(d.base_amount || 0);
+
+            // Se sto pagando la quota base (o base+overage), aggiorno la precompilazione
+            if (this.open && this.kind === 'base') {
+              this.amount = Number(this.baseDue() || 0);
+            }
+            if (this.open && this.kind === 'base+distance_overage') {
+              this.amount = Number(this.basePlusOverageDue() || 0);
+            }
           }
         });
       },
@@ -605,7 +615,7 @@ document.addEventListener('alpine:init', () => {
           // reset soft
           this.close();
           this.kind=''; this.payment_method=''; this.payment_notes=''; this.payment_reference='';
-          this.description=''; this.amount = defaultAmount;
+          this.description=''; this.amount = Number(this.baseAmount || 0);
 
         } finally { this.loading=false; }
       },

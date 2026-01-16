@@ -639,6 +639,7 @@ class Show extends Component
             $this->final_amount_override = $this->rental->final_amount_override !== null
                 ? (string) $this->rental->final_amount_override
                 : null;
+            $this->dispatch('rental-amount-updated', base_amount: (float) ($this->rental->final_amount_override ?? $this->rental->amount ?? 0));
 
             $this->dispatch('toast', type: 'success', message: 'Prezzo aggiornato.');
             $this->dispatch('$refresh');
