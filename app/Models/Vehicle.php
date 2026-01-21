@@ -50,6 +50,7 @@ class Vehicle extends Model implements SpatieHasMedia
         'fuel_type','transmission','seats','segment','mileage_current','default_pickup_location_id',
         'is_active','notes','lt_rental_monthly_cents','insurance_kasko_cents',
         'insurance_rca_cents','insurance_cristalli_cents','insurance_furto_cents',
+        'cargos_vehicle_type_code',
     ];
 
     protected $casts = [

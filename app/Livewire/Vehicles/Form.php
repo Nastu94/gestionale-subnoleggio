@@ -4,6 +4,7 @@ namespace App\Livewire\Vehicles;
 
 use App\Models\Vehicle;
 use App\Models\Location;
+use App\Models\CargosVehicleType;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -30,6 +31,7 @@ class Form extends Component
         'transmission'               => 'manual',
         'seats'                      => null,
         'segment'                    => null,
+        'cargos_vehicle_type_code' => null,
         'mileage_current'            => 0,
         'default_pickup_location_id' => null, // impostati solo backend
         'is_active'                  => 1,    // impostati solo backend
@@ -54,6 +56,13 @@ class Form extends Component
         'manual' => 'Manuale', 'automatic' => 'Automatico',
     ];
 
+    /**
+     * Opzioni per la select Tipologia veicolo CARGOS (code => label).
+     *
+     * @var array<string,string>
+     */
+    public array $cargosVehicleTypeOptions = [];
+
     // Evita salvataggi multipli
     public bool $saving = false;
 
@@ -66,6 +75,8 @@ class Form extends Component
     {
         // ✅ Se l’argomento non è un model valido, resta null
         $this->vehicle = ($vehicle && $vehicle->exists) ? $vehicle : null;
+        // Carica master data CARGOS (solo attivi) per la select UI
+        $this->cargosVehicleTypeOptions = $this->loadCargosVehicleTypes();
 
         if ($this->isEdit()) {
             $this->authorize('update', $this->vehicle);
@@ -82,6 +93,7 @@ class Form extends Component
                 'transmission'               => $this->safeEnum($this->vehicle->transmission, array_keys($this->transmissionOptions), 'manual'),
                 'seats'                      => $this->vehicle->seats,
                 'segment'                    => $this->vehicle->segment,
+                'cargos_vehicle_type_code' => $this->vehicle->cargos_vehicle_type_code,
                 'mileage_current'            => (int) ($this->vehicle->mileage_current ?? 0),
                 'default_pickup_location_id' => $this->vehicle->default_pickup_location_id,
                 'is_active'                  => (int) ($this->vehicle->is_active ?? 1),
@@ -129,6 +141,18 @@ class Form extends Component
             'form.transmission'    => ['required','in:manual,automatic'],
             'form.seats'           => ['nullable','integer','min:1','max:99'],
             'form.segment'         => ['nullable','string','max:32'],
+            'form.cargos_vehicle_type_code' => [
+                'required',
+                'string',
+                'max:32',
+                Rule::exists('cargos_vehicle_types', 'code')->where(function ($q) {
+                    /**
+                     * Valida che il codice selezionato esista tra le tipologie CARGOS attive.
+                     * Così non dipendiamo dall’array opzioni (che è UI) ma dalla sorgente dati (DB).
+                     */
+                    $q->where('is_active', 1);
+                }),
+            ],
             'form.mileage_current' => ['required','integer','min:0'],
             'form.notes'           => ['nullable','string'],
 
@@ -275,6 +299,20 @@ class Form extends Component
 
         return $q->value('id');
     }
+    
+    /**
+     * Carica le tipologie veicolo CARGOS attive (code => label).
+     *
+     * @return array<string,string>
+     */
+    private function loadCargosVehicleTypes(): array
+    {
+        return CargosVehicleType::query()
+            ->active()
+            ->orderBy('label')
+            ->pluck('label', 'code')
+            ->toArray();
+    }
 
     /**
      * Render the component.
@@ -287,6 +325,7 @@ class Form extends Component
             'isEdit'       => $this->isEdit(),
             'fuelOptions'  => $this->fuelOptions,
             'transOptions' => $this->transmissionOptions,
+            'cargosVehicleTypeOptions' => $this->cargosVehicleTypeOptions,
         ]);
     }
 }

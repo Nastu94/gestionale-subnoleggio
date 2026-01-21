@@ -1,3 +1,4 @@
+{{-- resources/views/livewire/vehicles/form.blade.php --}}
 {{-- Livewire: Vehicles\Form (Create/Edit) — campi amministrativi rimossi dalla UI --}}
 <div class="space-y-4">
 
@@ -116,6 +117,20 @@
                 <input type="text" class="mt-1 w-full rounded border-gray-300"
                        wire:model.defer="form.segment" maxlength="32" placeholder="SUV / Compact / ...">
                 @error('form.segment') <div class="mt-1 text-xs text-rose-600">{{ $message }}</div> @enderror
+            </div>
+
+            {{-- Tipologia veicolo CARGOS --}}
+            <div class="col-span-4">
+                <label class="block text-xs text-gray-500">Tipologia veicolo CARGOS *</label>
+                <select class="mt-1 w-full rounded border-gray-300"
+                        wire:model.defer="form.cargos_vehicle_type_code">
+                    <option value="">Seleziona...</option>
+
+                    @foreach($cargosVehicleTypeOptions as $code => $label)
+                        <option value="{{ $code }}">{{ $label }}</option>
+                    @endforeach
+                </select>
+                @error('form.cargos_vehicle_type_code') <div class="mt-1 text-xs text-rose-600">{{ $message }}</div> @enderror
             </div>
 
             {{-- mileage_current --}}
