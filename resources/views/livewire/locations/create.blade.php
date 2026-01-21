@@ -21,20 +21,84 @@
                     @error('address_line') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
                 </div>
 
-                <div>
-                    <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Città</label>
-                    <input type="text" wire:model.defer="city"
-                           class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                  text-gray-900 dark:text-gray-100 w-full">
-                    @error('city') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
+                <div class="relative">
+                    <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">
+                        Provincia
+                    </label>
+
+                    <input type="text"
+                        wire:model.live.debounce.300ms="provinceSearch"
+                        placeholder="Cerca provincia (es. MI)"
+                        class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
+                                text-gray-900 dark:text-gray-100 w-full">
+
+                    {{-- Dropdown overlay --}}
+                    @if(!empty($provinceResults))
+                        <ul
+                            class="absolute left-0 right-0 mt-1
+                                z-50
+                                border rounded-md
+                                bg-white dark:bg-gray-800
+                                max-h-48 overflow-auto
+                                text-sm
+                                shadow-lg"
+                        >
+                            @foreach($provinceResults as $prov)
+                                <li
+                                    wire:click="selectProvince('{{ $prov }}')"
+                                    class="px-3 py-2 cursor-pointer
+                                        hover:bg-gray-100 dark:hover:bg-gray-700"
+                                >
+                                    {{ $prov }}
+                                </li>
+                            @endforeach
+                        </ul>
+                    @endif
+
+                    @error('province')
+                        <p class="text-red-600 text-xs mt-1">{{ $message }}</p>
+                    @enderror
                 </div>
 
-                <div>
-                    <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Provincia</label>
-                    <input type="text" wire:model.defer="province"
-                           class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                  text-gray-900 dark:text-gray-100 w-full">
-                    @error('province') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
+                <div class="relative">
+                    <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">
+                        Città
+                    </label>
+
+                    <input type="text"
+                        wire:model.live.debounce.300ms="citySearch"
+                        placeholder="{{ $province ? 'Cerca comune…' : 'Seleziona prima la provincia' }}"
+                        @disabled(!$province)
+                        class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
+                                text-gray-900 dark:text-gray-100 w-full
+                                disabled:opacity-50">
+
+                    {{-- Dropdown comuni --}}
+                    @if(!empty($cityResults))
+                        <ul
+                            class="absolute left-0 right-0 mt-1
+                                z-50
+                                border rounded-md
+                                bg-white dark:bg-gray-800
+                                max-h-48 overflow-auto
+                                text-sm
+                                shadow-lg"
+                        >
+                            @foreach($cityResults as $c)
+                                <li
+                                    wire:click="selectCity({{ $c['code'] }}, '{{ addslashes($c['name']) }}')"
+                                    class="px-3 py-2 cursor-pointer
+                                        hover:bg-gray-100 dark:hover:bg-gray-700"
+                                >
+                                    {{ $c['name'] }}
+                                </li>
+                            @endforeach
+                        </ul>
+                    @endif
+
+                    @error('city')
+                        <p class="text-red-600 text-xs mt-1">{{ $message }}</p>
+                    @enderror
                 </div>
 
                 <div>

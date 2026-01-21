@@ -17,6 +17,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             DomainDemoSeeder::class,
             RolesAndPermissionsSeeder::class,
+            CargosDocumentTypesSeeder::class,
         ]);
 
     }

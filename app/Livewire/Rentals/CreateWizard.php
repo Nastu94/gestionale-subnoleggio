@@ -8,7 +8,7 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
-use App\Models\{Rental, Customer, Vehicle, Location, VehicleAssignment}; // Location esiste nel tuo schema (dalle query)
+use App\Models\{Rental, Customer, Vehicle, Location, VehicleAssignment, CargosLuogo}; // Location esiste nel tuo schema (dalle query)
 use App\Services\Contracts\GenerateRentalContract;
 use App\Domain\Pricing\VehiclePricingService;
 use Illuminate\Database\Eloquent\Builder;
@@ -39,25 +39,66 @@ class CreateWizard extends Component
     /** Associazione cliente */
     public ?int $customer_id = null;
 
-    /** Form cliente (popolato alla selezione o per creazione) */
+    /**
+     * Form cliente (popolato alla selezione o per creazione).
+     *
+     * NOTE:
+     * - Manteniamo le chiavi esistenti per compatibilità totale con l'UI attuale.
+     * - Aggiungiamo le chiavi CARGOS per allinearci a Customers/Show senza rompere nulla.
+     */
     public array $customerForm = [
+        // =========================
+        // Campi esistenti (NON toccare)
+        // =========================
         'name'         => null,
-        'email'         => null,
-        'phone'         => null,
-        'doc_id_type'   => null,
-        'doc_id_number' => null,
+        'email'        => null,
+        'phone'        => null,
+        'doc_id_type'  => null,
+        'doc_id_number'=> null,
         'tax_code'     => null,
         'vat'          => null,
-        'birth_date'    => null,
-        'address'       => null,
-        'city'          => null,
-        'province'      => null,
-        'zip'           => null,
-        'country_code'  => null,
-        'driver_license_number'       => null,
-        'driver_license_expires_at'   => null,
+        'birth_date'   => null,
+        'address'      => null,
+        'city'         => null,
+        'province'     => null,
+        'zip'          => null,
+        'country_code' => null,
+        'driver_license_number'      => null,
+        'driver_license_expires_at'  => null,
+
+        // =========================
+        // NUOVO: campi CARGOS (aggiuntivi)
+        // =========================
+
+        /** Nome per CARGOS (opzionale: può essere derivato da "name") */
+        'first_name' => null,
+
+        /** Cognome per CARGOS (opzionale: può essere derivato da "name") */
+        'last_name'  => null,
+
+        /** Codice CARGOS luogo di nascita (customer.birth_place_code) */
+        'birth_place_code' => null,
+
+        /** Codice CARGOS residenza (customer.police_place_code) */
+        'police_place_code' => null,
+
+        /**
+         * Campo UI virtuale (come in Customers/Show):
+         * - nello schema cliente è citizenship_cargos_code
+         * - qui lo teniamo separato per bind diretto ai picker.
+         */
+        'citizenship_place_code' => null,
+
+        /** Codice CARGOS tipo documento identità (string) */
+        'identity_document_type_code' => null,
+
+        /** Codice CARGOS luogo rilascio documento identità (place_code) */
+        'identity_document_place_code' => null,
+
+        /** Codice CARGOS luogo rilascio patente (place_code) */
+        'driver_license_place_code' => null,
     ];
-    
+
     /** Selezioni coperture (flags) */
     public array $coverage = [
         'kasko'           => true,
@@ -151,6 +192,37 @@ class CreateWizard extends Component
         // 5) Se esiste già una bozza ($rentalId impostato dall'esterno),
         //    rileggiamo l'eventuale contratto corrente
         $this->refreshCurrentContract();
+    }
+
+    /**
+     * Cast “robusto” a int per codici CARGOS:
+     * - accetta int/string numeriche
+     * - ritorna null per valori vuoti/non numerici
+     */
+    protected function toIntOrNull(mixed $v): ?int
+    {
+        if ($v === null) {
+            return null;
+        }
+
+        if (is_int($v)) {
+            return $v;
+        }
+
+        if (is_string($v)) {
+            $t = trim($v);
+            if ($t === '' || !ctype_digit($t)) {
+                return null;
+            }
+
+            return (int) $t;
+        }
+
+        if (is_numeric($v)) {
+            return (int) $v;
+        }
+
+        return null;
     }
 
     /**
@@ -256,35 +328,71 @@ class CreateWizard extends Component
     }
 
     /**
-     * Regole per creazione/aggiornamento cliente nello Wizard.
+     * Regole per creazione/aggiornamento cliente nello Wizard (Step 2).
      *
-     * In questa fase richiediamo solo i contatti minimi.
-     * Tutti gli altri dati sono compilabili in un secondo momento (Customer/Show).
+     * - Il "name" non è più input: viene costruito da first_name + last_name.
+     * - Documento identità: solo CARGOS (identity_document_type_code + numero + luogo rilascio).
+     * - Residenza: solo CARGOS (police_place_code) da cui deriviamo city/province/country_code e police_postal_code.
      */
     protected function rulesCustomerCreate(): array
     {
         return [
+            // =========================
             // ✅ MINIMO OBBLIGATORIO
-            'customerForm.name'  => ['required','string','max:255'],
-            'customerForm.email' => ['required','email','max:255'],
-            'customerForm.phone' => ['required','string','max:50'],
+            // =========================
+            'customerForm.first_name' => ['required', 'string', 'max:191'],
+            'customerForm.last_name'  => ['required', 'string', 'max:191'],
 
-            // ✅ OPZIONALI
-            'customerForm.doc_id_type'   => ['nullable','in:id,passport'],
-            'customerForm.doc_id_number' => ['nullable','string','max:100'],
+            'customerForm.email' => ['required', 'email', 'max:191'],
+            'customerForm.phone' => ['required', 'string', 'max:50'],
 
-            'customerForm.tax_code'      => ['nullable','string','max:32'],
-            'customerForm.vat'           => ['nullable','string','max:32'],
+            // Residenza CARGOS: richiesta
+            'customerForm.police_place_code' => ['required', 'integer', 'exists:cargos_luoghi,code'],
 
-            'customerForm.birth_date'    => ['nullable','date'],
-            'customerForm.address'       => ['nullable','string','max:255'],
-            'customerForm.city'          => ['nullable','string','max:100'],
-            'customerForm.province'      => ['nullable','string','max:10'],
-            'customerForm.zip'           => ['nullable','string','max:20'],
-            'customerForm.country_code'  => ['nullable','string','max:2'],
+            // =========================
+            // ✅ CARGOS - Anagrafica (opzionale)
+            // =========================
+            'customerForm.birth_date'      => ['nullable', 'date', 'after:1900-01-01', 'before_or_equal:today'],
+            'customerForm.birth_place_code'=> ['nullable', 'integer', 'exists:cargos_luoghi,code'],
 
-            'customerForm.driver_license_number'      => ['nullable','string','max:64'],
-            'customerForm.driver_license_expires_at'  => ['nullable','date'],
+            // Cittadinanza: picker country-only (salviamo il code nazione)
+            'customerForm.citizenship_place_code' => ['nullable', 'integer', 'exists:cargos_luoghi,code'],
+
+            // =========================
+            // ✅ Documento identità (solo CARGOS)
+            // =========================
+            'customerForm.identity_document_type_code' => ['nullable', 'string', 'exists:cargos_document_types,code'],
+            'customerForm.doc_id_number'               => ['nullable', 'string', 'max:100'],
+            'customerForm.identity_document_place_code'=> ['nullable', 'integer', 'exists:cargos_luoghi,code'],
+
+            // =========================
+            // ✅ Fiscali (opzionali)
+            // =========================
+            'customerForm.tax_code' => ['nullable', 'string', 'max:32'],
+            'customerForm.vat'      => ['nullable', 'string', 'max:32'],
+
+            // =========================
+            // ✅ Patente (opzionali)
+            // =========================
+            'customerForm.driver_license_number'     => ['nullable', 'string', 'max:64'],
+            'customerForm.driver_license_expires_at' => ['nullable', 'date', 'after:1900-01-01'],
+            'customerForm.driver_license_place_code' => ['nullable', 'integer', 'exists:cargos_luoghi,code'],
+
+            // =========================
+            // ✅ Indirizzo testuale (opzionale)
+            // =========================
+            'customerForm.address' => ['nullable', 'string', 'max:255'],
+
+            // CAP "manuale" opzionale: se lo compiliamo noi via CARGOS, non è obbligatorio
+            'customerForm.zip' => ['nullable', 'string', 'max:20'],
+
+            // country_code NON è più input “affidabile”: lo deriviamo da CARGOS (ma lo lasciamo nullable se ancora presente in UI)
+            'customerForm.country_code' => ['nullable', 'string', 'size:2'],
+
+            // ⚠️ Rimossi:
+            // - customerForm.name (non più input)
+            // - customerForm.doc_id_type (non più input: derivato dal codice CARGOS identity_document_type_code)
+            // - customerForm.city / province (derivati da police_place_code)
         ];
     }
 
@@ -577,30 +685,59 @@ class CreateWizard extends Component
         }
     }
 
-    /** Selezione cliente: popola il form invece del toast e collega alla bozza */
+    /** Selezione cliente: popola il form e collega alla bozza */
     public function selectCustomer(int $id): void
     {
         $customer = Customer::query()->findOrFail($id);
 
         $this->customer_id = $customer->id;
 
-        $this->customerForm = [
-            'name'          => $customer->name,
-            'email'         => $customer->email,
-            'phone'         => $customer->phone,
-            'doc_id_type'   => $customer->doc_id_type,
-            'doc_id_number' => $customer->doc_id_number,
+        // fallback: se mancano first/last ma esiste name
+        $fn = $customer->first_name;
+        $ln = $customer->last_name;
+
+        if ((!$fn && !$ln) && $customer->name) {
+            [$fn2, $ln2] = $this->splitFullName($customer->name);
+            $fn = $fn2;
+            $ln = $ln2;
+        }
+
+        $this->customerForm = array_merge($this->customerForm, [
+            // anagrafica
+            'first_name'   => $fn,
+            'last_name'    => $ln,
+            'name'         => $customer->name, // lo teniamo come compatibilità/preview
+            'birth_date'   => optional($customer->birthdate)->format('Y-m-d'),
+
+            // contatti
+            'email'        => $customer->email,
+            'phone'        => $customer->phone,
+
+            // documenti
+            'doc_id_number'                => $customer->doc_id_number,
+            'doc_id_type'                  => $customer->doc_id_type, // interno (compatibilità)
+            'identity_document_type_code'  => $customer->identity_document_type_code,
+            'identity_document_place_code' => $customer->identity_document_place_code,
+
+            'driver_license_number'             => $customer->driver_license_number,
+            'driver_license_expires_at'         => optional($customer->driver_license_expires_at)->format('Y-m-d'),
+            'driver_license_place_code'         => $customer->driver_license_place_code,
+            'driver_license_document_type_code' => $customer->driver_license_document_type_code ?? 'PATEN',
+
+            // CARGOS luoghi
+            'birth_place_code'      => $customer->birth_place_code,
+            'police_place_code'     => $customer->police_place_code,
+            'citizenship_place_code'=> $customer->citizenship_cargos_code, // il picker usa il code del luogo
+
+            // indirizzo testuale (se lo stai ancora mostrando)
+            'address'      => $customer->address_line,
+            'zip'          => $customer->postal_code,
+            'country_code' => $customer->country_code,
+
+            // fiscali
             'tax_code'     => $customer->tax_code,
             'vat'          => $customer->vat,
-            'birth_date'    => optional($customer->birthdate)->format('Y-m-d'),
-            'address'       => $customer->address_line,
-            'city'          => $customer->city,
-            'province'      => $customer->province,
-            'zip'           => $customer->postal_code,
-            'country_code'  => $customer->country_code,
-            'driver_license_number'      => $customer->driver_license_number,
-            'driver_license_expires_at'  => optional($customer->driver_license_expires_at)->format('Y-m-d'),
-        ];
+        ]);
 
         $this->customerPopulated = true;
 
@@ -608,6 +745,9 @@ class CreateWizard extends Component
         $this->saveDraft();
     }
 
+    /**
+     * Crea o aggiorna il cliente in base ai dati del form.
+     */
     public function createOrUpdateCustomer(): void
     {
         $this->validate($this->rulesCustomerCreate());
@@ -618,40 +758,125 @@ class CreateWizard extends Component
             throw new \RuntimeException('Organization ID mancante durante la creazione del cliente');
         }
 
-        // 🔁 Mapping esplicito form → colonne DB
+        // =========
+        // 1) Nome: costruito da first+last (con fallback su "name" se serve)
+        // =========
+        $firstName = $this->nullIfBlank($this->customerForm['first_name'] ?? null);
+        $lastName  = $this->nullIfBlank($this->customerForm['last_name'] ?? null);
+
+        if ((!$firstName && !$lastName) && !empty($this->customerForm['name'])) {
+            [$fn, $ln] = $this->splitFullName($this->customerForm['name']);
+            $firstName = $firstName ?: $fn;
+            $lastName  = $lastName  ?: $ln;
+        }
+
+        $fullName = trim(($firstName ?? '') . ' ' . ($lastName ?? ''));
+        $fullName = $fullName !== '' ? $fullName : $this->nullIfBlank($this->customerForm['name'] ?? null);
+
+        // =========
+        // 2) CARGOS: doc type + mapping doc_id_type interno
+        // =========
+        $identityDocCargos = $this->nullIfBlank($this->customerForm['identity_document_type_code'] ?? null);
+
+        // doc_id_type interno:
+        // - se arriva già dal form (compatibilità vecchia UI) lo teniamo
+        // - altrimenti lo deriviamo dal codice CARGOS
+        $internalDocType = $this->nullIfBlank($this->customerForm['doc_id_type'] ?? null)
+            ?? $this->mapCargosDocTypeToInternal($identityDocCargos);
+
+        // =========
+        // 3) Luoghi CARGOS (nascita/residenza/cittadinanza)
+        // =========
+        $birthPlaceCode      = !empty($this->customerForm['birth_place_code']) ? (int) $this->customerForm['birth_place_code'] : null;
+        $policePlaceCode     = !empty($this->customerForm['police_place_code']) ? (int) $this->customerForm['police_place_code'] : null;
+        $citizenshipPlaceCode= !empty($this->customerForm['citizenship_place_code']) ? (int) $this->customerForm['citizenship_place_code'] : null;
+
+        $birthPlaceName = null;
+        if ($birthPlaceCode) {
+            $luogo = CargosLuogo::find($birthPlaceCode);
+            $birthPlaceName = $luogo?->name;
+        }
+
+        $citizenshipName = null;
+        if ($citizenshipPlaceCode) {
+            $luogo = CargosLuogo::find($citizenshipPlaceCode);
+            $citizenshipName = $luogo?->name;
+        }
+
+        // Residenza: deriva city/province/country_code + police_postal_code
+        $resDerived = $this->deriveResidenceFromPolicePlaceCode($policePlaceCode);
+
+        // =========
+        // 4) Payload DB completo (include tutti i campi che ti mancavano)
+        // =========
         $payload = [
-            'organization_id'             => $orgId,
-            'name'                        => $this->customerForm['name'],
-            'email'                       => $this->customerForm['email'],
-            'phone'                       => $this->customerForm['phone'],
-            'doc_id_type'                 => $this->nullIfBlank($this->customerForm['doc_id_type']),
-            'doc_id_number'               => $this->nullIfBlank($this->customerForm['doc_id_number']),
-            'tax_code'                    => $this->normalizeTaxCode($this->customerForm['tax_code'] ?? null),
-            'vat'                         => $this->normalizeVat($this->customerForm['vat'] ?? null),
-            // ⚠️ QUI ERA IL PROBLEMA
-            'birthdate'                   => $this->castDate($this->customerForm['birth_date']),
-            'address_line'                => $this->customerForm['address'],
-            'postal_code'                 => $this->customerForm['zip'],
+            'organization_id' => $orgId,
 
-            'city'                        => $this->customerForm['city'],
-            'province'                    => $this->customerForm['province'],
-            'country_code'                => $this->nullIfBlank($this->customerForm['country_code']),
+            // anagrafica
+            'first_name' => $firstName,
+            'last_name'  => $lastName,
+            'name'       => $fullName,
 
-            'driver_license_number'       => $this->customerForm['driver_license_number'],
-            'driver_license_expires_at'   => $this->castDate($this->customerForm['driver_license_expires_at']),
+            'birthdate'  => $this->castDate($this->customerForm['birth_date'] ?? null),
+            'birth_place_code' => $birthPlaceCode,
+            'birth_place'      => $birthPlaceName,
+
+            // contatti
+            'email' => $this->nullIfBlank($this->customerForm['email'] ?? null),
+            'phone' => $this->nullIfBlank($this->customerForm['phone'] ?? null),
+
+            // fiscali
+            'tax_code' => $this->normalizeTaxCode($this->customerForm['tax_code'] ?? null),
+            'vat'      => $this->normalizeVat($this->customerForm['vat'] ?? null),
+
+            // documenti identità (CARGOS only + numero)
+            'identity_document_type_code'  => $identityDocCargos,
+            'doc_id_type'                  => $internalDocType,
+            'doc_id_number'                => $this->nullIfBlank($this->customerForm['doc_id_number'] ?? null),
+            'identity_document_place_code' => !empty($this->customerForm['identity_document_place_code'])
+                ? (int) $this->customerForm['identity_document_place_code']
+                : null,
+
+            // patente
+            'driver_license_document_type_code' => 'PATEN',
+            'driver_license_number'             => $this->nullIfBlank($this->customerForm['driver_license_number'] ?? null),
+            'driver_license_expires_at'         => $this->castDate($this->customerForm['driver_license_expires_at'] ?? null),
+            'driver_license_place_code'         => !empty($this->customerForm['driver_license_place_code'])
+                ? (int) $this->customerForm['driver_license_place_code']
+                : null,
+
+            // residenza CARGOS
+            'police_place_code' => $policePlaceCode,
+
+            // indirizzo testuale (se lo stai ancora usando nello wizard)
+            'address_line' => $this->nullIfBlank($this->customerForm['address'] ?? null),
+            'postal_code'  => $this->nullIfBlank($this->customerForm['zip'] ?? null),
+
+            // campi derivati dalla residenza CARGOS
+            'city'               => $resDerived['city'],
+            'province'           => $resDerived['province'],
+            'country_code'       => $this->nullIfBlank($this->customerForm['country_code'] ?? null) ?? $resDerived['country_code'],
+            'police_postal_code' => $resDerived['police_postal_code'],
+
+            // cittadinanza
+            'citizenship'            => $citizenshipName,
+            'citizenship_cargos_code'=> $citizenshipPlaceCode,
         ];
 
+        // =========
+        // 5) CREATE / UPDATE
+        // =========
         if ($this->customer_id) {
-            // UPDATE
             $customer = Customer::query()->findOrFail($this->customer_id);
             $customer->update($payload);
         } else {
-            // CREATE
             $customer = Customer::query()->create($payload);
             $this->customer_id = $customer->id;
         }
 
         $this->customerPopulated = true;
+
+        // ricollega alla bozza
         $this->saveDraft();
     }
 
@@ -663,6 +888,82 @@ class CreateWizard extends Component
         if ($v === null) return null;
         $t = trim($v);
         return $t === '' ? null : $t;
+    }
+
+    /**
+     * Mappa i codici CARGOS dei tipi documento ai valori interni usati nell'app.
+     */
+    private function mapCargosDocTypeToInternal(?string $cargosCode): ?string
+    {
+        return match ($cargosCode) {
+            'IDENT', 'IDELE'                 => 'id',
+            'PASDI', 'PASOR', 'PASSE'        => 'passport',
+            'CIDIP'                          => 'other',
+            default                          => null,
+        };
+    }
+
+    /**
+     * Deriva campi "testuali" dalla residenza CARGOS (police_place_code):
+     * - city, province, country_code
+     * - police_postal_code (se presente nel raw_payload del luogo)
+     *
+     * NB: Se il place è una NAZIONE (province_code === 'ES'), city/province restano null.
+     */
+    private function deriveResidenceFromPolicePlaceCode(?int $policePlaceCode): array
+    {
+        $out = [
+            'city'               => null,
+            'province'           => null,
+            'country_code'       => null,
+            'police_postal_code' => null,
+        ];
+
+        if (!$policePlaceCode) return $out;
+
+        /** @var CargosLuogo|null $luogo */
+        $luogo = CargosLuogo::find($policePlaceCode);
+        if (!$luogo) return $out;
+
+        // NAZIONE (estero o Italia "come nazione"): province_code = 'ES'
+        if ($luogo->province_code === 'ES') {
+            $cc = $luogo->country_code;
+            $out['country_code'] = is_string($cc) && $cc !== '' ? substr($cc, 0, 2) : null;
+            return $out;
+        }
+
+        // COMUNE (Italia)
+        $out['city']         = $luogo->name;
+        $out['province']     = $luogo->province_code;
+        $out['country_code'] = 'IT';
+
+        // Prova a recuperare CAP da raw_payload (chiavi variabili a seconda del dataset)
+        $raw = is_array($luogo->raw_payload) ? $luogo->raw_payload : [];
+        $cap = data_get($raw, 'cap')
+            ?? data_get($raw, 'CAP')
+            ?? data_get($raw, 'postal_code')
+            ?? data_get($raw, 'zip')
+            ?? null;
+
+        $out['police_postal_code'] = is_string($cap) && trim($cap) !== '' ? trim($cap) : null;
+
+        return $out;
+    }
+
+    /**
+     * Ritorna [first,last] a partire da un "name" pieno (fallback).
+     */
+    private function splitFullName(?string $fullName): array
+    {
+        $fullName = trim((string) $fullName);
+        if ($fullName === '') return [null, null];
+
+        [$fn, $ln] = array_pad(explode(' ', $fullName, 2), 2, null);
+
+        $fn = $fn !== null ? trim($fn) : null;
+        $ln = $ln !== null ? trim($ln) : null;
+
+        return [$fn ?: null, $ln ?: null];
     }
 
     /**

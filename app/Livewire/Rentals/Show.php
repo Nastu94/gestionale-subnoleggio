@@ -850,6 +850,7 @@ class Show extends Component
             $this->dispatch('toast', type: 'success', message: 'Checklist firmata generata con successo.');
             $this->dispatch('$refresh');
         } catch (\Throwable $e) {
+            // Log completo (stacktrace) per debug server-side
             report($e);
 
             // prova a pulire il tmp se qualcosa è andato storto
@@ -857,7 +858,20 @@ class Show extends Component
                 try { Storage::delete($tmpRelPath); } catch (\Throwable $ignored) {}
             }
 
-            $this->dispatch('toast', type: 'error', message: 'Errore durante la generazione del PDF firmato.');
+            /**
+             * ✅ In debug mostro un messaggio utile, in produzione lascio il testo generico.
+             * Questo ci permette di capire subito se è:
+             * - view mancante
+             * - permessi storage/tmp
+             * - dompdf
+             * - media library
+             * - signedCollectionName nullo, ecc.
+             */
+            $debugMsg = config('app.debug')
+                ? ('Errore PDF: ' . $e->getMessage())
+                : 'Errore durante la generazione del PDF firmato.';
+
+            $this->dispatch('toast', type: 'error', message: $debugMsg);
         }
     }
 
@@ -980,7 +994,13 @@ class Show extends Component
                         'severity'    => $severity ?: 'low',
                         'description' => $desc,
                     ];
-                });
+                })
+                /**
+                 * ✅ IMPORTANTISSIMO:
+                 * map() su Eloquent\Collection restituisce ancora una Eloquent\Collection.
+                 * Convertiamo a Support\Collection per evitare che merge() tratti le righe come Model (getKey()).
+                 */
+                ->toBase();
         }
 
         // 2) Rental damages (filtrati per tipo checklist)
@@ -1004,7 +1024,8 @@ class Show extends Component
                     'severity'    => $severity ?: 'low',
                     'description' => $desc,
                 ];
-            });
+            })
+            ->toBase();
 
         // Merge + dedupe “soft”
         return $vehicleRows

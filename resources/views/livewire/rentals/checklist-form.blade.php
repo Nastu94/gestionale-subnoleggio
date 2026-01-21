@@ -756,7 +756,7 @@
                         </h3>
 
                         <div class="flex items-center gap-2">
-                            <input type="file" x-ref="fileOdom" accept="image/jpeg,image/png"
+                            <input type="file" x-ref="fileOdom" accept="image/*"
                                 :disabled="state.locked || !state.checklistId"
                                 class="text-sm" />
                             <button type="button"
@@ -816,7 +816,7 @@
                             {{ __('Foto indicatore carburante') }}
                         </h3>
                         <div class="flex items-center gap-2">
-                            <input type="file" x-ref="fileFuel" accept="image/jpeg,image/png"
+                            <input type="file" x-ref="fileFuel" accept="image/*"
                                 :disabled="state.locked || !state.checklistId"
                                 class="text-sm" />
                             <button type="button"
@@ -874,7 +874,7 @@
                             {{ __('Foto esterni veicolo') }}
                         </h3>
                         <div class="flex items-center gap-2">
-                            <input type="file" x-ref="fileExt" accept="image/jpeg,image/png"
+                            <input type="file" x-ref="fileExt" accept="image/*"
                                 :disabled="state.locked || !state.checklistId"
                                 class="text-sm" />
                             <button type="button"
@@ -950,7 +950,7 @@
                                     </template>
                                 </select>
 
-                                <input type="file" x-ref="fileDamage" accept="image/jpeg,image/png"
+                                <input type="file" x-ref="fileDamage" accept="image/*"
                                     :disabled="state.locked || !state.checklistId || !state.selectedDamageId"
                                     class="text-sm" />
 
@@ -1179,9 +1179,14 @@ document.addEventListener('alpine:init', () => {
                 const currentIds = new Set(list.map(d => Number(d.id)));
 
                 // Ricostruisci le opzioni della select
-                this.state.damages = list.map(d => ({
+                this.state.damages = list
+                .filter(d => Number.isInteger(Number(d?.id)))
+                .map(d => ({
                     id: Number(d.id),
-                    label: [d.area || null, d.severity || null].filter(Boolean).join(' · ') || `Danno #${d.id}`,
+                    label: [
+                        tDamageArea(d.area) || null,
+                        tDamageSeverity(d.severity) || null,
+                    ].filter(Boolean).join(' · ') || `Danno #${d.id}`,
                 }));
 
                 // Se il danno selezionato non esiste più, resetta selezione e tabella

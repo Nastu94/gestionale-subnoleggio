@@ -136,7 +136,7 @@ class RentalChecklist extends Model implements SpatieHasMedia
      */
     public function isLocked(): bool
     {
-        return !is_null($this->locked_at);
+         return !empty($this->locked_at) || !empty($this->signed_media_id) || !empty($this->locked_reason);
     }
 
     /**

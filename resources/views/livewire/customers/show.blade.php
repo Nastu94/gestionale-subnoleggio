@@ -8,223 +8,218 @@
             history.replaceState(null, '', '#' + t);
         }
      }"
-     x-init="
-        // Se l'hash cambia (es. back/forward), sincronizza la tab
-        window.addEventListener('hashchange', () => {
-            const t = window.location.hash ? window.location.hash.substring(1) : 'dati';
-            tab = (['dati','contratti'].includes(t) ? t : 'dati');
-        });
-     "
 >
-    {{-- Header tabs --}}
-    <div class="border-b mb-4">
-        <nav class="flex gap-6 text-sm" role="tablist" aria-label="Sezioni cliente">
+    {{-- =========================
+        HEADER TABS
+    ========================== --}}
+    <div class="border-b mb-6">
+        <nav class="flex gap-6 text-sm">
             <button type="button"
-                    @click="setTab('dati')"
-                    :class="tab === 'dati' ? 'border-b-2 border-indigo-600 text-indigo-700 dark:text-indigo-300' : 'text-gray-600 dark:text-gray-300'"
-                    class="pb-2"
-                    role="tab"
-                    :aria-selected="(tab === 'dati').toString()"
-                    aria-controls="tab-dati">
-                Dati
+                @click="setTab('dati')"
+                :class="tab === 'dati'
+                    ? 'border-b-2 border-indigo-600 text-indigo-700 dark:text-indigo-300'
+                    : 'text-gray-500 dark:text-gray-300'"
+                class="pb-2 font-medium">
+                Dati cliente
             </button>
 
             <button type="button"
-                    @click="setTab('contratti')"
-                    :class="tab === 'contratti' ? 'border-b-2 border-indigo-600 text-indigo-700 dark:text-indigo-300' : 'text-gray-600 dark:text-gray-300'"
-                    class="pb-2"
-                    role="tab"
-                    :aria-selected="(tab === 'contratti').toString()"
-                    aria-controls="tab-contratti">
+                @click="setTab('contratti')"
+                :class="tab === 'contratti'
+                    ? 'border-b-2 border-indigo-600 text-indigo-700 dark:text-indigo-300'
+                    : 'text-gray-500 dark:text-gray-300'"
+                class="pb-2 font-medium">
                 Contratti
             </button>
         </nav>
     </div>
 
-    {{-- TAB: Dati (identitari + contatti + residenza + note) --}}
-    <section x-show="tab === 'dati'" x-cloak id="tab-dati" role="tabpanel" aria-labelledby="Dati">
-        <form wire:submit.prevent="save" class="space-y-6">
-            {{-- Sezione: Dati identitari --}}
-            <div>
-                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Dati identitari</h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {{-- Nome / Ragione sociale --}}
-                    <div>
-                        <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Nome / Ragione sociale</label>
-                        <input type="text" wire:model.defer="name"
-                            class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                    text-gray-900 dark:text-gray-100 w-full">
-                        @error('name') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
+    {{-- =========================
+        TAB DATI
+    ========================== --}}
+    <section x-show="tab === 'dati'" x-cloak>
+        <form wire:submit.prevent="save" class="space-y-10">
+
+            {{-- ======================================================
+                1. DATI ANAGRAFICI
+            ======================================================= --}}
+            <section class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                <header class="px-6 py-4 border-b dark:border-gray-700">
+                    <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                        Dati anagrafici
+                    </h3>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                        Informazioni personali del cliente
+                    </p>
+                </header>
+
+                <div class="p-6 space-y-6">
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="text-xs text-gray-600 dark:text-gray-300">Nome</label>
+                            <input wire:model.defer="first_name"
+                                   class="mt-1 w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm">
+                        </div>
+
+                        <div>
+                            <label class="text-xs text-gray-600 dark:text-gray-300">Cognome</label>
+                            <input wire:model.defer="last_name"
+                                   class="mt-1 w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm">
+                        </div>
+
+                        <div>
+                            <label class="text-xs text-gray-600 dark:text-gray-300">Data di nascita</label>
+                            <input type="date" wire:model.defer="birthdate"
+                                   class="mt-1 w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm">
+                        </div>
                     </div>
 
-                    {{-- Data di nascita --}}
-                    <div>
-                        <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Data di nascita</label>
-                        <input type="date" wire:model.defer="birthdate"
-                            class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                    text-gray-900 dark:text-gray-100 w-full">
-                        @error('birthdate') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
+                    <livewire:shared.cargos-luogo-picker
+                        wire:model="birth_place_code"
+                        title="Luogo di nascita"
+                        hint="Comune italiano o nazione estera"
+                    />
+
+                    <livewire:shared.cargos-luogo-picker
+                        wire:model="citizenship_place_code"
+                        title="Cittadinanza"
+                        hint="Seleziona solo la nazione"
+                        mode="country-only"
+                    />
+                </div>
+            </section>
+
+            {{-- ======================================================
+                2. DOCUMENTI
+            ======================================================= --}}
+            <section class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                <header class="px-6 py-4 border-b dark:border-gray-700">
+                    <h3 class="text-sm font-semibold">Documenti</h3>
+                    <p class="text-xs text-gray-500">Documento di identità e patente</p>
+                </header>
+
+                <div class="p-6 space-y-8">
+                    {{-- Documento identità --}}
+                    <div class="space-y-4">
+                        <h4 class="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">
+                            Documento di identità
+                        </h4>
+
+                        <livewire:shared.cargos-document-type-picker
+                            wire:model="identity_document_type_code"
+                            title="Tipo documento (CARGOS)"
+                        />
+
+                        <div>
+                            <label class="text-xs">Numero documento</label>
+                            <input wire:model.defer="doc_id_number"
+                                   class="mt-1 w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm">
+                        </div>
+
+                        <livewire:shared.cargos-luogo-picker
+                            wire:model="identity_document_place_code"
+                            title="Luogo di rilascio"
+                        />
                     </div>
 
-                    {{-- Tipo documento d'identità (select limitata a id/passport) --}}
-                    <div>
-                        <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Tipo documento d'identità</label>
-                        <select wire:model.defer="doc_id_type"
-                                class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                    text-gray-900 dark:text-gray-100 w-full">
-                            {{-- Se a DB c'è un valore non previsto (license/other), lo mostriamo ma non selezionabile --}}
-                            @if($doc_id_type && !in_array($doc_id_type, ['id','passport']))
-                                <option value="{{ $doc_id_type }}" selected disabled>
-                                    Valore attuale: {{ strtoupper($doc_id_type) }}
-                                </option>
-                            @endif
+                    {{-- Patente --}}
+                    <div class="space-y-4">
+                        <h4 class="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">
+                            Patente di guida
+                        </h4>
 
-                            <option value="" @selected($doc_id_type === null) >—</option>
-                            @foreach($docIdOptions as $val => $label)
-                                <option value="{{ $val }}">{{ $label }}</option>
-                            @endforeach
-                        </select>
-                        @error('doc_id_type') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
-                    </div>
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="text-xs">Numero patente</label>
+                                <input wire:model.defer="driver_license_number"
+                                       class="mt-1 w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm">
+                            </div>
 
-                    {{-- Numero documento d'identità (label aggiornato) --}}
-                    <div>
-                        <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Numero documento d'identità</label>
-                        <input type="text" wire:model.defer="doc_id_number"
-                            class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                    text-gray-900 dark:text-gray-100 w-full">
-                        @error('doc_id_number') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
-                    </div>
-                    
-                    {{-- Codice fiscale --}}
-                    <div>
-                        <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Codice fiscale</label>
-                        <input type="text" wire:model.defer="tax_code"
-                            class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                    text-gray-900 dark:text-gray-100 w-full">
-                        @error('tax_code') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
-                    </div>
+                            <div>
+                                <label class="text-xs">Scadenza</label>
+                                <input type="date" wire:model.defer="driver_license_expires_at"
+                                       class="mt-1 w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm">
+                            </div>
+                        </div>
 
-                    {{-- Partita IVA --}}
-                    <div>
-                        <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Partita IVA</label>
-                        <input type="text" wire:model.defer="vat"
-                            class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                    text-gray-900 dark:text-gray-100 w-full">
-                        @error('vat') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
-                    </div>
-
-                    {{-- Numero patente (nuovo) --}}
-                    <div>
-                        <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Numero patente</label>
-                        <input type="text" wire:model.defer="driver_license_number"
-                            class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                    text-gray-900 dark:text-gray-100 w-full">
-                        @error('driver_license_number') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
-                    </div>
-
-                    {{-- Scadenza patente (nuovo) --}}
-                    <div>
-                        <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Scadenza patente</label>
-                        <input type="date" wire:model.defer="driver_license_expires_at"
-                            class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                    text-gray-900 dark:text-gray-100 w-full">
-                        @error('driver_license_expires_at') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
+                        <livewire:shared.cargos-luogo-picker
+                            wire:model="driver_license_place_code"
+                            title="Luogo di rilascio patente"
+                        />
                     </div>
                 </div>
-            </div>
+            </section>
 
-            {{-- Sezione: Contatti --}}
-            <div>
-                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Contatti</h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {{-- ======================================================
+                3. CONTATTI
+            ======================================================= --}}
+            <section class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                <header class="px-6 py-4 border-b dark:border-gray-700">
+                    <h3 class="text-sm font-semibold">Contatti</h3>
+                </header>
+
+                <div class="p-6 grid md:grid-cols-2 gap-6">
                     <div>
-                        <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Email</label>
-                        <input type="email" wire:model.defer="email"
-                            class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                    text-gray-900 dark:text-gray-100 w-full">
-                        @error('email') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
+                        <label class="text-xs">Email</label>
+                        <input wire:model.defer="email"
+                               class="mt-1 w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm">
                     </div>
+
                     <div>
-                        <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Telefono</label>
-                        <input type="text" wire:model.defer="phone"
-                            class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                    text-gray-900 dark:text-gray-100 w-full">
-                        @error('phone') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
+                        <label class="text-xs">Telefono</label>
+                        <input wire:model.defer="phone"
+                               class="mt-1 w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm">
                     </div>
                 </div>
-            </div>
+            </section>
 
-            {{-- Sezione: Residenza (unico indirizzo) --}}
-            <div>
-                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Residenza</h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="md:col-span-2">
-                        <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Indirizzo</label>
-                        <input type="text" wire:model.defer="address_line"
-                            class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                    text-gray-900 dark:text-gray-100 w-full">
-                        @error('address_line') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
-                    </div>
+            {{-- ======================================================
+                4. INDIRIZZI
+            ======================================================= --}}
+            <section class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                <header class="px-6 py-4 border-b dark:border-gray-700">
+                    <h3 class="text-sm font-semibold">Indirizzi</h3>
+                </header>
+
+                <div class="p-6 space-y-6">
+                    <livewire:shared.cargos-luogo-picker
+                        wire:model="police_place_code"
+                        title="Residenza"
+                    />
+
                     <div>
-                        <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Città</label>
-                        <input type="text" wire:model.defer="city"
-                            class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                    text-gray-900 dark:text-gray-100 w-full">
-                        @error('city') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
+                        <label class="text-xs">Indirizzo</label>
+                        <input wire:model.defer="address_line"
+                               class="mt-1 w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm">
                     </div>
+
                     <div>
-                        <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Provincia</label>
-                        <input type="text" wire:model.defer="province"
-                            class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                    text-gray-900 dark:text-gray-100 w-full">
-                        @error('province') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
-                    </div>
-                    <div>
-                        <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">CAP</label>
-                        <input type="text" wire:model.defer="postal_code"
-                            class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                    text-gray-900 dark:text-gray-100 w-full">
-                        @error('postal_code') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
-                    </div>
-                    <div>
-                        <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Nazione (ISO-2)</label>
-                        <input type="text" wire:model.defer="country_code" maxlength="2"
-                            class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                    text-gray-900 dark:text-gray-100 w-full">
-                        @error('country_code') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
+                        <label class="text-xs">CAP</label>
+                        <input wire:model.defer="postal_code"
+                               class="mt-1 w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm">
                     </div>
                 </div>
-            </div>
+            </section>
 
-            {{-- Sezione: Note --}}
-            <div>
-                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Note</h3>
-                <textarea wire:model.defer="notes" rows="3"
-                        class="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm
-                                text-gray-900 dark:text-gray-100 w-full"></textarea>
-                @error('notes') <p class="text-red-600 text-xs mt-1">{{ $message }}</p> @enderror
-            </div>
+            {{-- ======================================================
+                5. NOTE
+            ======================================================= --}}
+            <section class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                <header class="px-6 py-4 border-b dark:border-gray-700">
+                    <h3 class="text-sm font-semibold">Note</h3>
+                </header>
 
-            {{-- Azioni --}}
-            <div class="flex items-center justify-end gap-3 pt-2">
-                <a href="{{ route('customers.index') }}"
-                class="inline-flex items-center px-3 py-1.5 rounded-md border text-xs font-semibold
-                        uppercase hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <i class="fas fa-arrow-left mr-1"></i> Indietro
-                </a>
-                <button type="submit"
-                        class="inline-flex items-center px-3 py-1.5 bg-indigo-600 rounded-md
-                            text-xs font-semibold text-white uppercase hover:bg-indigo-500
-                            focus:outline-none focus:ring-2 focus:ring-indigo-300 transition">
-                    <i class="fas fa-save mr-1"></i> Salva modifiche
-                </button>
+                <div class="p-6">
+                    <textarea wire:model.defer="notes" rows="3"
+                              class="w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm"></textarea>
+                </div>
+            </section>
+
+            {{-- AZIONI --}}
+            <div class="flex justify-end gap-3">
+                <a href="{{ route('customers.index') }}" class="btn-secondary">Indietro</a>
+                <button type="submit" class="btn-primary">Salva</button>
             </div>
         </form>
-    </section>
-
-    {{-- TAB: Contratti --}}
-    <section x-show="tab === 'contratti'" x-cloak id="tab-contratti" role="tabpanel" aria-labelledby="Contratti">
-        <livewire:customers.rentals-table :customer="$customer" />
     </section>
 </div>

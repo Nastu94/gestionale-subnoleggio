@@ -241,10 +241,19 @@
     @if($step===2)
         <fieldset @disabled(!$vehSelected) title="{{ $vehSelected ? '' : 'Seleziona prima un veicolo' }}">
             <div class="grid md:grid-cols-2 gap-6">
-                {{-- Ricerca e selezione --}}
+                {{-- =========================
+                    COLONNA SX — Ricerca e selezione
+                ========================== --}}
                 <div class="space-y-3">
                     <div class="text-sm font-semibold">Cerca cliente esistente</div>
-                    <input type="text" wire:model.live.debounce.300ms="customerQuery" class="{{ $input }}" placeholder="Nome o n. patente…" />
+
+                    <input
+                        type="text"
+                        wire:model.live.debounce.300ms="customerQuery"
+                        class="{{ $input }}"
+                        placeholder="Nome o n. patente…"
+                    />
+
                     <div class="text-xs opacity-60">Min. 2 caratteri</div>
 
                     <div class="divide-y rounded-md border border-gray-200 dark:border-gray-700">
@@ -254,7 +263,14 @@
                                     <div class="font-medium">{{ $c['name'] }}</div>
                                     <div class="opacity-70">Patente: {{ $c['driver_license_number'] }}</div>
                                 </div>
-                                <button wire:click="selectCustomer({{ $c['id'] }})" class="{{ $btnIndigo }}">Seleziona</button>
+
+                                <button
+                                    type="button"
+                                    wire:click="selectCustomer({{ $c['id'] }})"
+                                    class="{{ $btnIndigo }}"
+                                >
+                                    Seleziona
+                                </button>
                             </div>
                         @empty
                             <div class="p-3 text-sm opacity-70">Nessun risultato</div>
@@ -262,12 +278,43 @@
                     </div>
                 </div>
 
-                {{-- Form cliente (popolato se selezionato; usabile anche per creare) --}}
-                <div class="space-y-3">
+                {{-- =========================
+                    COLONNA DX — Form cliente (stile Customers/Show)
+                    - Nome completo auto da first_name + last_name
+                ========================== --}}
+                <div
+                    class="space-y-10"
+                    x-data="{
+                        first: @entangle('customerForm.first_name').live,
+                        last:  @entangle('customerForm.last_name').live,
+                        full:  '',
+
+                        normalize(s){
+                            return (s || '').toString().trim().replace(/\s+/g,' ');
+                        },
+
+                        sync(){
+                            const f = this.normalize(this.first);
+                            const l = this.normalize(this.last);
+                            this.full = this.normalize((f + ' ' + l).trim());
+
+                            // Compatibilità con logica attuale:
+                            // customerForm.name resta il campo canonico per validazione/payload
+                            this.$wire.set('customerForm.name', this.full);
+                        },
+
+                        init(){
+                            this.sync();
+                            this.$watch('first', () => this.sync());
+                            this.$watch('last',  () => this.sync());
+                        }
+                    }"
+                >
                     <div class="flex items-center justify-between">
                         <div class="text-sm font-semibold">
                             {{ $customerPopulated ? 'Cliente selezionato (modificabile)' : 'Crea nuovo cliente' }}
                         </div>
+
                         @if($customerPopulated)
                             <span class="text-xs rounded-full px-2 py-0.5 bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300">
                                 ID #{{ $customer_id }}
@@ -275,115 +322,255 @@
                         @endif
                     </div>
 
-                    <div class="grid grid-cols-1 gap-3">
-                        <label>
-                            <span class="block mb-1 text-sm">Nome completo *</span>
-                            <input type="text" wire:model.defer="customerForm.name" class="{{ $input }}" />
-                            @error('customerForm.name') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
-                        </label>
+                    {{-- Campo nascosto: mantiene customerForm.name popolato --}}
+                    <input type="hidden" wire:model.defer="customerForm.name" />
+                    @error('customerForm.name') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
 
-                        <div class="grid md:grid-cols-2 gap-3">
-                            <label>
-                                <span class="block mb-1 text-sm">Email *</span>
-                                <input type="email" wire:model.defer="customerForm.email" class="{{ $input }}" />
+                    {{-- ======================================================
+                        1. DATI ANAGRAFICI
+                    ======================================================= --}}
+                    <section class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                        <header class="px-6 py-4 border-b dark:border-gray-700">
+                            <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                Dati anagrafici
+                            </h3>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">
+                                Informazioni personali del cliente
+                            </p>
+                        </header>
+
+                        <div class="p-6 space-y-6">
+                            <div class="grid md:grid-cols-2 gap-6">
+                                <div>
+                                    <label class="text-xs text-gray-600 dark:text-gray-300">Nome *</label>
+                                    <input
+                                        type="text"
+                                        wire:model.defer="customerForm.first_name"
+                                        class="mt-1 {{ $input }}"
+                                    />
+                                    @error('customerForm.first_name') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                                </div>
+
+                                <div>
+                                    <label class="text-xs text-gray-600 dark:text-gray-300">Cognome *</label>
+                                    <input
+                                        type="text"
+                                        wire:model.defer="customerForm.last_name"
+                                        class="mt-1 {{ $input }}"
+                                    />
+                                    @error('customerForm.last_name') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                                </div>
+
+                                <div class="md:col-span-2">
+                                    <label class="text-xs text-gray-600 dark:text-gray-300">
+                                        Nome completo (automatico)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        x-bind:value="full"
+                                        disabled
+                                        class="mt-1 {{ $input }} opacity-70 cursor-not-allowed"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label class="text-xs text-gray-600 dark:text-gray-300">Data di nascita</label>
+                                    <input
+                                        type="date"
+                                        wire:model.defer="customerForm.birth_date"
+                                        class="mt-1 {{ $input }}"
+                                    />
+                                    @error('customerForm.birth_date') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                                </div>
+                            </div>
+
+                            <livewire:shared.cargos-luogo-picker
+                                wire:model="customerForm.birth_place_code"
+                                title="Luogo di nascita"
+                                hint="Comune italiano o nazione estera"
+                                wire:key="wiz-birth-{{ $customer_id ?? 'new' }}"
+                            />
+
+                            <livewire:shared.cargos-luogo-picker
+                                wire:model="customerForm.citizenship_place_code"
+                                title="Cittadinanza"
+                                hint="Seleziona solo la nazione"
+                                mode="country-only"
+                                wire:key="wiz-cit-{{ $customer_id ?? 'new' }}"
+                            />
+                        </div>
+                    </section>
+
+                    {{-- ======================================================
+                        2. DOCUMENTI
+                        - Documento identità solo lato CARGOS
+                    ======================================================= --}}
+                    <section class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                        <header class="px-6 py-4 border-b dark:border-gray-700">
+                            <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                Documenti
+                            </h3>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">
+                                Documento di identità e patente
+                            </p>
+                        </header>
+
+                        <div class="p-6 space-y-8">
+                            {{-- Documento identità --}}
+                            <div class="space-y-4">
+                                <h4 class="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">
+                                    Documento di identità
+                                </h4>
+
+                                <livewire:shared.cargos-document-type-picker
+                                    wire:model="customerForm.identity_document_type_code"
+                                    title="Tipo documento"
+                                    wire:key="wiz-doc-type-{{ $customer_id ?? 'new' }}"
+                                />
+                                @error('customerForm.identity_document_type_code') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+
+                                <div>
+                                    <label class="text-xs text-gray-600 dark:text-gray-300">Numero documento</label>
+                                    <input
+                                        type="text"
+                                        wire:model.defer="customerForm.doc_id_number"
+                                        class="mt-1 {{ $input }}"
+                                    />
+                                    @error('customerForm.doc_id_number') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                                </div>
+
+                                <livewire:shared.cargos-luogo-picker
+                                    wire:model="customerForm.identity_document_place_code"
+                                    title="Luogo di rilascio"
+                                    hint="Comune italiano o nazione estera"
+                                    wire:key="wiz-doc-place-{{ $customer_id ?? 'new' }}"
+                                />
+                                @error('customerForm.identity_document_place_code') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                            </div>
+
+                            {{-- Patente --}}
+                            <div class="space-y-4">
+                                <h4 class="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">
+                                    Patente di guida
+                                </h4>
+
+                                <div class="grid md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label class="text-xs text-gray-600 dark:text-gray-300">Numero patente</label>
+                                        <input
+                                            type="text"
+                                            wire:model.defer="customerForm.driver_license_number"
+                                            class="mt-1 {{ $input }}"
+                                        />
+                                        @error('customerForm.driver_license_number') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                                    </div>
+
+                                    <div>
+                                        <label class="text-xs text-gray-600 dark:text-gray-300">Scadenza</label>
+                                        <input
+                                            type="date"
+                                            wire:model.defer="customerForm.driver_license_expires_at"
+                                            class="mt-1 {{ $input }}"
+                                        />
+                                        @error('customerForm.driver_license_expires_at') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                                    </div>
+                                </div>
+
+                                <livewire:shared.cargos-luogo-picker
+                                    wire:model="customerForm.driver_license_place_code"
+                                    title="Luogo di rilascio patente"
+                                    hint="Comune italiano o nazione estera"
+                                    wire:key="wiz-dl-place-{{ $customer_id ?? 'new' }}"
+                                />
+                                @error('customerForm.driver_license_place_code') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                            </div>
+
+                            {{-- Fiscale --}}
+                            <div class="grid md:grid-cols-2 gap-6">
+                                <div>
+                                    <label class="text-xs text-gray-600 dark:text-gray-300">Codice fiscale</label>
+                                    <input type="text" wire:model.defer="customerForm.tax_code" class="mt-1 {{ $input }}" />
+                                    @error('customerForm.tax_code') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                                </div>
+
+                                <div>
+                                    <label class="text-xs text-gray-600 dark:text-gray-300">Partita IVA</label>
+                                    <input type="text" wire:model.defer="customerForm.vat" class="mt-1 {{ $input }}" />
+                                    @error('customerForm.vat') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    {{-- ======================================================
+                        3. CONTATTI
+                    ======================================================= --}}
+                    <section class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                        <header class="px-6 py-4 border-b dark:border-gray-700">
+                            <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                Contatti
+                            </h3>
+                        </header>
+
+                        <div class="p-6 grid md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="text-xs text-gray-600 dark:text-gray-300">Email *</label>
+                                <input type="email" wire:model.defer="customerForm.email" class="mt-1 {{ $input }}" />
                                 @error('customerForm.email') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
-                            </label>
-                            <label>
-                                <span class="block mb-1 text-sm">Telefono *</span>
-                                <input type="text" wire:model.defer="customerForm.phone" class="{{ $input }}" />
+                            </div>
+
+                            <div>
+                                <label class="text-xs text-gray-600 dark:text-gray-300">Telefono *</label>
+                                <input type="text" wire:model.defer="customerForm.phone" class="mt-1 {{ $input }}" />
                                 @error('customerForm.phone') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
-                            </label>
+                            </div>
                         </div>
+                    </section>
 
-                        <div class="grid md:grid-cols-2 gap-3">
-                            <label>
-                                <span class="block mb-1 text-sm">Tipo Documento d'identità</span>
-                                <select wire:model.defer="customerForm.doc_id_type" class="{{ $input }}">
-                                    <option value="">— Seleziona —</option>
-                                    <option value="id">Carta d'identità</option>
-                                    <option value="passport">Passaporto</option>
-                                </select>
-                                @error('customerForm.doc_id_type') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
-                            </label>
+                    {{-- ======================================================
+                        4. INDIRIZZI
+                        - Residenza solo lato CARGOS + indirizzo + CAP
+                    ======================================================= --}}
+                    <section class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                        <header class="px-6 py-4 border-b dark:border-gray-700">
+                            <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                Indirizzi
+                            </h3>
+                        </header>
 
-                            <label>
-                                <span class="block mb-1 text-sm">Numero documento d'identità</span>
-                                <input type="text" wire:model.defer="customerForm.doc_id_number" class="{{ $input }}" />
-                                @error('customerForm.doc_id_number') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
-                            </label>
+                        <div class="p-6 space-y-6">
+                            <livewire:shared.cargos-luogo-picker
+                                wire:model="customerForm.police_place_code"
+                                title="Residenza"
+                                hint="Comune italiano o nazione estera"
+                                wire:key="wiz-res-{{ $customer_id ?? 'new' }}"
+                            />
+                            @error('customerForm.police_place_code') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+
+                            <div>
+                                <label class="text-xs text-gray-600 dark:text-gray-300">Indirizzo</label>
+                                <input type="text" wire:model.defer="customerForm.address" class="mt-1 {{ $input }}" />
+                                @error('customerForm.address') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                            </div>
+
+                            <div class="md:w-40">
+                                <label class="text-xs text-gray-600 dark:text-gray-300">CAP</label>
+                                <input type="text" wire:model.defer="customerForm.zip" class="mt-1 {{ $input }}" />
+                                @error('customerForm.zip') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                            </div>
                         </div>
+                    </section>
 
-                        <div class="grid md:grid-cols-2 gap-3">
-                            <label>
-                                <span class="block mb-1 text-sm">Codice fiscale</span>
-                                <input type="text" wire:model.defer="customerForm.tax_code" class="{{ $input }}" />
-                                @error('customerForm.tax_code') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
-                            </label>
-
-                            <label>
-                                <span class="block mb-1 text-sm">Partita IVA</span>
-                                <input type="text" wire:model.defer="customerForm.vat" class="{{ $input }}" />
-                                @error('customerForm.vat') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
-                            </label>
-                        </div>
-
-                        <div class="grid md:grid-cols-2 gap-3">
-                            <label>
-                                <span class="block mb-1 text-sm">Numero Patente</span>
-                                <input type="text" wire:model.defer="customerForm.driver_license_number" class="{{ $input }}" />
-                                @error('customerForm.driver_license_number') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
-                            </label>
-
-                            <label>
-                                <span class="block mb-1 text-sm">Scadenza Patente</span>
-                                <input type="date" wire:model.defer="customerForm.driver_license_expires_at" class="{{ $input }}" />
-                                @error('customerForm.driver_license_expires_at') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
-                            </label>
-                        </div>
-
-                        <div class="grid md:grid-cols-2 gap-3">
-                            <label>
-                                <span class="block mb-1 text-sm">Data di nascita</span>
-                                <input type="date" wire:model.defer="customerForm.birth_date" class="{{ $input }}" />
-                                @error('customerForm.birth_date') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
-                            </label>
-                            <div></div>
-                        </div>
-
-                        <label>
-                            <span class="block mb-1 text-sm">Indirizzo</span>
-                            <input type="text" wire:model.defer="customerForm.address" class="{{ $input }}" />
-                        </label>
-
-                        <div class="grid md:grid-cols-4 gap-3">
-                            <label class="md:col-span-2">
-                                <span class="block mb-1 text-sm">Città</span>
-                                <input type="text" wire:model.defer="customerForm.city" class="{{ $input }}" />
-                            </label>
-                            <label>
-                                <span class="block mb-1 text-sm">Provincia</span>
-                                <input type="text" wire:model.defer="customerForm.province" class="{{ $input }}" />
-                            </label>
-                            <label>
-                                <span class="block mb-1 text-sm">CAP</span>
-                                <input type="text" wire:model.defer="customerForm.zip" class="{{ $input }}" />
-                            </label>
-                        </div>
-
-                        <label class="md:w-40">
-                            <span class="block mb-1 text-sm">Nazione (ISO-2)</span>
-                            <input type="text" wire:model.defer="customerForm.country_code" class="{{ $input }}" placeholder="IT, FR, …" />
-                        </label>
-
-                        <div class="flex justify-end gap-2">
-                            <button wire:click="createOrUpdateCustomer" class="{{ $btnIndigo }}">
-                                {{ $customerPopulated ? 'Aggiorna cliente' : 'Crea e associa' }}
-                            </button>
-                        </div>
+                    {{-- AZIONE --}}
+                    <div class="flex justify-end gap-2">
+                        <button type="button" wire:click="createOrUpdateCustomer" class="{{ $btnIndigo }}">
+                            {{ $customerPopulated ? 'Aggiorna cliente' : 'Crea e associa' }}
+                        </button>
                     </div>
                 </div>
             </div>
         </fieldset>
+
         @if(!$vehSelected)
             <div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-2">
                 Seleziona un veicolo nello Step 1 per abilitare i dati cliente.

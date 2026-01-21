@@ -423,9 +423,21 @@ document.addEventListener('alpine:init', () => {
       baseAmount: Number(baseAmount || 0),
 
       /**
-       * ✅ Residuo quota base = importo contratto - acconti già pagati.
-       * Non scende mai sotto 0.
-       */
+      * ✅ Ritorna SEMPRE e SOLO l'importo dei km extra dovuti.
+      * Fonte preferita: window.__distanceOverageDue (settata da rentalActions.fetchOverage()).
+      * Fallback: distanceOverageDue locale.
+      */
+      getOverageDue() {
+        const w = Number(window.__distanceOverageDue || 0);
+        if (w > 0) return w;
+
+        const local = Number(this.distanceOverageDue || 0);
+        return local > 0 ? local : 0;
+      },
+
+      /**
+      * ✅ Residuo quota base = importo contratto - acconti già pagati.
+      */
       baseDue(){
         const base = Number(this.baseAmount || 0);
         const acc  = Number(this.accontoPaid || 0);
@@ -433,34 +445,33 @@ document.addEventListener('alpine:init', () => {
       },
 
       /**
-       * ✅ Residuo "quota base + km extra" (tenendo conto dell'acconto).
-       */
+      * ✅ Residuo "quota base + km extra" = (base - acconto) + (solo km extra).
+      */
       basePlusOverageDue(){
-        const over = Number(window.__distanceOverageDue || this.distanceOverageDue || 0);
+        const over = Number(this.getOverageDue() || 0);
         return Math.max(0, +(this.baseDue() + over).toFixed(2));
       },
 
-      // applica filtro “niente quota base se già pagata”
       applyKindsFilter(){
-        const over = Number(window.__distanceOverageDue || this.distanceOverageDue || 0);
+        const over = Number(this.getOverageDue() || 0);
 
         this.kinds = this.kindsAll.filter(k => {
-          // base: mostrala solo se NON già pagata
           if (k.val === 'base') return !this.hasBasePayment;
 
-          // ✅ base+distance_overage: mostrala solo se ci sono km extra dovuti
+          // ✅ mostra km extra SOLO se > 0
+          if (k.val === 'distance_overage') return over > 0;
+
+          // ✅ mostra base+distance_overage SOLO se > 0
           if (k.val === 'base+distance_overage') return over > 0;
 
           return true;
         });
 
-        // Se la base diventa pagata mentre sono nel modale, reset tipo
         if (this.hasBasePayment && this.kind === 'base') {
           this.kind = '';
         }
 
-        // Se non ci sono km extra, non ha senso restare su "base+distance_overage"
-        if (over <= 0 && this.kind === 'base+distance_overage') {
+        if (over <= 0 && (this.kind === 'distance_overage' || this.kind === 'base+distance_overage')) {
           this.kind = '';
         }
       },
@@ -489,59 +500,60 @@ document.addEventListener('alpine:init', () => {
       },
 
       openModal(detail = null){
-        // sempre riallineo i kinds allo stato corrente
+        // reset pulito ad ogni apertura
         this.kind = '';
         this.amount = 0;
-        this.applyKindsFilter();
 
-        const due = (detail && typeof detail.distanceOverage !== 'undefined')
-          ? Number(window.__distanceOverageDue || 0)
-          : Number(this.basePlusOverageDue() || 0);
+        // ✅ riallineo SEMPRE l'overage dovuto (solo km extra)
+        // Se detail lo passa, lo uso, altrimenti prendo window.
+        const over = (detail && typeof detail.distanceOverage !== 'undefined')
+          ? Number(detail.distanceOverage || 0)
+          : Number(window.__distanceOverageDue || 0);
 
-        this.distanceOverageDue = due;
+        this.distanceOverageDue = over > 0 ? over : 0;
+
         this.open = true;
         this.applyKindsFilter();
 
         const alreadyPaid = !!window.__hasDistanceOveragePayment;
 
-        // 1) Se ci sono km extra da pagare e non risultano pagati => precompilo km extra
-        if (due > 0 && !alreadyPaid) {
-          this.kind = 'base+distance_overage';
-          this.amount = due.toFixed(2);
+        /**
+        * Default suggerito:
+        * - se ci sono km extra e NON risultano pagati -> precompilo "distance_overage"
+        * - altrimenti -> "base" (se disponibile)
+        */
+        if (this.getOverageDue() > 0 && !alreadyPaid) {
+          this.kind = 'distance_overage';
+          this.amount = Number(this.getOverageDue()).toFixed(2);
           return;
         }
 
-        // 2) Default “base” SOLO se ancora disponibile (non pagata)
-        if (!this.kind && !this.hasBasePayment) {
+        if (!this.hasBasePayment) {
           this.kind = 'base';
-          // ✅ nuovo: prefill esplicito della quota base (modificabile)
           this.amount = Number(this.baseDue() || 0);
+          return;
         }
       },
 
       close(){ this.open=false; this.loading=false; },
 
       onKindChange(){
-        // km extra => precompila importo dovuto
         if (this.kind === 'distance_overage') {
-          const due = Number(window.__distanceOverageDue || this.distanceOverageDue || 0);
-          if (due > 0) this.amount = Number(due.toFixed(2));
+          const due = Number(this.getOverageDue() || 0);
+          this.amount = due > 0 ? Number(due.toFixed(2)) : 0;
           return;
         }
 
-        // quota base => precompila residuo (base - acconto)
         if (this.kind === 'base') {
           this.amount = Number(this.baseDue() || 0);
           return;
         }
 
-        // quota base + km extra => precompila residuo (base - acconto) + km extra
         if (this.kind === 'base+distance_overage') {
           this.amount = Number(this.basePlusOverageDue() || 0);
           return;
         }
 
-        // altri tipi: importo vuoto
         this.amount = 0;
       },
 

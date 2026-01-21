@@ -22,9 +22,48 @@ class Customer extends Model implements SpatieHasMedia
     use InteractsWithMedia;
 
     protected $fillable = [
-        'organization_id','name','email','phone','doc_id_type','doc_id_number',
-        'birthdate','address_line','city','province','postal_code','country_code','notes',
-        'driver_license_number','driver_license_expires_at', 'tax_code', 'vat',
+        'organization_id',
+        'email',
+        'phone',
+
+        // Identità
+        'first_name',
+        'last_name',
+        'name', // legacy / display
+        'birthdate',
+        'birth_place',
+        'birth_place_code',
+
+        // Residenza
+        'address_line',
+        'city',
+        'province',
+        'postal_code',
+        'country_code',
+        'police_place_code',
+
+        // Cittadinanza
+        'citizenship',
+        'citizenship_cargos_code',
+        'doc_id_type',
+
+        // Documento identità
+        'doc_id_number',
+        'identity_document_type_code',
+        'identity_document_place_code',
+
+        // Patente
+        'driver_license_number',
+        'driver_license_expires_at',
+        'driver_license_document_type_code',
+        'driver_license_place_code',
+
+        // Fiscali
+        'tax_code',
+        'vat',
+
+        // Altro
+        'notes',
     ];
 
     protected $casts = [

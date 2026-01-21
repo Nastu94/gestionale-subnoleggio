@@ -24,7 +24,7 @@ class Organization extends Model implements SpatieHasMedia
         'name','legal_name','type',
 
         // Anagrafica
-        'vat','address_line','city','province','postal_code','country_code','phone','email',
+        'vat','address_line','city','province','postal_code','country_code','phone','email', 'police_place_code',
 
         // Stato
         'is_active',
@@ -33,7 +33,7 @@ class Organization extends Model implements SpatieHasMedia
         'rental_license','rental_license_number','rental_license_expires_at',
 
         // Cargos (valori cifrati via cast nel model)
-        'cargos_password','cargos_puk',
+        'cargos_password','cargos_puk', 
     ];
 
     protected $casts = [

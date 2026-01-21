@@ -15,7 +15,7 @@ class Location extends Model
 
     protected $fillable = [
         'organization_id','name','address_line','city','province','postal_code',
-        'country_code','lat','lng','notes',
+        'country_code','lat','lng','notes', 'police_place_code',
     ];
 
     protected $casts = [
@@ -29,5 +29,19 @@ class Location extends Model
     public function vehiclesDefaultPickup()
     {
         return $this->hasMany(Vehicle::class, 'default_pickup_location_id');
+    }
+    
+    /**
+     * Luogo ufficiale CARGOS associato alla location.
+     *
+     * Ritorna NULL se la location non è ancora mappata.
+     */
+    public function cargosLuogo()
+    {
+        return $this->belongsTo(
+            CargosLuogo::class,
+            'police_place_code', // FK locale
+            'code'               // PK CARGOS
+        );
     }
 }
