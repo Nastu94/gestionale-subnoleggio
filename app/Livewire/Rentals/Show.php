@@ -6,14 +6,17 @@ use Livewire\Attributes\On;
 use Livewire\Component;
 use App\Models\Rental;
 use App\Models\Customer;
+use App\Models\CargosLuogo;
 use App\Services\Contracts\GenerateRentalContract;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
 use App\Models\RentalChecklist;
-use Barryvdh\DomPDF\Facade\Pdf; // se usi barryvdh/laravel-dompdf
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Livewire: Scheda noleggio con tab e Action Drawer.
@@ -24,8 +27,8 @@ use Illuminate\Support\Facades\Storage;
  *     - role: primary|second
  *     - mode: create|edit
  *
- * - I campi del form sono allineati ai nomi reali del DB customers:
- *     birthdate, address_line, postal_code
+ * - Il form customer è allineato al Wizard (CARGOS-ready)
+ *   e normalizza i luogo-picker che possono restituire array/stdClass.
  */
 class Show extends Component
 {
@@ -50,8 +53,6 @@ class Show extends Component
 
     /**
      * Contesto modale (legacy/compat): 'primary'|'second'
-     * - Se lo stai già usando in view per titoli/label, resta disponibile.
-     * - Internamente usiamo customerRole.
      */
     public string $customerModalContext = 'primary';
 
@@ -61,36 +62,71 @@ class Show extends Component
     /** Modalità: create (crea/associa) | edit (modifica anagrafica già collegata) */
     public string $customerModalMode = 'create';
 
-    /**
-     * Se true, abbiamo selezionato un customer esistente (o stiamo editando).
-     * Nota: nel tuo flusso attuale, quando selezioni un customer esistente,
-     *       il form è modificabile e al salvataggio verrà anche aggiornato.
-     */
+    /** Se true, abbiamo selezionato un customer esistente (o stiamo editando). */
     public bool $customerPopulated = false;
 
     /** Id customer selezionato/in modifica */
     public ?int $customer_id = null;
 
     /**
-     * Form customer (NOMI DB REALI)
-     * customers: birthdate, address_line, postal_code
+     * Form customer (Wizard/CARGOS)
+     *
+     * ✅ Aggiunti i campi che in DB esistono e che vanno salvati come nel Wizard:
+     * - doc_id_type
+     * - driver_license_document_type_code
+     * - birth_place
+     * - city, province, country_code
+     * - citizenship, citizenship_cargos_code
      */
     public array $customerForm = [
-        'name'                     => null,
-        'email'                    => null,
-        'phone'                    => null,
-        'tax_code'                 => null, // Codice fiscale
-        'vat'                      => null, // Partita IVA
-        'doc_id_type'              => null,
-        'doc_id_number'            => null,
-        'birthdate'                => null,
-        'address_line'             => null,
-        'city'                     => null,
-        'province'                 => null,
-        'postal_code'              => null,
-        'country_code'             => null,
-        'driver_license_number'    => null,
-        'driver_license_expires_at'=> null,
+        // canonico
+        'name' => null,
+
+        // Wizard/CARGOS
+        'first_name' => null,
+        'last_name'  => null,
+        'birth_date' => null,
+
+        // Luoghi (CARGOS)
+        'birth_place'      => null,
+        'birth_place_code' => null,
+
+        // UI virtuale (picker) -> in DB è citizenship_cargos_code
+        'citizenship'            => null,
+        'citizenship_place_code' => null,
+        'citizenship_cargos_code'=> null,
+
+        // Documento identità
+        'identity_document_type_code' => null,
+        'doc_id_type'                 => null, // enum interno
+        'doc_id_number'               => null,
+        'identity_document_place_code'=> null,
+
+        // Patente
+        'driver_license_document_type_code' => null,
+        'driver_license_number'             => null,
+        'driver_license_expires_at'         => null,
+        'driver_license_place_code'         => null,
+
+        // Fiscali
+        'tax_code' => null,
+        'vat'      => null,
+
+        // Contatti
+        'email' => null,
+        'phone' => null,
+
+        // Residenza (CARGOS)
+        'police_place_code' => null,
+
+        // Indirizzo testuale
+        'address' => null,
+        'zip'     => null,
+
+        // Derivati (come nel Wizard)
+        'city'         => null,
+        'province'     => null,
+        'country_code' => null,
     ];
 
     /** Ricerca customer esistenti (usata SOLO in mode=create) */
@@ -102,6 +138,9 @@ class Show extends Component
 
     /** Override prezzo finale (rentals.final_amount_override) */
     public ?string $final_amount_override = null;
+
+    /** Cache nomi luoghi per evitare query ripetute */
+    private array $cargosLuogoNameCache = [];
 
     public function mount(Rental $rental): void
     {
@@ -136,8 +175,6 @@ class Show extends Component
      * Compat: in alcuni DB la colonna potrebbe chiamarsi:
      * - second_driver_customer_id (preferita)
      * - second_driver_id (legacy)
-     *
-     * Restituiamo quella presente negli attributi del model.
      */
     protected function secondDriverForeignKey(): string
     {
@@ -147,7 +184,6 @@ class Show extends Component
             return 'second_driver_customer_id';
         }
 
-        // fallback legacy
         return 'second_driver_id';
     }
 
@@ -168,66 +204,328 @@ class Show extends Component
         $this->customerPopulated = false;
         $this->customer_id = null;
 
-        foreach ($this->customerForm as $key => $value) {
+        foreach (array_keys($this->customerForm) as $key) {
             $this->customerForm[$key] = null;
         }
     }
 
+    /** Normalizza spazi/trim */
+    private function norm(?string $s): string
+    {
+        $s = trim((string) $s);
+        $s = preg_replace('/\s+/', ' ', $s);
+        return $s ?: '';
+    }
+
+    /** Ritorna null se stringa vuota, altrimenti trimmed. */
+    private function nullIfBlank(mixed $v): ?string
+    {
+        if ($v === null) return null;
+        if (!is_string($v)) return null;
+
+        $t = trim($v);
+        return $t === '' ? null : $t;
+    }
+
+    /** Calcola "Nome completo" da first_name + last_name e lo salva in customerForm.name */
+    private function syncComputedCustomerName(): void
+    {
+        $first = $this->norm($this->customerForm['first_name'] ?? '');
+        $last  = $this->norm($this->customerForm['last_name'] ?? '');
+        $full  = $this->norm(trim($first . ' ' . $last));
+
+        $this->customerForm['name'] = $full ?: null;
+    }
+
+    /**
+     * Fallback: se ho solo name (vecchi record), provo a splittare in first/last.
+     */
+    private function splitNameIntoParts(?string $full): array
+    {
+        $full = $this->norm($full);
+        if ($full === '') return [null, null];
+
+        $parts = preg_split('/\s+/', $full, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        if (count($parts) === 1) return [$parts[0], null];
+
+        $first = array_shift($parts);
+        $last  = implode(' ', $parts);
+
+        return [$first ?: null, $last ?: null];
+    }
+
+    /** Recupera il nome del luogo CARGOS da code, con piccola cache in memoria. */
+    private function cargosLuogoName(?int $code): ?string
+    {
+        if (!$code) return null;
+
+        if (array_key_exists($code, $this->cargosLuogoNameCache)) {
+            return $this->cargosLuogoNameCache[$code];
+        }
+
+        $luogo = CargosLuogo::find($code);
+        $name = $luogo?->name;
+
+        $this->cargosLuogoNameCache[$code] = $name ?: null;
+
+        return $this->cargosLuogoNameCache[$code];
+    }
+
+    /**
+     * Mappa i codici CARGOS dei tipi documento ai valori interni usati nell'app (doc_id_type enum).
+     */
+    private function mapCargosDocTypeToInternal(?string $cargosCode): ?string
+    {
+        return match ($cargosCode) {
+            'IDENT', 'IDELE'                 => 'id',
+            'PASDI', 'PASOR', 'PASSE'        => 'passport',
+            'PATEN'                          => 'license',
+            'CIDIP'                          => 'other',
+            default                          => null,
+        };
+    }
+
+    /**
+     * Deriva campi testuali dalla residenza CARGOS (police_place_code), come nel Wizard:
+     * - city, province, country_code
+     *
+     * NB: Se il place è una NAZIONE (province_code === 'ES'), city/province restano null.
+     */
+    private function deriveResidenceFromPolicePlaceCode(?int $policePlaceCode): array
+    {
+        $out = [
+            'city'         => null,
+            'province'     => null,
+            'country_code' => null,
+        ];
+
+        if (!$policePlaceCode) return $out;
+
+        /** @var CargosLuogo|null $luogo */
+        $luogo = CargosLuogo::find($policePlaceCode);
+        if (!$luogo) return $out;
+
+        // NAZIONE (estero o Italia "come nazione"): province_code = 'ES'
+        if (($luogo->province_code ?? null) === 'ES') {
+            $cc = $luogo->country_code ?? null;
+            $out['country_code'] = is_string($cc) && $cc !== '' ? substr($cc, 0, 2) : null;
+            return $out;
+        }
+
+        // COMUNE (Italia)
+        $out['city']         = $luogo->name;
+        $out['province']     = $luogo->province_code;
+        $out['country_code'] = 'IT';
+
+        return $out;
+    }
+
     protected function fillCustomerFormFromModel(Customer $c): void
     {
-        $this->customerForm = [
-            'name'                     => $c->name,
-            'email'                    => $c->email,
-            'phone'                    => $c->phone,
-            'tax_code'                 => $c->tax_code,
-            'vat'                      => $c->vat,
-            'doc_id_type'              => $c->doc_id_type,
-            'doc_id_number'            => $c->doc_id_number,
+        $first = $c->first_name ?? null;
+        $last  = $c->last_name ?? null;
 
-            // ✅ NOMI DB REALI
-            'birthdate'                => optional($c->birthdate)->format('Y-m-d'),
-            'address_line'             => $c->address_line,
-            'city'                     => $c->city,
-            'province'                 => $c->province,
-            'postal_code'              => $c->postal_code,
-            'country_code'             => $c->country_code,
+        if ($this->norm($first) === '' && $this->norm($last) === '') {
+            [$f, $l] = $this->splitNameIntoParts($c->name ?? null);
+            $first = $f;
+            $last  = $l;
+        }
 
-            'driver_license_number'    => $c->driver_license_number,
-            'driver_license_expires_at'=> optional($c->driver_license_expires_at)->format('Y-m-d'),
-        ];
+        $this->customerForm = array_merge($this->customerForm, [
+            'name' => $c->name ?? null,
+
+            'first_name' => $first,
+            'last_name'  => $last,
+
+            'birth_date' => optional($c->birth_date ?? $c->birthdate ?? null)->format('Y-m-d'),
+
+            // ✅ nascita / cittadinanza (DB + picker)
+            'birth_place'      => $c->birth_place ?? null,
+            'birth_place_code' => $c->birth_place_code ?? null,
+
+            'citizenship'             => $c->citizenship ?? null,
+            'citizenship_cargos_code' => $c->citizenship_cargos_code ?? null,
+            'citizenship_place_code'  => $c->citizenship_cargos_code ?? null, // il picker usa il code
+
+            // ✅ documenti
+            'identity_document_type_code'  => $c->identity_document_type_code ?? null,
+            'doc_id_type'                  => $c->doc_id_type ?? null,
+            'doc_id_number'                => $c->doc_id_number ?? null,
+            'identity_document_place_code' => $c->identity_document_place_code ?? null,
+
+            // ✅ patente
+            'driver_license_document_type_code' => $c->driver_license_document_type_code ?? 'PATEN',
+            'driver_license_number'             => $c->driver_license_number ?? null,
+            'driver_license_expires_at'         => optional($c->driver_license_expires_at ?? null)->format('Y-m-d'),
+            'driver_license_place_code'         => $c->driver_license_place_code ?? null,
+
+            // fiscali
+            'tax_code' => $c->tax_code ?? null,
+            'vat'      => $c->vat ?? null,
+
+            // contatti
+            'email' => $c->email ?? null,
+            'phone' => $c->phone ?? null,
+
+            // residenza CARGOS
+            'police_place_code' => $c->police_place_code ?? null,
+
+            // indirizzo
+            'address' => $c->address ?? $c->address_line ?? null,
+            'zip'     => $c->zip ?? $c->postal_code ?? null,
+
+            // derivati residenza
+            'city'         => $c->city ?? null,
+            'province'     => $c->province ?? null,
+            'country_code' => $c->country_code ?? null,
+        ]);
+
+        $this->syncComputedCustomerName();
     }
 
     /* -------------------------------------------------------------------------
      |  VALIDAZIONE CUSTOMER
      * ------------------------------------------------------------------------- */
 
+    /**
+     * Regola custom per campi luogo-picker:
+     * accetta string o array (il picker spesso produce array), evitando validation.string.
+     */
+    protected function placeRule(bool $required = false): array
+    {
+        return array_filter([
+            $required ? 'required' : 'nullable',
+            function (string $attribute, mixed $value, \Closure $fail) {
+                if ($value === null || $value === '') return;
+
+                if (!is_string($value) && !is_array($value) && !is_int($value) && !is_numeric($value)) {
+                    $fail('Valore non valido.');
+                    return;
+                }
+
+                if (is_string($value) && mb_strlen(trim($value)) > 255) {
+                    $fail('Valore troppo lungo.');
+                    return;
+                }
+
+                if (is_array($value) && empty($value)) {
+                    $fail('Valore non valido.');
+                }
+            },
+        ]);
+    }
+
+    /**
+     * Normalizza un "luogo" proveniente dal picker.
+     * - Se il campo nel model è castato a json/array -> salva l'array
+     * - Altrimenti prova ad estrarre una stringa/codice
+     *
+     * ✅ FIX: ora gestisce anche INT (code già normalizzato)
+     */
+    protected function normalizePlaceForStorage(Customer $customer, string $field, mixed $value): mixed
+    {
+        if ($value === null || $value === '') return null;
+
+        // ✅ se è già un code int (wizard-flow), lo teniamo
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (is_numeric($value)) {
+            return (int) $value;
+        }
+
+        if (is_string($value)) {
+            return trim($value);
+        }
+
+        if (is_array($value)) {
+            // Se il model ha cast json/array, possiamo salvare l'array
+            if (method_exists($customer, 'hasCast') && $customer->hasCast($field, ['array', 'json', 'object', 'collection'])) {
+                return $value;
+            }
+
+            // Prova chiavi tipiche
+            foreach (['code', 'place_code', 'value', 'id'] as $k) {
+                if (isset($value[$k]) && is_string($value[$k]) && trim($value[$k]) !== '') {
+                    return trim($value[$k]);
+                }
+                if (isset($value[$k]) && (is_int($value[$k]) || is_numeric($value[$k]))) {
+                    return (int) $value[$k];
+                }
+            }
+
+            // Fallback leggibile
+            $country = $value['country'] ?? $value['nation'] ?? $value['nazione'] ?? null;
+            $prov    = $value['province'] ?? $value['provincia'] ?? null;
+            $city    = $value['city'] ?? $value['comune'] ?? $value['municipality'] ?? null;
+
+            $parts = array_values(array_filter([$country, $prov, $city], fn ($x) => is_string($x) && trim($x) !== ''));
+            return $parts ? implode(' - ', array_map('trim', $parts)) : json_encode($value);
+        }
+
+        return null;
+    }
+
     protected function customerRules(): array
     {
+        // nel Wizard la residenza è richiesta; qui rendiamola:
+        // - richiesta quando creo/associo (mode=create)
+        // - nullable quando modifico record legacy già collegati (mode=edit)
+        $residenceRule = ($this->customerModalMode === 'create')
+            ? ['required', 'integer', 'exists:cargos_luoghi,code']
+            : ['nullable', 'integer', 'exists:cargos_luoghi,code'];
+
         return [
-            // ✅ Minimo obbligatorio (coerente con wizard)
-            'customerForm.name'          => ['required', 'string', 'max:255'],
-            'customerForm.email'         => ['required', 'email', 'max:255'],
-            'customerForm.phone'         => ['required', 'string', 'max:32'],
+            'customerForm.first_name' => ['required', 'string', 'max:191'],
+            'customerForm.last_name'  => ['required', 'string', 'max:191'],
 
-            // ✅ NUOVI CAMPI FISCALI (opzionali)
-            'customerForm.tax_code'      => ['nullable', 'string', 'max:32'],
-            'customerForm.vat'           => ['nullable', 'string', 'max:32'],
+            'customerForm.name'  => ['required', 'string', 'max:255'],
 
-            // ✅ Documento (ora opzionale)
-            'customerForm.doc_id_type'   => ['nullable', 'in:id,passport'],
-            'customerForm.doc_id_number' => ['nullable', 'string', 'max:64'],
+            'customerForm.email' => ['required', 'email', 'max:191'],
+            'customerForm.phone' => ['required', 'string', 'max:50'],
 
-            // Patente (opzionale)
-            'customerForm.driver_license_number'     => ['nullable', 'string', 'max:64'],
-            'customerForm.driver_license_expires_at' => ['nullable', 'date'],
+            'customerForm.birth_date' => ['nullable', 'date', 'after:1900-01-01', 'before_or_equal:today'],
 
-            // Dati anagrafici/residenza (opzionali)
-            'customerForm.birthdate'     => ['nullable', 'date'],
-            'customerForm.address_line'  => ['nullable', 'string', 'max:191'],
-            'customerForm.city'          => ['nullable', 'string', 'max:128'],
-            'customerForm.province'      => ['nullable', 'string', 'max:64'],
-            'customerForm.postal_code'   => ['nullable', 'string', 'max:16'],
-            'customerForm.country_code'  => ['nullable', 'string', 'size:2'],
+            // ✅ CARGOS places (wizard-style)
+            'customerForm.police_place_code'              => $residenceRule,
+            'customerForm.birth_place_code'               => ['nullable', 'integer', 'exists:cargos_luoghi,code'],
+            'customerForm.citizenship_place_code'         => ['nullable', 'integer', 'exists:cargos_luoghi,code'],
+            'customerForm.identity_document_place_code'   => ['nullable', 'integer', 'exists:cargos_luoghi,code'],
+            'customerForm.driver_license_place_code'      => ['nullable', 'integer', 'exists:cargos_luoghi,code'],
+
+            // Doc/patente
+            'customerForm.identity_document_type_code' => ['nullable', 'string', 'max:64'],
+            'customerForm.doc_id_number'               => ['nullable', 'string', 'max:100'],
+
+            'customerForm.driver_license_number'       => ['nullable', 'string', 'max:64'],
+            'customerForm.driver_license_expires_at'   => ['nullable', 'date', 'after:1900-01-01'],
+
+            // Indirizzo
+            'customerForm.address' => ['nullable', 'string', 'max:255'],
+            'customerForm.zip'     => ['nullable', 'string', 'max:20'],
+
+            // Fiscale
+            'customerForm.tax_code' => ['nullable', 'string', 'max:32'],
+            'customerForm.vat'      => ['nullable', 'string', 'max:32'],
+        ];
+    }
+
+    protected function customerMessages(): array
+    {
+        return [
+            'customerForm.police_place_code.required' => 'Seleziona la residenza (luogo CARGOS).',
+            'customerForm.police_place_code.integer'  => 'La residenza non è valida.',
+            'customerForm.police_place_code.exists'   => 'La residenza selezionata non esiste.',
+
+            'customerForm.birth_place_code.integer'             => 'Il luogo di nascita non è valido.',
+            'customerForm.birth_place_code.exists'              => 'Il luogo di nascita selezionato non esiste.',
+            'customerForm.citizenship_place_code.integer'       => 'La cittadinanza non è valida.',
+            'customerForm.citizenship_place_code.exists'        => 'La cittadinanza selezionata non esiste.',
+            'customerForm.identity_document_place_code.integer' => 'Il luogo rilascio documento non è valido.',
+            'customerForm.identity_document_place_code.exists'  => 'Il luogo rilascio documento selezionato non esiste.',
+            'customerForm.driver_license_place_code.integer'    => 'Il luogo rilascio patente non è valido.',
+            'customerForm.driver_license_place_code.exists'     => 'Il luogo rilascio patente selezionato non esiste.',
         ];
     }
 
@@ -235,11 +533,6 @@ class Show extends Component
      |  MODALE: OPEN/CLOSE
      * ------------------------------------------------------------------------- */
 
-    /**
-     * Apre il modale per:
-     * - primary: cliente principale
-     * - second : seconda guida (solo se il cliente principale esiste)
-     */
     public function openCustomerModal(string $role = 'primary'): void
     {
         $this->authorize('update', $this->rental);
@@ -253,18 +546,15 @@ class Show extends Component
         $this->resetValidation();
 
         $this->customerRole = ($role === 'second') ? 'second' : 'primary';
-        $this->customerModalContext = $this->customerRole; // compat con eventuali view
+        $this->customerModalContext = $this->customerRole;
 
-        // Regola: la seconda guida si gestisce solo se esiste il cliente principale
         if ($this->isSecondDriverContext() && empty($this->rental->customer_id)) {
             $this->dispatch('toast', type: 'warning', message: 'Inserisci prima il cliente principale.');
             return;
         }
 
-        // Pulisco ricerca per evitare residui UI
         $this->customerQuery = '';
 
-        // Determino mode + prefill in base a cosa è già collegato al rental
         if ($this->isSecondDriverContext()) {
             $fk = $this->secondDriverForeignKey();
             $hasSecond = !empty($this->rental->{$fk}) && $this->rental->secondDriver;
@@ -295,7 +585,6 @@ class Show extends Component
         $this->customerModalOpen = true;
     }
 
-    /** Chiude il modale customer/second driver */
     public function closeCustomerModal(): void
     {
         $this->customerModalOpen = false;
@@ -305,14 +594,6 @@ class Show extends Component
      |  RIMOZIONE ASSOCIAZIONE CLIENTE / SECONDA GUIDA
      * ------------------------------------------------------------------------- */
 
-    /**
-     * Scollega il cliente principale dal noleggio.
-     *
-     * Regole:
-     * - consentito solo in status draft/reserved
-     * - se esiste una seconda guida, blocchiamo: va rimossa prima la seconda guida
-     *   per evitare stati “strani” (seconda guida senza cliente principale).
-     */
     public function detachPrimaryCustomer(): void
     {
         $this->authorize('update', $this->rental);
@@ -322,7 +603,6 @@ class Show extends Component
             return;
         }
 
-        // Se c'è una seconda guida, prima va rimossa lei.
         $fkSecond = $this->secondDriverForeignKey();
         if (!empty($this->rental->{$fkSecond})) {
             $this->dispatch('toast', type: 'warning', message: 'Rimuovi prima la seconda guida, poi potrai rimuovere il cliente principale.');
@@ -331,16 +611,13 @@ class Show extends Component
 
         try {
             DB::transaction(function () {
-                // Scollega FK cliente
                 $this->rental->customer_id = null;
                 $this->rental->save();
             });
 
-            // Refresh relazioni per aggiornare subito UI
             $this->rental->refresh();
             $this->rental->load(['customer', 'secondDriver']);
 
-            // Reset stato modale/form per evitare residui in UI
             $this->customerModalOpen = false;
             $this->resetCustomerForm();
 
@@ -352,12 +629,6 @@ class Show extends Component
         }
     }
 
-    /**
-     * Scollega la seconda guida dal noleggio.
-     *
-     * Regole:
-     * - consentito solo in status draft/reserved
-     */
     public function detachSecondDriver(): void
     {
         $this->authorize('update', $this->rental);
@@ -371,18 +642,15 @@ class Show extends Component
 
         try {
             DB::transaction(function () use ($fk) {
-                // Scollega FK seconda guida (supporta sia second_driver_customer_id che second_driver_id)
                 $this->rental->{$fk} = null;
                 $this->rental->save();
             });
 
-            // Se avevi logica che ricalcola l'importo quando cambia la seconda guida, riallineiamo
             $this->rental->refresh();
             $this->rental->load(['customer', 'secondDriver']);
 
             $this->syncRentalAmountFromSnapshot();
 
-            // Reset stato modale/form per evitare residui in UI
             $this->customerModalOpen = false;
             $this->resetCustomerForm();
 
@@ -407,12 +675,16 @@ class Show extends Component
             return;
         }
 
-        $this->validate($this->customerRules());
+        // name = first + last
+        $this->syncComputedCustomerName();
 
-        // Normalizzazione country ISO2
-        if (!empty($this->customerForm['country_code'])) {
-            $this->customerForm['country_code'] = strtoupper(trim((string) $this->customerForm['country_code']));
-        }
+        // ✅ Wizard-flow: trasformo i picker in INT code PRIMA di validare
+        $this->normalizeCustomerCargosPlaceCodes();
+
+        // ✅ validate con messaggi custom
+        $this->validate($this->customerRules(), $this->customerMessages());
+
+        // Normalizzazioni soft
         if (!empty($this->customerForm['tax_code'])) {
             $this->customerForm['tax_code'] = strtoupper(trim((string) $this->customerForm['tax_code']));
         }
@@ -425,38 +697,126 @@ class Show extends Component
         try {
             DB::transaction(function () use ($fk) {
 
-                // 1) CREATE/EDIT customer
+                // 1) Upsert customer
                 if ($this->customerPopulated === true && $this->customer_id) {
-                    // Update customer esistente (se selezionato o già collegato)
                     $customer = Customer::query()->findOrFail($this->customer_id);
-                    $customer->fill($this->customerForm);
-                    $customer->save();
                 } else {
-                    // Create customer nuovo
                     $customer = new Customer();
-                    $customer->fill($this->customerForm);
-
-                    // organization_id è NOT NULL nel tuo DB
                     $customer->organization_id = $this->rental->organization_id;
-
-                    $customer->save();
                 }
 
-                // 2) Business rule: seconda guida != cliente principale
+                // ✅ NORMALIZZA LUOGHI (adesso NON azzera più gli INT)
+                foreach ([
+                    'birth_place_code',
+                    'citizenship_place_code',
+                    'identity_document_place_code',
+                    'driver_license_place_code',
+                    'police_place_code',
+                ] as $field) {
+                    $this->customerForm[$field] = $this->normalizePlaceForStorage($customer, $field, $this->customerForm[$field] ?? null);
+                }
+
+                // ===== Wizard-like mapping / derivazioni =====
+
+                $identityDocCargos = $this->nullIfBlank($this->customerForm['identity_document_type_code'] ?? null);
+
+                // doc_id_type (enum interno) -> se non lo inserisci manualmente, lo deriviamo dal codice CARGOS
+                $internalDocType = $this->nullIfBlank($this->customerForm['doc_id_type'] ?? null)
+                    ?? $this->mapCargosDocTypeToInternal($identityDocCargos);
+
+                $birthPlaceCode       = $this->toIntOrNull($this->customerForm['birth_place_code'] ?? null);
+                $policePlaceCode      = $this->toIntOrNull($this->customerForm['police_place_code'] ?? null);
+                $citizenshipPlaceCode = $this->toIntOrNull($this->customerForm['citizenship_place_code'] ?? null);
+
+                $birthPlaceName = $this->cargosLuogoName($birthPlaceCode);
+                $citizenshipName = $this->cargosLuogoName($citizenshipPlaceCode);
+
+                $resDerived = $this->deriveResidenceFromPolicePlaceCode($policePlaceCode);
+
+                // manteniamo coerente anche lo stato del form (utile se nel modale li mostri come readonly)
+                $this->customerForm['birth_place'] = $birthPlaceName;
+                $this->customerForm['citizenship'] = $citizenshipName;
+                $this->customerForm['citizenship_cargos_code'] = $citizenshipPlaceCode;
+
+                $this->customerForm['city']         = $resDerived['city']         ?? ($this->customerForm['city'] ?? null);
+                $this->customerForm['province']     = $resDerived['province']     ?? ($this->customerForm['province'] ?? null);
+                $this->customerForm['country_code'] = $resDerived['country_code'] ?? ($this->customerForm['country_code'] ?? null);
+
+                $driverLicenseDocType = $this->nullIfBlank($this->customerForm['driver_license_document_type_code'] ?? null) ?? 'PATEN';
+
+                // 2) Attributi (Wizard) + robustezza su colonne diverse
+                $attrs = [
+                    'name'       => $this->customerForm['name'],
+                    'first_name' => $this->customerForm['first_name'],
+                    'last_name'  => $this->customerForm['last_name'],
+
+                    // date / nascita
+                    'birthdate'        => $this->customerForm['birth_date'],
+                    'birth_place_code' => $birthPlaceCode,
+                    'birth_place'      => $birthPlaceName,
+
+                    // cittadinanza
+                    'citizenship'             => $citizenshipName,
+                    'citizenship_cargos_code' => $citizenshipPlaceCode,
+
+                    // documenti
+                    'identity_document_type_code'  => $identityDocCargos,
+                    'doc_id_type'                  => $internalDocType,
+                    'doc_id_number'                => $this->customerForm['doc_id_number'] ?? null,
+                    'identity_document_place_code' => $this->toIntOrNull($this->customerForm['identity_document_place_code'] ?? null),
+
+                    // patente
+                    'driver_license_document_type_code' => $driverLicenseDocType,
+                    'driver_license_number'             => $this->customerForm['driver_license_number'] ?? null,
+                    'driver_license_expires_at'         => $this->customerForm['driver_license_expires_at'] ?? null,
+                    'driver_license_place_code'         => $this->toIntOrNull($this->customerForm['driver_license_place_code'] ?? null),
+
+                    // fiscali / contatti
+                    'tax_code' => $this->customerForm['tax_code'] ?? null,
+                    'vat'      => $this->customerForm['vat'] ?? null,
+                    'email'    => $this->customerForm['email'] ?? null,
+                    'phone'    => $this->customerForm['phone'] ?? null,
+
+                    // residenza CARGOS
+                    'police_place_code' => $policePlaceCode,
+
+                    // indirizzo
+                    'address_line' => $this->customerForm['address'] ?? null,
+                    'postal_code'  => $this->customerForm['zip'] ?? null,
+
+                    // derivati residenza
+                    'city'         => $this->customerForm['city'] ?? null,
+                    'province'     => $this->customerForm['province'] ?? null,
+                    'country_code' => $this->customerForm['country_code'] ?? null,
+
+                    // compat vecchi nomi (se presenti in qualche env)
+                    'address' => $this->customerForm['address'] ?? null,
+                    'zip'     => $this->customerForm['zip'] ?? null,
+                    'birth_date' => $this->customerForm['birth_date'] ?? null,
+                ];
+
+                // ✅ Filtra in base alle colonne effettive presenti (così non esplode se manca qualcosa)
+                $cols = Schema::getColumnListing($customer->getTable());
+                $attrs = array_intersect_key($attrs, array_flip($cols));
+
+                // usa forceFill per robustezza
+                $customer->forceFill($attrs)->save();
+
+                // 3) Business rule: seconda guida != cliente principale
                 if ($this->isSecondDriverContext() && !empty($this->rental->customer_id)) {
                     if ((int) $this->rental->customer_id === (int) $customer->id) {
                         throw new \RuntimeException('La seconda guida non può coincidere con il cliente principale.');
                     }
                 }
 
-                // 3) Associazione sul rental
+                // 4) Associazione sul rental
                 $this->rental->{$fk} = (int) $customer->id;
                 $this->rental->save();
             });
 
             $this->rental->refresh();
             $this->rental->load(['customer', 'secondDriver']);
-            
+
             if ($this->isSecondDriverContext()) {
                 $this->syncRentalAmountFromSnapshot();
             }
@@ -481,11 +841,6 @@ class Show extends Component
      |  RICERCA CUSTOMER (SOLO mode=create)
      * ------------------------------------------------------------------------- */
 
-    /**
-     * Risultati ricerca clienti (computed).
-     * - Min 2 caratteri, max 10 risultati.
-     * - Mostrata SOLO quando il modale è in mode=create.
-     */
     public function getCustomerSearchResultsProperty(): array
     {
         $this->authorize('update', $this->rental);
@@ -515,11 +870,6 @@ class Show extends Component
             ->toArray();
     }
 
-    /**
-     * Seleziona un customer esistente (solo mode=create):
-     * - Compila il form
-     * - Imposta customer_id e customerPopulated
-     */
     public function selectCustomer(int $id): void
     {
         $this->authorize('update', $this->rental);
@@ -534,8 +884,8 @@ class Show extends Component
         $this->customerPopulated = true;
 
         $this->fillCustomerFormFromModel($customer);
+        $this->syncComputedCustomerName();
 
-        // Pulisco query per chiudere la lista risultati
         $this->customerQuery = '';
     }
 
@@ -560,7 +910,6 @@ class Show extends Component
 
     /**
      * Aggiorna rentals.amount = tariffa (congelata) + seconda guida (se presente).
-     * NON usa il listino attivo se esiste snapshot.
      */
     private function syncRentalAmountFromSnapshot(): void
     {
@@ -570,16 +919,13 @@ class Show extends Component
 
         $snap = $this->getContractPricingSnapshot();
 
-        // base tariffa (cents) e giorni
         $days = (int) ($snap['days'] ?? 0);
         $tariffTotalCents = isset($snap['tariff_total_cents']) ? (int) $snap['tariff_total_cents'] : null;
 
-        // fallback “vecchi contratti senza snapshot”: usa amount attuale come tariffa congelata
         if ($tariffTotalCents === null && $this->rental->amount !== null) {
             $tariffTotalCents = (int) round(((float)$this->rental->amount) * 100);
         }
 
-        // se ancora non ho base, non posso aggiornare in modo affidabile
         if ($tariffTotalCents === null) {
             return;
         }
@@ -605,7 +951,7 @@ class Show extends Component
     /* -------------------------------------------------------------------------
      |  CONTRATTO / PREZZO OVERRIDE
      * ------------------------------------------------------------------------- */
-    /** Regole di validazione per l'override del prezzo finale. */
+
     protected function finalAmountRules(): array
     {
         return [
@@ -613,7 +959,9 @@ class Show extends Component
         ];
     }
 
-    /** Salva l'override del prezzo finale. */
+    /**
+     * Salva l'override del prezzo finale.
+     */
     public function saveFinalAmountOverride(): void
     {
         $this->authorize('update', $this->rental);
@@ -639,8 +987,8 @@ class Show extends Component
             $this->final_amount_override = $this->rental->final_amount_override !== null
                 ? (string) $this->rental->final_amount_override
                 : null;
-            $this->dispatch('rental-amount-updated', base_amount: (float) ($this->rental->final_amount_override ?? $this->rental->amount ?? 0));
 
+            $this->dispatch('rental-amount-updated', base_amount: (float) ($this->rental->final_amount_override ?? $this->rental->amount ?? 0));
             $this->dispatch('toast', type: 'success', message: 'Prezzo aggiornato.');
             $this->dispatch('$refresh');
         } catch (\Throwable $e) {
@@ -649,14 +997,12 @@ class Show extends Component
         }
     }
 
-    /** Rimuove l'override del prezzo finale. */
     public function clearFinalAmountOverride(): void
     {
         $this->final_amount_override = null;
         $this->saveFinalAmountOverride();
     }
 
-    /** Genera il contratto base (sempre rigenerabile, versionato). */
     public function generateContract(GenerateRentalContract $generator): void
     {
         if (!auth()->user()?->can('rentals.contract.generate') || !auth()->user()?->can('media.attach.contract')) {
@@ -675,10 +1021,6 @@ class Show extends Component
         }
 
         try {
-            /**
-             * ✅ Forzo "unsigned" per salvare SEMPRE in collection contract,
-             * anche se sono presenti firme (così base = base).
-             */
             $generator->handle($this->rental, null, null, null, true, false);
 
             if ($this->rental->status === 'draft') {
@@ -695,7 +1037,6 @@ class Show extends Component
         }
     }
 
-    /** Genera/Rigenera il contratto firmato. Se manca il base/snapshot, genera anche il base prima. */
     public function regenerateContractWithSignatures(GenerateRentalContract $generator): void
     {
         $this->authorize('contractGenerate', $this->rental);
@@ -711,10 +1052,6 @@ class Show extends Component
         }
 
         try {
-            /**
-             * ✅ Se non esiste ancora un contratto base (o è stato cancellato),
-             * lo genero PRIMA senza firme, così rispettiamo la logica interna.
-             */
             $hasBase = method_exists($this->rental, 'getMedia')
                 && $this->rental->getMedia('contract')->isNotEmpty();
 
@@ -722,12 +1059,8 @@ class Show extends Component
                 $generator->handle($this->rental, null, null, null, true, false);
             }
 
-            /**
-             * ✅ Ora genero il firmato (forzato) in collection signatures.
-             */
             $generator->handle($this->rental, null, null, null, false, true);
 
-            // ✅ NEW: genera pickup checklist firmata se manca
             try {
                 $this->ensurePickupChecklistSignedPdf();
             } catch (\Throwable $e) {
@@ -745,7 +1078,6 @@ class Show extends Component
         }
     }
 
-    /** Verifica se il noleggio ha la firma del cliente caricata. */  
     private function hasCustomerSignature(): bool
     {
         return method_exists($this->rental, 'getFirstMedia')
@@ -755,9 +1087,7 @@ class Show extends Component
     /* -------------------------------------------------------------------------
      |  CHECKLIST EVENTS
      * ------------------------------------------------------------------------- */
-    /**
-     * Genera il PDF firmato della checklist
-     */
+
     public function generateSignedChecklistPdf(int $checklistId): void
     {
         $tmpRelPath = null;
@@ -769,7 +1099,6 @@ class Show extends Component
                 'rental.vehicle',
             ])->findOrFail($checklistId);
 
-            // Se vuoi impedire rigenerazione quando lockata:
             if ($checklist->isLocked()) {
                 $this->dispatch('toast', type: 'warning', message: 'Checklist già bloccata: rimuovi il firmato per rigenerare.');
                 return;
@@ -777,7 +1106,6 @@ class Show extends Component
 
             $rental = $checklist->rental;
 
-            // ===== Recupero firme (stessa logica contratto) =====
             $customerSig = method_exists($rental, 'getFirstMedia')
                 ? $rental->getFirstMedia('signature_customer')
                 : null;
@@ -797,7 +1125,6 @@ class Show extends Component
                 return;
             }
 
-            // ===== Payload: riusa il TUO builder attuale =====
             $payload = $this->buildChecklistPayload($checklist);
 
             $signatures = [
@@ -814,18 +1141,15 @@ class Show extends Component
                 'signatures'   => $signatures,
             ])->setPaper('a4');
 
-            // tmp file
             Storage::makeDirectory('tmp');
             $tmpRelPath = "tmp/checklist-{$checklist->id}-signed.pdf";
             $tmpAbsPath = Storage::path($tmpRelPath);
 
             file_put_contents($tmpAbsPath, $pdf->output());
 
-            // Salva come "firmato" nella stessa collection usata dal caricamento manuale
             $signedCollection = $checklist->signedCollectionName();
 
             DB::transaction(function () use ($checklist, $signedCollection, $tmpAbsPath) {
-                // Tieni 1 solo firmato (opzionale: già singleFile, ma così sei esplicito)
                 $checklist->clearMediaCollection($signedCollection);
 
                 /** @var Media $media */
@@ -835,7 +1159,6 @@ class Show extends Component
                     ->usingFileName("checklist-{$checklist->type}-{$checklist->id}-signed.pdf")
                     ->toMediaCollection($signedCollection);
 
-                // ✅ IMPORTANTISSIMO: lock + riferimento media (allinea la logica al caricamento manuale)
                 $checklist->forceFill([
                     'signed_media_id'   => $media->id,
                     'locked_at'         => now(),
@@ -844,29 +1167,17 @@ class Show extends Component
                 ])->save();
             });
 
-            // cleanup tmp
             Storage::delete($tmpRelPath);
 
             $this->dispatch('toast', type: 'success', message: 'Checklist firmata generata con successo.');
             $this->dispatch('$refresh');
         } catch (\Throwable $e) {
-            // Log completo (stacktrace) per debug server-side
             report($e);
 
-            // prova a pulire il tmp se qualcosa è andato storto
             if ($tmpRelPath) {
                 try { Storage::delete($tmpRelPath); } catch (\Throwable $ignored) {}
             }
 
-            /**
-             * ✅ In debug mostro un messaggio utile, in produzione lascio il testo generico.
-             * Questo ci permette di capire subito se è:
-             * - view mancante
-             * - permessi storage/tmp
-             * - dompdf
-             * - media library
-             * - signedCollectionName nullo, ecc.
-             */
             $debugMsg = config('app.debug')
                 ? ('Errore PDF: ' . $e->getMessage())
                 : 'Errore durante la generazione del PDF firmato.';
@@ -875,10 +1186,8 @@ class Show extends Component
         }
     }
 
-    /** Costruisce il payload per il PDF della checklist (riusa la tua logica esistente) */
     private function buildChecklistPayload(RentalChecklist $checklist): array
     {
-        // Evita N+1 quando compili danni (VehicleDamage -> firstRentalDamage)
         $checklist->loadMissing([
             'rental.damages',
             'rental.vehicle.damages.firstRentalDamage',
@@ -890,9 +1199,7 @@ class Show extends Component
             'cleanliness'  => $checklist->cleanliness ?: null,
         ];
 
-        // Nel tuo model è castato ad array, ma normalizziamo uguale per robustezza
         $json = $this->normalizeChecklistJson($checklist->checklist_json);
-
         $damages = $this->buildChecklistDamages($checklist);
 
         return [
@@ -902,10 +1209,6 @@ class Show extends Component
         ];
     }
 
-    /**
-     * checklist_json: garantisce struttura attesa dal PDF:
-     * vehicle, documents, equipment, notes
-     */
     private function normalizeChecklistJson(mixed $raw): array
     {
         if (is_string($raw)) {
@@ -923,53 +1226,37 @@ class Show extends Component
         return $raw;
     }
 
-    /** Garantisce che esista il PDF firmato per la checklist di pickup più recente */
     private function ensurePickupChecklistSignedPdf(): void
     {
         $this->rental->loadMissing(['checklists.media']);
 
-        /** @var \App\Models\RentalChecklist|null $pickup */
         $pickup = $this->rental->checklists
             ->where('type', 'pickup')
             ->sortByDesc('created_at')
             ->first();
 
         if (!$pickup) {
-            return; // nessuna pickup checklist
+            return;
         }
 
-        // ✅ Se esiste già il PDF firmato in questa collection, stop
         if (method_exists($pickup, 'getMedia')) {
             if ($pickup->getMedia('checklist_pickup_signed')->isNotEmpty()) {
                 return;
             }
         }
 
-        // Se è lockata, il tuo metodo impedisce rigenerazione
         if (method_exists($pickup, 'isLocked') && $pickup->isLocked()) {
             return;
         }
 
-        // Best-effort: genera il firmato
         $this->generateSignedChecklistPdf((int) $pickup->id);
     }
 
-    /**
-     * Unisce:
-     * - VehicleDamage OPEN (storici/persistenti del veicolo)
-     * - RentalDamage del noleggio (in base al tipo checklist)
-     *
-     * Output: array di righe compatibili col tuo PDF:
-     * [
-     *   ['area'=>'front','severity'=>'low','description'=>'...'],
-     * ]
-     */
     private function buildChecklistDamages(RentalChecklist $checklist): array
     {
         $rental  = $checklist->rental;
         $vehicle = $rental?->vehicle;
 
-        // 1) Vehicle open damages (escludo quelli originati dallo STESSO rental, per evitare duplicati)
         $vehicleRows = collect();
 
         if ($vehicle) {
@@ -979,8 +1266,6 @@ class Show extends Component
 
             $vehicleRows = $vehicleOpen
                 ->filter(function ($vd) use ($rental) {
-                    // se il danno del veicolo nasce da un RentalDamage di QUESTO rental,
-                    // lo mostriamo già nella sezione rental -> quindi lo escludiamo qui
                     $first = $vd->firstRentalDamage ?? null;
                     return !($first && (int) $first->rental_id === (int) $rental->id);
                 })
@@ -995,23 +1280,16 @@ class Show extends Component
                         'description' => $desc,
                     ];
                 })
-                /**
-                 * ✅ IMPORTANTISSIMO:
-                 * map() su Eloquent\Collection restituisce ancora una Eloquent\Collection.
-                 * Convertiamo a Support\Collection per evitare che merge() tratti le righe come Model (getKey()).
-                 */
                 ->toBase();
         }
 
-        // 2) Rental damages (filtrati per tipo checklist)
         $allowedPhases = $checklist->type === 'pickup'
-            ? ['pickup']                       // in pickup: danni rilevati in pickup
-            : ['pickup', 'during', 'return'];  // in return: tutto ciò che è successo nel noleggio
+            ? ['pickup']
+            : ['pickup', 'during', 'return'];
 
         $rentalRows = ($rental?->damages ?? collect())
             ->filter(function ($rd) use ($allowedPhases) {
                 $phase = (string) ($rd->phase ?? '');
-                // se phase è null/'' lo includo comunque (scelta “robusta”)
                 return $phase === '' || in_array($phase, $allowedPhases, true);
             })
             ->map(function ($rd) {
@@ -1027,7 +1305,6 @@ class Show extends Component
             })
             ->toBase();
 
-        // Merge + dedupe “soft”
         return $vehicleRows
             ->merge($rentalRows)
             ->filter(fn($r) => !empty($r['area']) || !empty($r['description']))
@@ -1036,7 +1313,6 @@ class Show extends Component
             ->all();
     }
 
-    /** Converte un media in Data URI per l’embed nel PDF */
     private function mediaToDataUri(?Media $media): ?string
     {
         if (!$media) return null;
@@ -1051,8 +1327,103 @@ class Show extends Component
     }
 
     /**
-     * Aggiorna la rental quando viene caricato un file firmato per una checklist.
+     * Livewire/JS può idratare valori complessi come stdClass.
+     * Qui li convertiamo in array ricorsivamente.
      */
+    private function deepToArray(mixed $value): mixed
+    {
+        if (is_object($value)) {
+            $value = (array) $value;
+        }
+
+        if (is_array($value)) {
+            foreach ($value as $k => $v) {
+                $value[$k] = $this->deepToArray($v);
+            }
+        }
+
+        return $value;
+    }
+
+    /**
+     * Cast “robusto” a int per codici CARGOS:
+     * - accetta int/string numeriche
+     * - ritorna null per valori vuoti/non numerici
+     */
+    protected function toIntOrNull(mixed $v): ?int
+    {
+        if ($v === null) return null;
+
+        if (is_int($v)) return $v;
+
+        if (is_string($v)) {
+            $t = trim($v);
+            if ($t === '' || !ctype_digit($t)) return null;
+            return (int) $t;
+        }
+
+        if (is_numeric($v)) return (int) $v;
+
+        return null;
+    }
+
+    /**
+     * Estrae il code CARGOS da quello che il picker può restituire
+     * (int, string numerica, array, stdClass con dentro "code"/"id"/"value"...).
+     */
+    private function extractCargosCode(mixed $value): ?int
+    {
+        if ($value === null || $value === '') return null;
+
+        // stdClass -> array (ricorsivo)
+        $value = $this->deepToArray($value);
+
+        // caso semplice
+        $direct = $this->toIntOrNull($value);
+        if ($direct !== null) return $direct;
+
+        // caso array: prova varie chiavi/path comuni
+        if (is_array($value)) {
+            $candidates = [
+                data_get($value, 'code'),
+                data_get($value, 'place_code'),
+                data_get($value, 'id'),
+                data_get($value, 'value'),
+
+                // path annidati tipici
+                data_get($value, 'selected.code'),
+                data_get($value, 'selected.place_code'),
+                data_get($value, 'item.code'),
+                data_get($value, 'luogo.code'),
+                data_get($value, 'data.code'),
+            ];
+
+            foreach ($candidates as $c) {
+                $int = $this->toIntOrNull($c);
+                if ($int !== null) return $int;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Normalizza i campi luogo-picker in "code" INT prima della validazione,
+     * replicando il flusso del Wizard.
+     */
+    private function normalizeCustomerCargosPlaceCodes(): void
+    {
+        foreach ([
+            'birth_place_code',
+            'citizenship_place_code',
+            'identity_document_place_code',
+            'driver_license_place_code',
+            'police_place_code',
+        ] as $field) {
+            $this->customerForm[$field] = $this->extractCargosCode($this->customerForm[$field] ?? null);
+        }
+    }
+
     #[On('checklist-signed-uploaded')]
     public function onChecklistSignedUploaded(array $payload = []): void
     {
@@ -1066,10 +1437,6 @@ class Show extends Component
         $this->dispatch('$refresh');
     }
 
-    /**
-     * Aggiorna la rental quando i media delle checklist vengono modificati
-     * (aggiunti/rimossi).
-     */
     #[On('checklist-media-updated')]
     public function onChecklistMediaUpdated(): void
     {
@@ -1078,15 +1445,11 @@ class Show extends Component
         $this->dispatch('$refresh');
     }
 
-    /**
-     * Aggiorna la rental quando viene aggiornata la firma del cliente
-     * nel contratto di noleggio.
-     */
     #[On('signature-updated')]
     public function onSignatureUpdated(): void
     {
         $this->rental->refresh();
-        $this->rental->load(['customer', 'secondDriver']); // e media se la usi qui
+        $this->rental->load(['customer', 'secondDriver']);
         $this->dispatch('$refresh');
     }
 
