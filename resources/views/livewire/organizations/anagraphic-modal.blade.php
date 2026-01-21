@@ -63,6 +63,17 @@
                             @error('state.phone') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
                         </div>
 
+                        {{-- LUOGO CARGOS (nazione/provincia/comune) --}}
+                        <div class="sm:col-span-2">
+                            <livewire:shared.cargos-luogo-picker
+                                wire:model="state.police_place_code"
+                                title="Luogo (CARGOS)"
+                                hint="Comune italiano o nazione estera. Se Italia seleziona anche provincia e comune."
+                                wire:key="org-place-{{ $organizationId ?? 'new' }}"
+                            />
+                            @error('state.police_place_code') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
+                        </div>
+
                         {{-- Indirizzo --}}
                         <div class="sm:col-span-2">
                             <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Indirizzo</label>
@@ -72,24 +83,6 @@
                             @error('state.address_line') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
                         </div>
 
-                        {{-- Città --}}
-                        <div>
-                            <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Città</label>
-                            <input type="text"
-                                   wire:model.defer="state.city"
-                                   class="w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100">
-                            @error('state.city') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
-                        </div>
-
-                        {{-- Provincia --}}
-                        <div>
-                            <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Provincia</label>
-                            <input type="text"
-                                   wire:model.defer="state.province"
-                                   class="w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100">
-                            @error('state.province') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
-                        </div>
-
                         {{-- CAP --}}
                         <div>
                             <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">CAP</label>
@@ -97,16 +90,6 @@
                                    wire:model.defer="state.postal_code"
                                    class="w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100">
                             @error('state.postal_code') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
-                        </div>
-
-                        {{-- Paese --}}
-                        <div>
-                            <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Paese (codice)</label>
-                            <input type="text"
-                                   wire:model.defer="state.country_code"
-                                   placeholder="IT"
-                                   class="w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100">
-                            @error('state.country_code') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
                         </div>
 
                         {{-- LICENZA --}}

@@ -3,11 +3,13 @@
 namespace App\Livewire\Organizations;
 
 use App\Models\Organization;
+use App\Models\CargosLuogo;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
 use Livewire\Component;
 use Illuminate\Validation\Rule;
+
 
 /**
  * Modale Livewire: Anagrafica + Licenza per Organization di tipo "renter".
@@ -47,6 +49,8 @@ class AnagraphicModal extends Component
         'country_code' => null,
         'phone'        => null,
         'email'        => null,
+        // CARGOS - LUOGO sede (nazione/provincia/comune)
+        'police_place_code' => null,
 
         // Licenza
         'rental_license'            => false,
@@ -140,7 +144,7 @@ class AnagraphicModal extends Component
             'state.country_code' => ['nullable', 'string', 'max:8'],
             'state.phone'        => ['nullable', 'string', 'max:64'],
             'state.email'        => ['nullable', 'email', 'max:191'],
-
+            'state.police_place_code' => ['nullable', 'integer', 'exists:cargos_luoghi,code'],
             'state.rental_license' => ['boolean'],
 
             'state.rental_license_number' => [
@@ -179,11 +183,16 @@ class AnagraphicModal extends Component
         $this->state['postal_code']  = $org['postal_code']  ?? null;
         $this->state['country_code'] = $org['country_code'] ?? null;
         $this->state['phone']        = $org['phone']        ?? null;
-        $this->state['email']        = $org['email']        ?? null;
-
+        $this->state['email']        = $org['email']        ?? null; 
         $this->state['rental_license']            = (bool) ($org['rental_license'] ?? false);
         $this->state['rental_license_number']     = $org['rental_license_number'] ?? null;
         $this->state['rental_license_expires_at'] = $org['rental_license_expires_at'] ?? null;
+        $placeCode = Organization::query()
+            ->where('type', 'renter')
+            ->whereKey($this->organizationId)
+            ->value('police_place_code');
+
+        $this->state['police_place_code'] = $placeCode ? (int) $placeCode : null;
 
         $this->open = true;
     }
@@ -222,6 +231,29 @@ class AnagraphicModal extends Component
                 ->whereKey($this->organizationId)
                 ->firstOrFail();
 
+            $policePlaceCode = !empty($this->state['police_place_code'])
+                ? (int) $this->state['police_place_code']
+                : null;
+
+            $derived = $this->deriveAddressFromPolicePlaceCode($policePlaceCode);
+
+            /**
+             * Autofill "soft": compila solo se i campi sono vuoti.
+             * Così non sovrascriviamo indirizzi già inseriti manualmente.
+             */
+            if (empty($this->state['city']) && !empty($derived['city'])) {
+                $this->state['city'] = $derived['city'];
+            }
+            if (empty($this->state['province']) && !empty($derived['province'])) {
+                $this->state['province'] = $derived['province'];
+            }
+            if (empty($this->state['country_code']) && !empty($derived['country_code'])) {
+                $this->state['country_code'] = $derived['country_code'];
+            }
+            if (empty($this->state['postal_code']) && !empty($derived['postal_code'])) {
+                $this->state['postal_code'] = $derived['postal_code'];
+            }
+
             $org->update([
                 'legal_name' => $this->state['legal_name'],
                 'vat'        => $this->state['vat'],
@@ -233,6 +265,9 @@ class AnagraphicModal extends Component
                 'country_code' => $this->state['country_code'],
                 'phone'        => $this->state['phone'],
                 'email'        => $this->state['email'],
+                'police_place_code' => !empty($this->state['police_place_code'])
+                    ? (int) $this->state['police_place_code']
+                    : null,
 
                 'rental_license'            => (bool) $this->state['rental_license'],
                 'rental_license_number'     => $this->state['rental_license_number'],
@@ -297,6 +332,59 @@ class AnagraphicModal extends Component
         }
     }
 
+    /**
+     * Deriva campi indirizzo testuali dal police_place_code (CARGOS).
+     * - Se è NAZIONE (province_code === 'ES'): valorizza solo country_code se disponibile.
+     * - Se è COMUNE (Italia): valorizza city, province, country_code=IT e prova a ricavare CAP da raw_payload.
+     *
+     * NOTA: qui lo usiamo solo per "autofill soft" (solo se i campi sono vuoti).
+     *
+     * @param  int|null  $policePlaceCode
+     * @return array{city:?string, province:?string, country_code:?string, postal_code:?string}
+     */
+    private function deriveAddressFromPolicePlaceCode(?int $policePlaceCode): array
+    {
+        $out = [
+            'city'         => null,
+            'province'     => null,
+            'country_code' => null,
+            'postal_code'  => null,
+        ];
+
+        if (!$policePlaceCode) {
+            return $out;
+        }
+
+        /** @var CargosLuogo|null $luogo */
+        $luogo = CargosLuogo::find($policePlaceCode);
+        if (!$luogo) {
+            return $out;
+        }
+
+        // NAZIONE (estero o Italia "come nazione"): province_code = 'ES'
+        if ($luogo->province_code === 'ES') {
+            $cc = $luogo->country_code;
+            $out['country_code'] = is_string($cc) && $cc !== '' ? substr($cc, 0, 2) : null;
+            return $out;
+        }
+
+        // COMUNE (Italia)
+        $out['city']         = $luogo->name;
+        $out['province']     = $luogo->province_code;
+        $out['country_code'] = 'IT';
+
+        // Prova a recuperare CAP da raw_payload (chiavi variabili)
+        $raw = is_array($luogo->raw_payload) ? $luogo->raw_payload : [];
+        $cap = data_get($raw, 'cap')
+            ?? data_get($raw, 'CAP')
+            ?? data_get($raw, 'postal_code')
+            ?? data_get($raw, 'zip')
+            ?? null;
+
+        $out['postal_code'] = is_string($cap) && trim($cap) !== '' ? trim($cap) : null;
+
+        return $out;
+    }
 
     public function render()
     {
