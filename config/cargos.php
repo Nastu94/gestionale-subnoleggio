@@ -18,6 +18,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Cargos - opzioni di logging 
+    |--------------------------------------------------------------------------
+    |
+    | store_full_record: se true, salva il record completo (fixed-width) nel DB.
+    | preview_len: lunghezza del record_preview (in tabella).
+    | 
+    */
+    'store_full_record' => (bool) env('CARGOS_STORE_FULL_RECORD', false),
+
+    // record_preview in tabella è 160: teniamoci coerenti
+    'preview_len' => (int) env('CARGOS_PREVIEW_LEN', 160),
+
+    /*
+    |--------------------------------------------------------------------------
     | CARGOS Base URL
     |--------------------------------------------------------------------------
     | Es: https://cargos.poliziadistato.it/CARGOS_API/

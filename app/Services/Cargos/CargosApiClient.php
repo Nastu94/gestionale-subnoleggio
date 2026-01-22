@@ -36,6 +36,8 @@ class CargosApiClient
     {
         $res = Http::baseUrl($this->baseUrl())
             ->timeout($this->timeout())
+            ->connectTimeout($this->timeout()) // 👈 importante per DNS/connect
+            ->retry(2, 250)                    // 👈 2 retry veloci
             ->withOptions(['verify' => $this->verifySsl()])
             ->withBasicAuth($username, $password)
             ->acceptJson()
@@ -56,14 +58,38 @@ class CargosApiClient
     {
         $res = Http::baseUrl($this->baseUrl())
             ->timeout($this->timeout())
+            ->connectTimeout($this->timeout())
+            ->retry(2, 250)
             ->withOptions(['verify' => $this->verifySsl()])
-            ->withToken($encryptedBearer) // Authorization: Bearer <token_criptato>
+            ->withToken($encryptedBearer)
             ->withHeaders(['Organization' => $username])
             ->acceptJson()
             ->asJson()
             ->post('api/Check', $records);
 
         return $this->decodeOrThrow($res, 'Check');
+    }
+
+    /**
+     * Send: OAuth2 Bearer col token CRIPTATO + header Organization=USERNAME.
+     *
+     * Body: array di stringhe (righe fixed-width).
+     *
+     * @param  array<int,string> $records
+     * @return array<int, array<string,mixed>>|array<string,mixed>
+     */
+    public function send(string $encryptedBearer, string $username, array $records): array
+    {
+        $res = Http::baseUrl($this->baseUrl())
+            ->timeout($this->timeout())
+            ->withOptions(['verify' => $this->verifySsl()])
+            ->withToken($encryptedBearer)
+            ->withHeaders(['Organization' => $username])
+            ->acceptJson()
+            ->asJson()
+            ->post('api/Send', $records);
+
+        return $this->decodeOrThrow($res, 'Send');
     }
 
     /**
