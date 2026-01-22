@@ -23,7 +23,7 @@ return new class extends Migration
              * NOTA: lo lasciamo nullable per non rompere i record già esistenti;
              * lato applicazione lo renderemo obbligatorio in create/edit.
              */
-            $table->string('cargos_vehicle_type_code', 32)
+            $table->string('cargos_vehicle_type_code', 1)
                 ->nullable()
                 ->after('segment')
                 ->comment('Codice tipologia veicolo CARGOS (cargos_vehicle_types.code)');
