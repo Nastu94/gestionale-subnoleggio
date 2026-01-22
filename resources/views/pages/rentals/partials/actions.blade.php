@@ -1,4 +1,121 @@
 {{-- resources/views/pages/rentals/partials/actions.blade.php --}}
+{{-- =========================
+     CARGOS (Livewire zone)
+     IMPORTANT: deve stare FUORI da wire:ignore
+   ========================= --}}
+@php
+    $lastCheck = $this->cargosLastCheck;
+    $lastSend  = $this->cargosLastSend;
+
+    $cargosEnabled = !in_array($rental->status, ['closed','cancelled','canceled','no_show'], true);
+
+    $stageLabel = [
+        'resolver'        => 'Preparazione dati',
+        'builder'         => 'Costruzione contratto',
+        'formatter'       => 'Formattazione record',
+        'api.token'       => 'Autenticazione',
+        'api.check'       => 'Verifica CARGOS',
+        'preflight.send'  => 'Pre-controllo invio',
+        'api.send'        => 'Invio CARGOS',
+    ];
+
+    $fmtStage = fn($s) => $stageLabel[$s] ?? (is_string($s) ? str_replace(['api.','preflight.'], ['API ','Preflight '], $s) : '—');
+
+    $badgeOkKo = function ($tx, string $prefixOk, string $prefixKo) {
+        if (!$tx) return null;
+        return [
+            'class' => $tx->ok ? 'badge-success' : 'badge-error',
+            'text'  => ($tx->ok ? $prefixOk : $prefixKo) . ': ' . ($tx->ok ? 'OK' : 'KO'),
+        ];
+    };
+
+    $checkBadge = $badgeOkKo($lastCheck, 'Verifica', 'Verifica');
+    $sendIsDry  = (bool) data_get($lastSend?->api_response, '0.dry_run', false) || ($lastSend?->stage === 'preflight.send');
+    $sendBadge  = $badgeOkKo($lastSend, $sendIsDry ? 'Invio (simul.)' : 'Invio', 'Invio');
+
+@endphp
+
+<div class="rounded-lg border border-base-300 bg-base-100 p-3 space-y-3">
+    <div class="flex items-start justify-between gap-3">
+        <div>
+            <div class="font-semibold text-sm">CARGOS</div>
+            <div class="text-xs opacity-70">
+              @if(!$cargosEnabled)
+                  Non disponibile su noleggi <span class="font-medium">chiusi</span> o <span class="font-medium">annullati</span>.
+              @endif
+            </div>
+        </div>
+
+        <div class="flex flex-col items-end gap-1">
+            @if($checkBadge)
+                <span class="badge {{ $checkBadge['class'] }} badge-sm">{{ $checkBadge['text'] }}</span>
+            @endif
+            @if($sendBadge)
+                <span class="badge {{ $sendBadge['class'] }} badge-sm">{{ $sendBadge['text'] }}</span>
+            @endif
+        </div>
+    </div>
+
+    <div class="text-xs opacity-80 space-y-1">
+        @if($lastCheck)
+            <div class="flex justify-between gap-2">
+                <span>Ultima verifica:</span>
+                <span class="font-medium">
+                    {{ optional($lastCheck->created_at)->format('d/m/Y H:i') }}
+                    · {{ $fmtStage($lastCheck->stage) }}
+                </span>
+            </div>
+        @endif
+
+        @if($lastSend)
+            <div class="flex justify-between gap-2">
+                <span>Ultimo invio:</span>
+                <span class="font-medium">
+                    {{ optional($lastSend->created_at)->format('d/m/Y H:i') }}
+                    · {{ $fmtStage($lastSend->stage) }}
+                </span>
+            </div>
+        @endif
+
+        @if(!$lastCheck && !$lastSend)
+            <div class="opacity-70">Nessuna trasmissione registrata.</div>
+        @endif
+    </div>
+
+    <div class="grid grid-cols-2 gap-2">
+        <button
+            type="button"
+            class="btn btn-sm w-full shadow-none
+                  !bg-info !text-info-content !border-info
+                  hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-info/30
+                  disabled:opacity-40 disabled:cursor-not-allowed"
+            wire:click="cargosCheck"
+            wire:loading.attr="disabled"
+            wire:target="cargosCheck"
+            @disabled(!$cargosEnabled)
+        >
+            <span wire:loading.remove wire:target="cargosCheck">Verifica</span>
+            <span wire:loading wire:target="cargosCheck" class="loading loading-spinner loading-xs"></span>
+        </button>
+
+        <button
+            type="button"
+            class="btn btn-sm w-full shadow-none
+                  !bg-success !text-success-content !border-success
+                  hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-success/30
+                  disabled:opacity-40 disabled:cursor-not-allowed"
+            wire:click="cargosSend"
+            wire:loading.attr="disabled"
+            wire:target="cargosSend"
+            @disabled(!$cargosEnabled)
+        >
+            <span wire:loading.remove wire:target="cargosSend">Invia</span>
+            <span wire:loading wire:target="cargosSend" class="loading loading-spinner loading-xs"></span>
+        </button>
+
+    </div>
+</div>
+
 {{-- Azioni sul noleggio + Modale registrazione pagamento --}}
 <div
     wire:ignore

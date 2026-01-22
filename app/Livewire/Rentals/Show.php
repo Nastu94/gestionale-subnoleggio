@@ -2,21 +2,24 @@
 
 namespace App\Livewire\Rentals;
 
-use Livewire\Attributes\On;
-use Livewire\Component;
 use App\Models\Rental;
+use App\Models\RentalChecklist;
 use App\Models\Customer;
 use App\Models\CargosLuogo;
+use App\Models\CargosTransmission;
+use App\Services\Cargos\CargosCheckService;
+use App\Services\Cargos\CargosSendService;
 use App\Services\Contracts\GenerateRentalContract;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
-use Spatie\MediaLibrary\MediaCollections\Models\Media;
-use App\Models\RentalChecklist;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Schema;
+use Livewire\Attributes\On;
+use Livewire\Component;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 /**
  * Livewire: Scheda noleggio con tab e Action Drawer.
@@ -1422,6 +1425,82 @@ class Show extends Component
         ] as $field) {
             $this->customerForm[$field] = $this->extractCargosCode($this->customerForm[$field] ?? null);
         }
+    }
+
+    /* -------------------------------------------------------------------------
+     |  CARGOS: CHECK / SEND (UI actions)
+     * ------------------------------------------------------------------------- */
+
+    /**
+     * CARGOS abilitato finché il noleggio non è chiuso o annullato.
+     */
+    protected function cargosEnabled(): bool
+    {
+        return !in_array($this->rental->status, ['closed', 'cancelled', 'canceled', 'no_show'], true);
+    }
+
+    public function getCargosLastCheckProperty(): ?CargosTransmission
+    {
+        return CargosTransmission::query()
+            ->where('action', 'check')
+            ->where('rental_id', $this->rental->id)
+            ->latest('id')
+            ->first();
+    }
+
+    public function getCargosLastSendProperty(): ?CargosTransmission
+    {
+        return CargosTransmission::query()
+            ->where('action', 'send')
+            ->where('rental_id', $this->rental->id)
+            ->latest('id')
+            ->first();
+    }
+
+    public function cargosCheck(CargosCheckService $svc): void
+    {
+        $this->authorize('update', $this->rental);
+
+        if (!$this->cargosEnabled()) {
+            $this->dispatch('toast', type: 'error', message: 'CARGOS: non disponibile su noleggi chiusi o annullati.');
+            return;
+        }
+
+        $res = $svc->checkRental((int) $this->rental->id, auth()->user());
+
+        if (($res['ok'] ?? false) === true) {
+            $this->dispatch('toast', type: 'success', message: 'CARGOS: verifica completata con successo.');
+            return;
+        }
+
+        $msg = (string) (($res['errors'][0] ?? null) ?: 'CARGOS: verifica non riuscita.');
+        $this->dispatch('toast', type: 'error', message: $msg);
+    }
+
+    public function cargosSend(CargosSendService $svc): void
+    {
+        $this->authorize('update', $this->rental);
+
+        if (!$this->cargosEnabled()) {
+            $this->dispatch('toast', type: 'error', message: 'CARGOS: non disponibile su noleggi chiusi o annullati.');
+            return;
+        }
+
+        $res = $svc->sendRental((int) $this->rental->id, auth()->user());
+
+        if (($res['ok'] ?? false) === true) {
+            $isDry = (bool) ($res['dry_run'] ?? false);
+
+            $this->dispatch(
+                'toast',
+                type: 'success',
+                message: $isDry ? 'CARGOS: invio simulato completato (dry-run).' : 'CARGOS: invio completato con successo.'
+            );
+            return;
+        }
+
+        $msg = (string) (($res['errors'][0] ?? null) ?: 'CARGOS: invio non riuscito.');
+        $this->dispatch('toast', type: 'error', message: $msg);
     }
 
     #[On('checklist-signed-uploaded')]
