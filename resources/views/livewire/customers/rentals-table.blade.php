@@ -104,6 +104,7 @@
                             {{ $plate }}
                             <span class="text-[11px] text-gray-500 dark:text-gray-400 ml-1">{{ $model }}</span>
                         </td>
+                        <td class="px-6 py-2 whitespace-nowrap">{{ strtoupper($r->status) }}</td>
                         @php
                             /**
                             * Ruolo del customer nel contratto:
@@ -132,7 +133,6 @@
                                 <span class="text-xs text-gray-400 italic">—</span>
                             @endif
                         </td>
-                        <td class="px-6 py-2 whitespace-nowrap">{{ strtoupper($r->status) }}</td>
                         <td class="px-6 py-2 whitespace-nowrap">
                             {{ optional($r->created_at)->format('d/m/Y H:i') }}
                         </td>
