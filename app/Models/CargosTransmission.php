@@ -17,6 +17,11 @@ class CargosTransmission extends Model
         'ok',
         'dry_run',         // ✅ nuovo
         'stage',
+        'auth_source',
+        'auth_username_masked',
+        'auth_username_hash',
+        'auth_agency_id_masked',
+        'auth_agency_id_hash',
 
         'request_hash',
         'record_length',

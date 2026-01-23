@@ -109,28 +109,27 @@ class CargosSendService
             return ['ok' => false, 'stage' => 'preflight.send', 'errors' => [$msg]];
         }
 
-        // 5) DRY-RUN in non-production
+        $linkedCheckId = $okCheck->id;
+
+        // --- DRY-RUN ---
         if (!app()->environment('production')) {
             $this->safeLog([
-                'rental_id' => $rentalId,
+                'rental_id'              => $rentalId,
                 'agency_organization_id' => $agencyId,
-                'operator_user_id' => $operatorId,
-                'action' => $action,
-                'ok' => true,
-                'stage' => 'preflight.send',
-                'request_hash' => $hash,
-                'record_length' => strlen($record),
-                'record_preview' => $this->preview($record),
-
-                // ✅ salva il record completo SOLO se abilitato (default: NO)
-                'record' => $this->recordToStore($record),
-
-                // qui va bene: è JSON, non dipende dalle colonne future
-                'api_response' => [
+                'operator_user_id'       => $operatorId,
+                'linked_check_id'        => $linkedCheckId, // ✅ QUI
+                'action'                 => $action,
+                'ok'                     => true,
+                'stage'                  => 'preflight.send',
+                'request_hash'           => $hash,
+                'record_length'          => strlen($record),
+                'record_preview'         => $this->preview($record),
+                'record'                 => $this->recordToStore($record),
+                'api_response'           => [
                     [
                         'dry_run' => true,
                         'note' => 'SEND non eseguito (ambiente non-production). Pre-flight OK.',
-                        'linked_check_id' => $okCheck->id,
+                        'linked_check_id' => $linkedCheckId,
                         'hash' => $hash,
                     ]
                 ],
@@ -143,7 +142,7 @@ class CargosSendService
                 'dry_run' => true,
                 'response' => [
                     'dry_run' => true,
-                    'linked_check_id' => $okCheck->id,
+                    'linked_check_id' => $linkedCheckId, // ✅ QUI
                     'hash' => $hash,
                 ],
             ];
@@ -151,8 +150,8 @@ class CargosSendService
 
         // 6) PRODUCTION: chiamata reale a api/Send
         try {
-            $auth     = $this->tokenProvider->getEncryptedBearer();
-            $username = $this->tokenProvider->username();
+            $auth     = $this->tokenProvider->getEncryptedBearerForAgency($ctx['agency'] ?? null);
+            $username = $auth['username'];
 
             $resp = $this->api->send($auth['bearer'], $username, [$record]);
 
@@ -179,12 +178,15 @@ class CargosSendService
                 'request_hash' => $hash,
                 'record_length' => strlen($record),
                 'record_preview' => $this->preview($record),
-
+                'linked_check_id' => $linkedCheckId,
                 // ✅ salva il record completo SOLO se abilitato (default: NO)
                 'record' => $this->recordToStore($record),
 
                 'validation_errors' => $errors ?: null,
                 'api_response' => is_array($resp) ? $resp : null,
+                'auth_source'   => $auth['source'] ?? null,
+                'auth_username' => $auth['username'] ?? null,
+                'auth_agency_id'=> $auth['agency_id'] ?? null,  
             ]);
 
             return [
@@ -205,6 +207,9 @@ class CargosSendService
                 'record_length' => strlen($record),
                 'record_preview' => $this->preview($record),
                 'error_message' => $e->getMessage(),
+                'auth_source'   => $auth['source'] ?? null,
+                'auth_username' => $auth['username'] ?? null,
+                'auth_agency_id'=> $auth['agency_id'] ?? null,
             ]);
 
             return ['ok' => false, 'stage' => 'api.send', 'errors' => [$e->getMessage()]];

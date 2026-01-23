@@ -93,9 +93,12 @@ class CargosCheckService
         $hash   = hash('sha256', $record);
 
         // 4) Token (stage dedicato)
+        $auth = null;
+        $username = null;
+
         try {
-            $auth     = $this->tokenProvider->getEncryptedBearer();
-            $username = $this->tokenProvider->username();
+            $auth     = $this->tokenProvider->getEncryptedBearerForAgency($ctx['agency'] ?? null);
+            $username = (string) ($auth['username'] ?? '');
         } catch (\Throwable $e) {
             $this->safeLog([
                 'rental_id'              => $rentalId,
@@ -108,6 +111,11 @@ class CargosCheckService
                 'record_length'          => strlen($record),
                 'record_preview'         => $this->preview($record),
                 'error_message'          => $e->getMessage(),
+
+                // ✅ non esplode mai anche se $auth non è stato valorizzato
+                'auth_source'   => is_array($auth) ? ($auth['source'] ?? null) : null,
+                'auth_username' => is_array($auth) ? ($auth['username'] ?? null) : null,
+                'auth_agency_id'=> is_array($auth) ? ($auth['agency_id'] ?? null) : null,
             ]);
 
             return ['ok' => false, 'stage' => 'api.token', 'errors' => [$e->getMessage()]];
@@ -148,6 +156,9 @@ class CargosCheckService
 
                 'validation_errors'      => $errors ?: null,
                 'api_response'           => is_array($resp) ? $resp : null,
+                'auth_source'   => $auth['source'] ?? null,
+                'auth_username' => $auth['username'] ?? null,
+                'auth_agency_id'=> $auth['agency_id'] ?? null,
             ]);
 
             return [
@@ -168,6 +179,9 @@ class CargosCheckService
                 'record_length'          => strlen($record),
                 'record_preview'         => $this->preview($record),
                 'error_message'          => $e->getMessage(),
+                'auth_source'   => $auth['source'] ?? null,
+                'auth_username' => $auth['username'] ?? null,
+                'auth_agency_id'=> $auth['agency_id'] ?? null,
             ]);
 
             return ['ok' => false, 'stage' => 'api.check', 'errors' => [$e->getMessage()]];

@@ -84,7 +84,7 @@ class Customer extends Model implements SpatieHasMedia
     }
 
     /** Conversioni immagini per documenti identificativi. */
-    public function registerMediaConversions(Media $media = null): void
+    public function registerMediaConversions(?Media $media = null): void
     {
         if ($media && !Str::startsWith($media->mime_type, 'image/')) return;
 

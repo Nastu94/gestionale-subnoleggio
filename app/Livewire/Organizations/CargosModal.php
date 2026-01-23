@@ -11,40 +11,35 @@ use Illuminate\Support\Facades\Log;
 use Livewire\Component;
 
 /**
- * Modale Livewire: Cargos (password + PUK) per Organization di tipo "renter".
+ * Modale Livewire: Cargos per Organization di tipo "renter".
  *
  * Sicurezza:
- * - NON carichiamo i valori cifrati nello state all'apertura (per non spedirli nel payload Livewire).
+ * - NON carichiamo i valori reali nello state all'apertura (per non spedirli nel payload Livewire).
  * - Per visualizzarli, richiediamo conferma password admin e mostriamo i valori per pochi secondi.
  * - In salvataggio, se i campi sono vuoti, manteniamo i valori esistenti.
  */
 class CargosModal extends Component
 {
-    /**
-     * Stato di apertura del modale.
-     */
     public bool $open = false;
-
-    /**
-     * Organization selezionata.
-     */
     public ?int $organizationId = null;
 
     /**
-     * Indicatori non sensibili: ci dicono se i valori risultano impostati (senza decrypt).
+     * Indicatori non sensibili: ci dicono se i valori risultano impostati (senza leggere i valori).
      */
     public bool $hasCargosPassword = false;
     public bool $hasCargosPuk = false;
+    public bool $hasCargosUserCode = false;
+    public bool $hasCargosAgencyId = false;
 
     /**
      * Form state: valori da salvare.
      * - Vuoto => non cambia il valore già presente.
-     *
-     * @var array<string, mixed>
      */
     public array $state = [
-        'cargos_password' => null,
-        'cargos_puk'      => null,
+        'codice_utente_cargos' => null,
+        'agenzia_id_cargos'    => null,
+        'cargos_password'      => null,
+        'cargos_puk'           => null,
     ];
 
     /**
@@ -55,71 +50,59 @@ class CargosModal extends Component
     /**
      * Valori rivelati (solo dopo conferma). NON vengono salvati qui.
      */
+    public ?string $revealedCargosUserCode = null;
+    public ?string $revealedCargosAgencyId = null;
     public ?string $revealedCargosPassword = null;
     public ?string $revealedCargosPuk = null;
 
-    /**
-     * Listener eventi Livewire/Browser.
-     *
-     * @var array<string, string>
-     */
     protected $listeners = [
         'open-org-cargos' => 'openModal',
     ];
 
-    /**
-     * Accesso: admin-only via Gate.
-     */
     public function mount(): void
     {
-        if (! Gate::allows('manage.renters')) {
+        if (!Gate::allows('manage.renters')) {
             abort(403);
         }
     }
 
-    /**
-     * Regole validazione per salvataggio (non per reveal).
-     *
-     * @return array<string, mixed>
-     */
     protected function rules(): array
     {
         return [
-            // Se presenti, devono essere stringhe. Non obbligatori.
-            'state.cargos_password' => ['nullable', 'string', 'max:255'],
-            'state.cargos_puk'      => ['nullable', 'string', 'max:255'],
+            'state.codice_utente_cargos' => ['nullable', 'string', 'max:80'],
+            'state.agenzia_id_cargos'    => ['nullable', 'string', 'max:32'],
 
-            // Password admin richiesta solo quando si tenta il reveal (validazione manuale in reveal()).
+            'state.cargos_password'      => ['nullable', 'string', 'max:255'],
+            'state.cargos_puk'           => ['nullable', 'string', 'max:255'],
+
             'confirmPassword' => ['nullable', 'string'],
         ];
     }
 
-    /**
-     * Messaggi personalizzati.
-     *
-     * @var array<string, string>
-     */
     protected array $messages = [
-        'state.cargos_password.max' => 'La password Cargos può contenere al massimo :max caratteri.',
-        'state.cargos_puk.max'      => 'Il PUK Cargos può contenere al massimo :max caratteri.',
+        'state.codice_utente_cargos.max' => 'Il codice utente Cargos può contenere al massimo :max caratteri.',
+        'state.agenzia_id_cargos.max'    => "L'agenzia ID Cargos può contenere al massimo :max caratteri.",
+
+        'state.cargos_password.max'      => 'La password Cargos può contenere al massimo :max caratteri.',
+        'state.cargos_puk.max'           => 'Il PUK Cargos può contenere al massimo :max caratteri.',
     ];
 
-    /**
-     * Apre il modale.
-     * NB: riceviamo solo l'id (nessun segreto nel payload).
-     */
     public function openModal(int $organizationId): void
     {
         $this->resetValidation();
 
         $this->organizationId = $organizationId;
 
-        // Pulizia campi e reveal per sicurezza.
-        $this->state['cargos_password'] = null;
-        $this->state['cargos_puk'] = null;
+        // Pulizia state e reveal per sicurezza.
+        $this->state = [
+            'codice_utente_cargos' => null,
+            'agenzia_id_cargos'    => null,
+            'cargos_password'      => null,
+            'cargos_puk'           => null,
+        ];
+
         $this->confirmPassword = '';
-        $this->revealedCargosPassword = null;
-        $this->revealedCargosPuk = null;
+        $this->hideReveals();
 
         // Carichiamo solo l'organizzazione renter attiva (no trashed).
         $org = Organization::query()
@@ -128,18 +111,18 @@ class CargosModal extends Component
             ->firstOrFail();
 
         /**
-         * Indicatori senza decrypt:
-         * usiamo getRawOriginal per non forzare la decifratura dei campi.
+         * Indicatori senza “pre-fill”.
+         * - Se i campi sono castati encrypted, usare getRawOriginal è perfetto (non decripta).
+         * - Se NON sono encrypted, è comunque ok: qui ci serve solo sapere “è valorizzato?”
          */
-        $this->hasCargosPassword = ! empty($org->getRawOriginal('cargos_password'));
-        $this->hasCargosPuk      = ! empty($org->getRawOriginal('cargos_puk'));
+        $this->hasCargosPassword  = !empty($org->getRawOriginal('cargos_password'));
+        $this->hasCargosPuk       = !empty($org->getRawOriginal('cargos_puk'));
+        $this->hasCargosUserCode  = !empty($org->getRawOriginal('codice_utente_cargos'));
+        $this->hasCargosAgencyId  = !empty($org->getRawOriginal('agenzia_id_cargos'));
 
         $this->open = true;
     }
 
-    /**
-     * Chiude il modale e ripulisce.
-     */
     public function closeModal(): void
     {
         $this->open = false;
@@ -147,30 +130,35 @@ class CargosModal extends Component
 
         $this->hasCargosPassword = false;
         $this->hasCargosPuk = false;
+        $this->hasCargosUserCode = false;
+        $this->hasCargosAgencyId = false;
 
-        $this->state['cargos_password'] = null;
-        $this->state['cargos_puk'] = null;
+        $this->state = [
+            'codice_utente_cargos' => null,
+            'agenzia_id_cargos'    => null,
+            'cargos_password'      => null,
+            'cargos_puk'           => null,
+        ];
 
         $this->confirmPassword = '';
-        $this->revealedCargosPassword = null;
-        $this->revealedCargosPuk = null;
+        $this->hideReveals();
 
         $this->resetValidation();
     }
 
-    /**
-     * Rimuove i valori rivelati (auto-hide).
-     */
     public function hideReveals(): void
     {
+        $this->revealedCargosUserCode = null;
+        $this->revealedCargosAgencyId = null;
         $this->revealedCargosPassword = null;
         $this->revealedCargosPuk = null;
+
         $this->confirmPassword = '';
     }
 
     /**
      * Reveal: richiede password admin e mostra temporaneamente i valori.
-     * - $field: 'password' | 'puk'
+     * - $field: 'user_code' | 'agency_id' | 'password' | 'puk'
      */
     public function reveal(string $field): void
     {
@@ -179,31 +167,36 @@ class CargosModal extends Component
         $user = Auth::user();
 
         // Guardia: solo admin
-        if (! $user || ! method_exists($user, 'hasRole') || ! $user->hasRole('admin')) {
+        if (!$user || !method_exists($user, 'hasRole') || !$user->hasRole('admin')) {
             abort(403);
         }
 
-        // Deve esserci un organizationId valido
         if (empty($this->organizationId)) {
             return;
         }
 
-        // Conferma password admin obbligatoria
         if (trim($this->confirmPassword) === '') {
             $this->addError('confirmPassword', 'Inserisci la password admin per visualizzare i dati.');
             return;
         }
 
-        if (! Hash::check($this->confirmPassword, (string) $user->password)) {
+        if (!Hash::check($this->confirmPassword, (string) $user->password)) {
             $this->addError('confirmPassword', 'Password admin non valida.');
             return;
         }
 
-        // Carica renter attivo e decrypt tramite cast "encrypted" (solo qui, su richiesta).
         $org = Organization::query()
             ->where('type', 'renter')
             ->whereKey($this->organizationId)
             ->firstOrFail();
+
+        if ($field === 'user_code') {
+            $this->revealedCargosUserCode = $org->codice_utente_cargos;
+        }
+
+        if ($field === 'agency_id') {
+            $this->revealedCargosAgencyId = $org->agenzia_id_cargos;
+        }
 
         if ($field === 'password') {
             $this->revealedCargosPassword = $org->cargos_password;
@@ -213,10 +206,9 @@ class CargosModal extends Component
             $this->revealedCargosPuk = $org->cargos_puk;
         }
 
-        // Svuota la password admin dopo reveal (igiene).
+        // igiene: svuota password admin
         $this->confirmPassword = '';
 
-        // Toast informativo (opzionale ma utile).
         $this->dispatch('toast', [
             'type' => 'info',
             'message' => 'Dati Cargos visualizzati temporaneamente.',
@@ -224,9 +216,6 @@ class CargosModal extends Component
         ]);
     }
 
-    /**
-     * Salva i cargos (se i campi sono vuoti, non sovrascriviamo).
-     */
     public function save(): void
     {
         $this->validate();
@@ -236,7 +225,6 @@ class CargosModal extends Component
         }
 
         try {
-            // Renter attivo (no trashed)
             $org = Organization::query()
                 ->where('type', 'renter')
                 ->whereKey($this->organizationId)
@@ -244,12 +232,21 @@ class CargosModal extends Component
 
             $updates = [];
 
-            // Se l'admin ha inserito un nuovo valore, aggiorniamo; altrimenti manteniamo quello attuale.
-            if (! empty($this->state['cargos_password'])) {
+            // ✅ Nuovi campi
+            if (!empty($this->state['codice_utente_cargos'])) {
+                $updates['codice_utente_cargos'] = $this->state['codice_utente_cargos'];
+            }
+
+            if (!empty($this->state['agenzia_id_cargos'])) {
+                $updates['agenzia_id_cargos'] = $this->state['agenzia_id_cargos'];
+            }
+
+            // ✅ Esistenti
+            if (!empty($this->state['cargos_password'])) {
                 $updates['cargos_password'] = $this->state['cargos_password'];
             }
 
-            if (! empty($this->state['cargos_puk'])) {
+            if (!empty($this->state['cargos_puk'])) {
                 $updates['cargos_puk'] = $this->state['cargos_puk'];
             }
 
@@ -264,13 +261,19 @@ class CargosModal extends Component
 
             $org->update($updates);
 
-            // Aggiorna indicatori
-            $this->hasCargosPassword = ! empty($org->getRawOriginal('cargos_password'));
-            $this->hasCargosPuk      = ! empty($org->getRawOriginal('cargos_puk'));
+            // aggiorna indicatori (senza leggere valori)
+            $this->hasCargosPassword = !empty($org->getRawOriginal('cargos_password'));
+            $this->hasCargosPuk      = !empty($org->getRawOriginal('cargos_puk'));
+            $this->hasCargosUserCode = !empty($org->getRawOriginal('codice_utente_cargos'));
+            $this->hasCargosAgencyId = !empty($org->getRawOriginal('agenzia_id_cargos'));
 
-            // Pulizia campi inseriti
-            $this->state['cargos_password'] = null;
-            $this->state['cargos_puk'] = null;
+            // pulizia state inserito + reveal
+            $this->state = [
+                'codice_utente_cargos' => null,
+                'agenzia_id_cargos'    => null,
+                'cargos_password'      => null,
+                'cargos_puk'           => null,
+            ];
             $this->hideReveals();
 
             $this->dispatch('organizations:updated');
@@ -289,7 +292,7 @@ class CargosModal extends Component
 
             $this->dispatch('toast', [
                 'type' => 'error',
-                'message' => 'Errore durante il salvataggio dei Cargos. Riprova.',
+                'message' => 'Errore durante il salvataggio dei dati Cargos. Riprova.',
                 'duration' => 4500,
             ]);
 
@@ -301,7 +304,7 @@ class CargosModal extends Component
 
             $this->dispatch('toast', [
                 'type' => 'error',
-                'message' => 'Errore durante il salvataggio dei Cargos. Riprova.',
+                'message' => 'Errore durante il salvataggio dei dati Cargos. Riprova.',
                 'duration' => 4500,
             ]);
         }

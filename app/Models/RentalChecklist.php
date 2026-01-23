@@ -198,7 +198,7 @@ class RentalChecklist extends Model implements SpatieHasMedia
     /**
      * Conversioni immagini per foto veicolo e firme (no conversion per PDF).
      */
-    public function registerMediaConversions(Media $media = null): void
+    public function registerMediaConversions(?Media $media = null): void
     {
         if ($media && !Str::startsWith($media->mime_type, 'image/')) {
             return; // niente conversioni su PDF

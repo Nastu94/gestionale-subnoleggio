@@ -4,15 +4,14 @@ namespace App\Services\Cargos;
 
 use App\Models\Organization;
 use Carbon\Carbon;
-use Illuminate\Contracts\Encryption\DecryptException;
 use RuntimeException;
 
 /**
- * Risolve le credenziali CARGOS (PUK + Password) in base alla licenza.
+ * Risolve le credenziali CARGOS in base alla licenza.
  *
  * Regola:
- * - Organizzazione con licenza attiva => usa organizations.cargos_puk + organizations.cargos_password (decrypt)
- * - Altrimenti => usa config('cargos.admin.*') (env)
+ * - Se org ha licenza attiva e valida (flag true + expired_at > oggi) => usa i campi dell'Organization
+ * - Altrimenti => usa config('cargos.admin.*') (fallback "attuale")
  *
  * Nota sicurezza:
  * - NON loggare mai i valori in chiaro.
@@ -20,15 +19,17 @@ use RuntimeException;
 class CargosCredentialsResolver
 {
     /**
-     * Risolve le credenziali CARGOS per una data "agency" (Organization).
-     *
-     * @param  Organization $agency
-     * @return array{puk:string,password:string,source:string}
+     * @return array{
+     *   username:string,
+     *   password:string,
+     *   puk:string,
+     *   agency_id:string,
+     *   source:string
+     * }
      */
-    public function resolveForAgency(Organization $agency): array
+    public function resolveForAgency(?Organization $agency): array
     {
-        // Licenza "attiva" = flag true e non scaduta (se c'è una data scadenza)
-        if ($this->hasActiveRentalLicense($agency)) {
+        if ($agency && $this->hasActiveRentalLicense($agency)) {
             return $this->fromOrganization($agency);
         }
 
@@ -36,10 +37,7 @@ class CargosCredentialsResolver
     }
 
     /**
-     * Verifica se la licenza noleggio è attiva (flag + non scaduta).
-     *
-     * @param  Organization $org
-     * @return bool
+     * Licenza valida = rental_license true AND rental_license_expires_at > oggi.
      */
     protected function hasActiveRentalLicense(Organization $org): bool
     {
@@ -47,91 +45,92 @@ class CargosCredentialsResolver
             return false;
         }
 
-        // Se non c'è una scadenza, consideriamola attiva.
+        // Se manca la scadenza, NON ci fidiamo (la tua regola richiede esplicitamente la data)
         if (empty($org->rental_license_expires_at)) {
-            return true;
+            return false;
         }
 
         try {
+            // "successiva ad oggi" => endOfDay > now()
             $expiresAt = Carbon::parse($org->rental_license_expires_at)->endOfDay();
-            return $expiresAt->greaterThanOrEqualTo(now());
+            return $expiresAt->greaterThan(now());
         } catch (\Throwable) {
-            // Se la data è corrotta, meglio NON fidarsi => fallback su config admin
             return false;
         }
     }
 
-    /**
-     * Credenziali da Organization.
-     *
-     * Nota:
-     * - Se in Organization hai i cast `encrypted`, leggere $org->cargos_* restituisce già il valore in chiaro.
-     * - NON usare decrypt() qui, altrimenti fai double-decrypt e ottieni "non decifrabile".
-     *
-     * @param  Organization $org
-     * @return array{puk:string,password:string,source:string}
-     */
     protected function fromOrganization(Organization $org): array
     {
-        /**
-         * Verifica presenza valori salvati (senza forzare decrypt).
-         * Usiamo getRawOriginal per controllare che in DB ci sia qualcosa.
-         */
-        $rawPuk = (string) $org->getRawOriginal('cargos_puk');
-        $rawPwd = (string) $org->getRawOriginal('cargos_password');
+        // Controllo presenza valori in DB senza “forzare” decrypt
+        $rawUser = (string) $org->getRawOriginal('codice_utente_cargos');
+        $rawAgId = (string) $org->getRawOriginal('agenzia_id_cargos');
+        $rawPuk  = (string) $org->getRawOriginal('cargos_puk');
+        $rawPwd  = (string) $org->getRawOriginal('cargos_password');
 
-        if (trim($rawPuk) === '' || trim($rawPwd) === '') {
+        $missing = [];
+        if (trim($rawUser) === '') $missing[] = 'codice_utente_cargos';
+        if (trim($rawAgId) === '') $missing[] = 'agenzia_id_cargos';
+        if (trim($rawPuk) === '')  $missing[] = 'cargos_puk';
+        if (trim($rawPwd) === '')  $missing[] = 'cargos_password';
+
+        if (!empty($missing)) {
             throw new RuntimeException(
-                "Credenziali CARGOS mancanti per Organization #{$org->id}: compila cargos_puk e cargos_password."
+                "Credenziali CARGOS mancanti per Organization #{$org->id}: compila " . implode(', ', $missing) . '.'
             );
         }
 
-        /**
-         * Qui leggiamo gli attributi "castati".
-         * Se i cast encrypted sono presenti, Laravel decripta automaticamente.
-         */
+        // Lettura attributi (se hai cast encrypted, Laravel decripta qui)
         try {
-            $puk = (string) $org->cargos_puk;
-            $password = (string) $org->cargos_password;
+            $username  = (string) $org->codice_utente_cargos;
+            $agencyId  = (string) $org->agenzia_id_cargos;
+            $puk       = (string) $org->cargos_puk;
+            $password  = (string) $org->cargos_password;
         } catch (\Throwable) {
             throw new RuntimeException(
-                "Credenziali CARGOS non decifrabili per Organization #{$org->id}: verifica APP_KEY e che i cast 'encrypted' siano corretti."
+                "Credenziali CARGOS non decifrabili per Organization #{$org->id}: verifica APP_KEY e cast 'encrypted'."
             );
         }
 
-        if (trim($puk) === '' || trim($password) === '') {
+        if (trim($username) === '' || trim($agencyId) === '' || trim($puk) === '' || trim($password) === '') {
             throw new RuntimeException(
                 "Credenziali CARGOS vuote dopo lettura per Organization #{$org->id}: verifica salvataggio/cast."
             );
         }
 
         return [
-            'puk'      => $puk,
-            'password' => $password,
-            'source'   => 'organization',
+            'username'  => $username,
+            'password'  => $password,
+            'puk'       => $puk,
+            'agency_id' => $agencyId,
+            'source'    => 'organization',
         ];
     }
 
-    /**
-     * Credenziali admin da config.
-     *
-     * @return array{puk:string,password:string,source:string}
-     */
     protected function fromConfig(): array
     {
-        $puk = (string) config('cargos.admin.puk');
+        $username = trim((string) config('cargos.admin.username'));
         $password = (string) config('cargos.admin.password');
+        $puk      = (string) config('cargos.admin.puk');
+        $agencyId = trim((string) config('cargos.admin.agency_id'));
 
-        if ($puk === '' || $password === '') {
+        $missing = [];
+        if ($username === '') $missing[] = 'CARGOS_ADMIN_USERNAME';
+        if (trim($password) === '') $missing[] = 'CARGOS_ADMIN_PASSWORD';
+        if (trim($puk) === '') $missing[] = 'CARGOS_ADMIN_PUK';
+        if ($agencyId === '') $missing[] = 'CARGOS_ADMIN_AGENCY_ID';
+
+        if (!empty($missing)) {
             throw new RuntimeException(
-                'Credenziali CARGOS admin mancanti: configura CARGOS_ADMIN_PUK e CARGOS_ADMIN_PASSWORD in .env.'
+                'Credenziali CARGOS admin mancanti: configura ' . implode(', ', $missing) . ' in .env.'
             );
         }
 
         return [
-            'puk'      => $puk,
-            'password' => $password,
-            'source'   => 'config',
+            'username'  => $username,
+            'password'  => $password,
+            'puk'       => $puk,
+            'agency_id' => $agencyId,
+            'source'    => 'config',
         ];
     }
 }

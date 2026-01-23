@@ -139,7 +139,8 @@ class CargosRentalContextResolver
     protected function resolveAgencyOrganization(Rental $rental): Organization
     {
         $renterOrg = $rental->organization;
-        if ($renterOrg && (bool) $renterOrg->rental_license === true) {
+
+        if ($renterOrg && $this->hasValidLicense($renterOrg)) {
             return $renterOrg;
         }
 
@@ -148,7 +149,28 @@ class CargosRentalContextResolver
             return $adminOrg;
         }
 
-        throw new RuntimeException('Impossibile risolvere AGENZIA: manca sia organization (renter con licenza) sia adminOrganization del veicolo.');
+        throw new RuntimeException(
+            'Impossibile risolvere AGENZIA: manca sia organization (renter con licenza valida) sia adminOrganization del veicolo.'
+        );
+    }
+
+    protected function hasValidLicense(Organization $org): bool
+    {
+        if (!(bool) $org->rental_license) {
+            return false;
+        }
+
+        if (empty($org->rental_license_expires_at)) {
+            return false;
+        }
+
+        try {
+            return \Illuminate\Support\Carbon::parse($org->rental_license_expires_at)
+                ->endOfDay()
+                ->greaterThan(now());
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /**

@@ -2,60 +2,67 @@
 
 namespace App\Services\Cargos;
 
+use App\Models\Organization;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use RuntimeException;
 
 /**
  * Recupera un token valido e lo restituisce già criptato (Bearer) secondo specifica CARGOS.
+ * Cache key basata su username.
+ *
+ * NOTA:
+ * - 'source' = da dove arrivano le credenziali ('config'|'organization')  ✅
+ * - 'token_source' = da dove arriva il token ('cache'|'api')              ✅
  */
 class CargosTokenProvider
 {
     public function __construct(
         protected CargosApiClient $api,
         protected CargosTokenCryptor $cryptor,
+        protected CargosCredentialsResolver $credentialsResolver,
     ) {}
 
-    public function username(): string
-    {
-        $u = trim((string) config('cargos.admin.username'));
-        if ($u === '') {
-            throw new RuntimeException('CARGOS admin.username mancante in config/.env.');
-        }
-        return $u;
-    }
-
-    public function password(): string
-    {
-        $p = (string) config('cargos.admin.password');
-        if (trim($p) === '') {
-            throw new RuntimeException('CARGOS admin.password mancante in config/.env.');
-        }
-        return $p;
-    }
-
     /**
-     * @return array{bearer:string, expires_at:string, source:string}
+     * @return array{
+     *   bearer:string,
+     *   expires_at:string,
+     *   source:string,        // ✅ cred source: config|organization
+     *   token_source:string,  // ✅ token source: cache|api
+     *   username:string,
+     *   agency_id:string
+     * }
      */
-    public function getEncryptedBearer(): array
+    public function getEncryptedBearerForAgency(?Organization $agency): array
     {
-        $cacheKey = 'cargos.token.v1';
+        $creds = $this->credentialsResolver->resolveForAgency($agency);
+
+        $credSource = (string) ($creds['source'] ?? 'config'); // config|organization
+
+        $username = (string) $creds['username'];
+        $password = (string) $creds['password'];
+
+        $cacheKey = 'cargos.token.v2.' . sha1($username);
 
         $cached = Cache::get($cacheKey);
+
         if (is_array($cached) && isset($cached['access_token'], $cached['expires_at'])) {
             $expiresAt = Carbon::parse($cached['expires_at']);
 
             // buffer: se scade entro 60s, rigeneriamo
             if ($expiresAt->diffInSeconds(now(), false) < -60) {
                 return [
-                    'bearer'     => $this->cryptor->encrypt((string) $cached['access_token']),
-                    'expires_at' => $expiresAt->toIso8601String(),
-                    'source'     => 'cache',
+                    'bearer'      => $this->cryptor->encrypt((string) $cached['access_token']),
+                    'expires_at'  => $expiresAt->toIso8601String(),
+                    'source'      => $credSource,   // ✅ sempre cred source
+                    'token_source'=> 'cache',       // ✅ info extra
+                    'username'    => $username,
+                    'agency_id'   => (string) $creds['agency_id'],
                 ];
             }
         }
 
-        $tok = $this->api->token($this->username(), $this->password());
+        $tok = $this->api->token($username, $password);
 
         $accessToken = (string) ($tok['access_token'] ?? '');
         $expiresDate = (string) ($tok['expires_date'] ?? '');
@@ -66,16 +73,18 @@ class CargosTokenProvider
 
         $expiresAt = Carbon::parse($expiresDate);
 
-        // Cache fino a scadenza (Laravel accetta Carbon come TTL)
         Cache::put($cacheKey, [
             'access_token' => $accessToken,
             'expires_at'   => $expiresAt->toIso8601String(),
         ], $expiresAt);
 
         return [
-            'bearer'     => $this->cryptor->encrypt($accessToken),
-            'expires_at' => $expiresAt->toIso8601String(),
-            'source'     => 'api',
+            'bearer'      => $this->cryptor->encrypt($accessToken),
+            'expires_at'  => $expiresAt->toIso8601String(),
+            'source'      => $credSource, // ✅ sempre cred source
+            'token_source'=> 'api',       // ✅ info extra
+            'username'    => $username,
+            'agency_id'   => (string) $creds['agency_id'],
         ];
     }
 }

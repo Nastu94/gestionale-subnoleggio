@@ -334,7 +334,7 @@ protected function resolveIncludedKm(): ?int
         $this->addMediaCollection('signature_lessor')->singleFile();
     }
 
-    public function registerMediaConversions(Media $media = null): void
+    public function registerMediaConversions(?Media $media = null): void
     {
         if ($media && !Str::startsWith($media->mime_type, 'image/')) {
             return;

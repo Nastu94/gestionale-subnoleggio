@@ -1,8 +1,9 @@
+{{-- resources/views/livewire/organizations/cargos-modal.blade.php --}}
 <div>
     @if($open)
         <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
             {{-- Overlay --}}
-            <div class="absolute inset-0 bg-black opacity-75" wire:click="closeModal"></div>
+            <div class="absolute inset-0 bg-black/70" wire:click="closeModal"></div>
 
             {{-- Box --}}
             <div class="relative z-10 w-full max-w-3xl bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden max-h-[90vh] flex flex-col">
@@ -13,7 +14,7 @@
                             Cargos
                         </h3>
                         <p class="text-xs text-gray-600 dark:text-gray-300">
-                            Password e PUK per segnalazione noleggio (salvati cifrati)
+                            Dati per segnalazione noleggio (evitiamo il pre-caricamento nel form)
                         </p>
                     </div>
 
@@ -27,10 +28,20 @@
                 {{-- Body --}}
                 <form wire:submit.prevent="save" class="px-6 py-4 overflow-y-auto">
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {{-- Info stato --}}
+                        {{-- Stato --}}
                         <div class="sm:col-span-2 text-xs text-gray-600 dark:text-gray-300">
                             <div class="flex flex-wrap items-center gap-2">
                                 <span class="font-semibold">Stato:</span>
+
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold
+                                             {{ $hasCargosUserCode ? 'bg-emerald-200 text-emerald-900 dark:bg-emerald-700 dark:text-white' : 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100' }}">
+                                    Codice utente {{ $hasCargosUserCode ? 'impostato' : 'non impostato' }}
+                                </span>
+
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold
+                                             {{ $hasCargosAgencyId ? 'bg-emerald-200 text-emerald-900 dark:bg-emerald-700 dark:text-white' : 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100' }}">
+                                    Agenzia ID {{ $hasCargosAgencyId ? 'impostato' : 'non impostato' }}
+                                </span>
 
                                 <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold
                                              {{ $hasCargosPassword ? 'bg-emerald-200 text-emerald-900 dark:bg-emerald-700 dark:text-white' : 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100' }}">
@@ -42,10 +53,36 @@
                                     PUK {{ $hasCargosPuk ? 'impostato' : 'non impostato' }}
                                 </span>
 
-                                <span class="ml-auto italic">
+                                <span class="ml-auto italic opacity-80">
                                     Lascia vuoto per non modificare i valori esistenti.
                                 </span>
                             </div>
+                        </div>
+
+                        {{-- Codice utente CARGOS --}}
+                        <div>
+                            <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">
+                                Nuovo codice utente Cargos
+                            </label>
+                            <input type="text"
+                                   wire:model.defer="state.codice_utente_cargos"
+                                   class="w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100"
+                                   autocomplete="off"
+                                   placeholder="Es: CODICE123">
+                            @error('state.codice_utente_cargos') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
+                        </div>
+
+                        {{-- Agenzia ID CARGOS --}}
+                        <div>
+                            <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">
+                                Nuovo Agenzia ID Cargos
+                            </label>
+                            <input type="text"
+                                   wire:model.defer="state.agenzia_id_cargos"
+                                   class="w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100"
+                                   autocomplete="off"
+                                   placeholder="Es: 12345">
+                            @error('state.agenzia_id_cargos') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
                         </div>
 
                         {{-- Nuova Password cargos --}}
@@ -80,18 +117,36 @@
                                        class="flex-1 px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100"
                                        autocomplete="current-password">
 
-                                <div class="flex gap-2">
+                                <div class="flex flex-wrap gap-2">
+                                    <button type="button"
+                                            wire:click="reveal('user_code')"
+                                            class="inline-flex items-center px-3 py-2 rounded-md text-xs font-semibold
+                                                   bg-slate-100 text-slate-800 border border-slate-200
+                                                   hover:bg-slate-200 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 transition">
+                                        <i class="fas fa-eye mr-1"></i> Mostra codice utente
+                                    </button>
+
+                                    <button type="button"
+                                            wire:click="reveal('agency_id')"
+                                            class="inline-flex items-center px-3 py-2 rounded-md text-xs font-semibold
+                                                   bg-slate-100 text-slate-800 border border-slate-200
+                                                   hover:bg-slate-200 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 transition">
+                                        <i class="fas fa-eye mr-1"></i> Mostra Agenzia ID
+                                    </button>
+
                                     <button type="button"
                                             wire:click="reveal('password')"
-                                            class="inline-flex items-center px-3 py-2 rounded-md border text-xs font-semibold uppercase
-                                                   text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+                                            class="inline-flex items-center px-3 py-2 rounded-md text-xs font-semibold
+                                                   bg-slate-100 text-slate-800 border border-slate-200
+                                                   hover:bg-slate-200 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 transition">
                                         <i class="fas fa-eye mr-1"></i> Mostra password
                                     </button>
 
                                     <button type="button"
                                             wire:click="reveal('puk')"
-                                            class="inline-flex items-center px-3 py-2 rounded-md border text-xs font-semibold uppercase
-                                                   text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+                                            class="inline-flex items-center px-3 py-2 rounded-md text-xs font-semibold
+                                                   bg-slate-100 text-slate-800 border border-slate-200
+                                                   hover:bg-slate-200 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 transition">
                                         <i class="fas fa-eye mr-1"></i> Mostra PUK
                                     </button>
                                 </div>
@@ -104,11 +159,24 @@
                         <div class="sm:col-span-2"
                              x-data
                              x-init="
-                                // Se ci sono valori rivelati, auto-hide dopo 8 secondi
-                                @if($revealedCargosPassword || $revealedCargosPuk)
+                                @if($revealedCargosUserCode || $revealedCargosAgencyId || $revealedCargosPassword || $revealedCargosPuk)
                                     setTimeout(() => { $wire.hideReveals() }, 8000);
                                 @endif
                              ">
+                            @if($revealedCargosUserCode)
+                                <div class="mt-3 p-3 rounded-md bg-amber-50 border border-amber-200 text-amber-900">
+                                    <div class="text-xs font-semibold mb-1">Codice utente Cargos (visibile temporaneamente)</div>
+                                    <div class="font-mono text-sm break-all">{{ $revealedCargosUserCode }}</div>
+                                </div>
+                            @endif
+
+                            @if($revealedCargosAgencyId)
+                                <div class="mt-3 p-3 rounded-md bg-amber-50 border border-amber-200 text-amber-900">
+                                    <div class="text-xs font-semibold mb-1">Agenzia ID Cargos (visibile temporaneamente)</div>
+                                    <div class="font-mono text-sm break-all">{{ $revealedCargosAgencyId }}</div>
+                                </div>
+                            @endif
+
                             @if($revealedCargosPassword)
                                 <div class="mt-3 p-3 rounded-md bg-amber-50 border border-amber-200 text-amber-900">
                                     <div class="text-xs font-semibold mb-1">Password Cargos (visibile temporaneamente)</div>
@@ -129,14 +197,16 @@
                     <div class="mt-6 flex items-center justify-end gap-2">
                         <button type="button"
                                 wire:click="closeModal"
-                                class="px-3 py-2 rounded-md border text-xs font-semibold uppercase
-                                       text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+                                class="px-3 py-2 rounded-md text-xs font-semibold uppercase
+                                       bg-gray-100 text-gray-800 border border-gray-200
+                                       hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 transition">
                             Chiudi
                         </button>
 
                         <button type="submit"
-                                class="px-3 py-2 rounded-md bg-indigo-600 text-white text-xs font-semibold uppercase
-                                       hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition">
+                                class="px-3 py-2 rounded-md text-xs font-semibold uppercase
+                                       bg-indigo-600 text-white hover:bg-indigo-500
+                                       focus:outline-none focus:ring-2 focus:ring-indigo-300 transition">
                             Salva
                         </button>
                     </div>

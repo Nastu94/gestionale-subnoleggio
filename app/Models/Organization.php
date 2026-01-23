@@ -34,6 +34,8 @@ class Organization extends Model implements SpatieHasMedia
 
         // Cargos (valori cifrati via cast nel model)
         'cargos_password','cargos_puk', 
+        'codice_utente_cargos',
+        'agenzia_id_cargos',
     ];
 
     protected $casts = [

@@ -14,6 +14,7 @@ return [
         'username' => env('CARGOS_ADMIN_USERNAME'),
         'password' => env('CARGOS_ADMIN_PASSWORD'),
         'puk'      => env('CARGOS_ADMIN_PUK'),
+        'agency_id'  => env('CARGOS_ADMIN_AGENCY_ID'),
     ],
 
     /*

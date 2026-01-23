@@ -67,6 +67,10 @@ class CargosContractPayloadBuilder
             'label' => 'Identificativo operatore',
             'hint'  => 'Verifica che esista un utente operatore (Auth o passato al service).',
         ],
+        'AGENZIA_ID' => [
+            'label' => 'Agenzia ID Cargos',
+            'hint'  => 'Compila organizations.agenzia_id_cargos (oppure configura CARGOS_ADMIN_AGENCY_ID in .env).',
+        ],
         'AGENZIA_NOME' => [
             'label' => 'Nome agenzia (organizzazione che stipula)',
             'hint'  => 'Compila organizations.legal_name.',
@@ -259,6 +263,7 @@ class CargosContractPayloadBuilder
         $checkinIndirizzo = $this->sanitizeCharset4((string) ($derived['checkin_address'] ?? ''), 200);
         $this->requireFilled($checkinIndirizzo, 'CONTRATTO_CHECKIN_INDIRIZZO', $errors);
 
+
         // -------------------------
         // Operatore
         // -------------------------
@@ -270,8 +275,13 @@ class CargosContractPayloadBuilder
         // Agenzia
         // -------------------------
 
-        // Placeholder fisso per ora
-        $agenziaId = 'QU1E';
+        $agenziaId = $this->sanitizeCharset4((string) ($agency->agenzia_id_cargos ?? ''), 30);
+
+        if (trim($agenziaId) === '') {
+            $agenziaId = $this->sanitizeCharset4((string) config('cargos.admin.agency_id'), 30);
+        }
+
+        $this->requireFilled($agenziaId, 'AGENZIA_ID', $errors, $this->ctx('Organizzazione', $agency->id, $agency->legal_name));
 
         $agenziaNome = $this->sanitizeCharset4((string) ($agency->legal_name ?? ''), 70);
         $this->requireFilled($agenziaNome, 'AGENZIA_NOME', $errors);
