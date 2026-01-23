@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Artisan;
 use Livewire\Component;
 
 /**
- * Form profilo: gestione credenziali Cargos dell'Admin (password + PUK).
+ * Form profilo: gestione credenziali Cargos dell'Admin (username + agency_id + password + PUK).
  *
  * Sicurezza:
  * - Non inviamo mai i valori in chiaro nel payload Livewire se non dopo "reveal".
@@ -25,8 +25,10 @@ class UpdateAdminCargosForm extends Component
     /**
      * Indicatori non sensibili: dicono se i valori risultano impostati.
      */
+    public bool $hasCargosUsername = false;
+    public bool $hasCargosAgencyId = false;
     public bool $hasCargosPassword = false;
-    public bool $hasCargosPuk = false;
+    public bool $hasCargosPuk      = false;
 
     /**
      * Form state: valori da salvare.
@@ -35,8 +37,10 @@ class UpdateAdminCargosForm extends Component
      * @var array<string, mixed>
      */
     public array $state = [
-        'cargos_password' => null,
-        'cargos_puk'      => null,
+        'cargos_username'  => null,
+        'cargos_agency_id' => null,
+        'cargos_password'  => null,
+        'cargos_puk'       => null,
     ];
 
     /**
@@ -47,8 +51,10 @@ class UpdateAdminCargosForm extends Component
     /**
      * Valori rivelati (solo dopo conferma). Non persistono qui.
      */
-    public ?string $revealedCargosPassword = null;
-    public ?string $revealedCargosPuk = null;
+    public ?string $revealedCargosUsername  = null;
+    public ?string $revealedCargosAgencyId  = null;
+    public ?string $revealedCargosPassword  = null;
+    public ?string $revealedCargosPuk       = null;
 
     /**
      * Mount: accesso solo admin.
@@ -72,9 +78,11 @@ class UpdateAdminCargosForm extends Component
     protected function rules(): array
     {
         return [
-            'state.cargos_password' => ['nullable', 'string', 'max:255'],
-            'state.cargos_puk'      => ['nullable', 'string', 'max:255'],
-            'confirmPassword'       => ['nullable', 'string'],
+            'state.cargos_username'  => ['nullable', 'string', 'max:255'],
+            'state.cargos_agency_id' => ['nullable', 'string', 'max:255'],
+            'state.cargos_password'  => ['nullable', 'string', 'max:255'],
+            'state.cargos_puk'       => ['nullable', 'string', 'max:255'],
+            'confirmPassword'        => ['nullable', 'string'],
         ];
     }
 
@@ -84,8 +92,10 @@ class UpdateAdminCargosForm extends Component
      * @var array<string, string>
      */
     protected array $messages = [
-        'state.cargos_password.max' => 'La password Cargos può contenere al massimo :max caratteri.',
-        'state.cargos_puk.max'      => 'Il PUK Cargos può contenere al massimo :max caratteri.',
+        'state.cargos_username.max'  => 'Lo username Cargos può contenere al massimo :max caratteri.',
+        'state.cargos_agency_id.max' => "L'Agency ID Cargos può contenere al massimo :max caratteri.",
+        'state.cargos_password.max'  => 'La password Cargos può contenere al massimo :max caratteri.',
+        'state.cargos_puk.max'       => 'Il PUK Cargos può contenere al massimo :max caratteri.',
     ];
 
     /**
@@ -93,11 +103,15 @@ class UpdateAdminCargosForm extends Component
      */
     private function refreshFlags(): void
     {
-        $pwd = (string) (config('cargos.admin.password') ?? '');
-        $puk = (string) (config('cargos.admin.puk') ?? '');
+        $u = (string) (config('cargos.admin.username') ?? '');
+        $a = (string) (config('cargos.admin.agency_id') ?? '');
+        $p = (string) (config('cargos.admin.password') ?? '');
+        $k = (string) (config('cargos.admin.puk') ?? '');
 
-        $this->hasCargosPassword = trim($pwd) !== '';
-        $this->hasCargosPuk      = trim($puk) !== '';
+        $this->hasCargosUsername = trim($u) !== '';
+        $this->hasCargosAgencyId = trim($a) !== '';
+        $this->hasCargosPassword = trim($p) !== '';
+        $this->hasCargosPuk      = trim($k) !== '';
     }
 
     /**
@@ -105,14 +119,16 @@ class UpdateAdminCargosForm extends Component
      */
     public function hideReveals(): void
     {
+        $this->revealedCargosUsername = null;
+        $this->revealedCargosAgencyId = null;
         $this->revealedCargosPassword = null;
-        $this->revealedCargosPuk = null;
-        $this->confirmPassword = '';
+        $this->revealedCargosPuk      = null;
+        $this->confirmPassword        = '';
     }
 
     /**
      * Reveal: richiede password admin e mostra temporaneamente i valori.
-     * - $field: 'password' | 'puk'
+     * - $field: 'username' | 'agency_id' | 'password' | 'puk'
      */
     public function reveal(string $field): void
     {
@@ -137,11 +153,13 @@ class UpdateAdminCargosForm extends Component
         }
 
         // Carica da config (che legge da .env)
-        if ($field === 'password') {
+        if ($field === 'username') {
+            $this->revealedCargosUsername = (string) (config('cargos.admin.username') ?? '');
+        } elseif ($field === 'agency_id') {
+            $this->revealedCargosAgencyId = (string) (config('cargos.admin.agency_id') ?? '');
+        } elseif ($field === 'password') {
             $this->revealedCargosPassword = (string) (config('cargos.admin.password') ?? '');
-        }
-
-        if ($field === 'puk') {
+        } elseif ($field === 'puk') {
             $this->revealedCargosPuk = (string) (config('cargos.admin.puk') ?? '');
         }
 
@@ -165,6 +183,14 @@ class UpdateAdminCargosForm extends Component
 
         $updates = [];
 
+        if (! empty($this->state['cargos_username'])) {
+            $updates['CARGOS_ADMIN_USERNAME'] = (string) $this->state['cargos_username'];
+        }
+
+        if (! empty($this->state['cargos_agency_id'])) {
+            $updates['CARGOS_ADMIN_AGENCY_ID'] = (string) $this->state['cargos_agency_id'];
+        }
+
         if (! empty($this->state['cargos_password'])) {
             $updates['CARGOS_ADMIN_PASSWORD'] = (string) $this->state['cargos_password'];
         }
@@ -185,16 +211,14 @@ class UpdateAdminCargosForm extends Component
         try {
             $this->updateEnvFile($updates);
 
-            /**
-             * IMPORTANTISSIMO:
-             * - Se hai config cache, config('...') non si aggiorna finché non pulisci.
-             * - Anche senza cache, è buona igiene dopo update .env.
-             */
+            // Se hai config cache, config('...') non si aggiorna finché non pulisci.
             Artisan::call('config:clear');
 
             // Ripulisci input “nuovi valori”
-            $this->state['cargos_password'] = null;
-            $this->state['cargos_puk'] = null;
+            $this->state['cargos_username']  = null;
+            $this->state['cargos_agency_id'] = null;
+            $this->state['cargos_password']  = null;
+            $this->state['cargos_puk']       = null;
 
             // Nascondi eventuali reveal
             $this->hideReveals();
@@ -241,10 +265,12 @@ class UpdateAdminCargosForm extends Component
         foreach ($pairs as $key => $value) {
             $safeValue = $this->dotenvQuote($value);
 
-            $pattern = "/^{$key}=.*$/m";
+            // preg_quote per evitare guai se un domani la key contiene char speciali
+            $quotedKey = preg_quote($key, '/');
+            $pattern   = "/^{$quotedKey}=.*$/m";
 
             if (preg_match($pattern, $content) === 1) {
-                $content = preg_replace($pattern, "{$key}={$safeValue}", $content);
+                $content = (string) preg_replace($pattern, "{$key}={$safeValue}", $content);
             } else {
                 // assicura newline finale
                 if ($content !== '' && ! str_ends_with($content, "\n")) {

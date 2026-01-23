@@ -3,80 +3,69 @@
 namespace App\Livewire\Profile;
 
 use App\Models\Organization;
+use App\Models\CargosLuogo;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Livewire\Component;
 
-/**
- * Form profilo: Dati anagrafici dell'Organizzazione Admin.
- *
- * - Visibile/Usabile solo dagli utenti con ruolo admin.
- * - Aggiorna l'organization collegata all'utente (type = admin).
- * - NON include la licenza (come richiesto).
- */
 class UpdateAdminAnagraphicForm extends Component
 {
-    /**
-     * Stato form.
-     *
-     * @var array<string, mixed>
-     */
     public array $state = [
-        'legal_name'   => null,
-        'vat'          => null,
-        'address_line' => null,
-        'city'         => null,
-        'province'     => null,
-        'postal_code'  => null,
-        'country_code' => null,
-        'phone'        => null,
-        'email'        => null,
+        'legal_name'        => null,
+        'vat'               => null,
+        'address_line'      => null,
+
+        // ✅ questi non li compila l'utente: li deriviamo dal picker
+        'city'              => null,
+        'province'          => null,
+        'country_code'      => null,
+
+        'postal_code'       => null,
+        'phone'             => null,
+        'email'             => null,
+
+        // ✅ CARGOS luogo (Comune IT oppure Nazione estera)
+        'police_place_code' => null,
     ];
 
-    /**
-     * Organization admin corrente.
-     */
     public ?Organization $organization = null;
 
-    /**
-     * Mount: verifica ruolo admin e carica l'organization admin.
-     */
     public function mount(): void
     {
         $user = Auth::user();
 
-        // Se non è admin, la sezione non deve essere accessibile.
         if (! $user || ! method_exists($user, 'hasRole') || ! $user->hasRole('admin')) {
             abort(403);
         }
 
-        // Carica l'organizzazione collegata all'admin (type=admin).
         $this->organization = Organization::query()
             ->whereKey($user->organization_id)
             ->where('type', 'admin')
             ->firstOrFail();
 
-        // Precompila i campi.
         $this->state = [
-            'legal_name'   => $this->organization->legal_name,
-            'vat'          => $this->organization->vat,
-            'address_line' => $this->organization->address_line,
-            'city'         => $this->organization->city,
-            'province'     => $this->organization->province,
-            'postal_code'  => $this->organization->postal_code,
-            'country_code' => $this->organization->country_code,
-            'phone'        => $this->organization->phone,
-            'email'        => $this->organization->email,
+            'legal_name'        => $this->organization->legal_name,
+            'vat'               => $this->organization->vat,
+            'address_line'      => $this->organization->address_line,
+
+            // valori esistenti (li sovrascriveremo in sync se serve)
+            'city'              => $this->organization->city,
+            'province'          => $this->organization->province,
+            'country_code'      => $this->organization->country_code,
+
+            'postal_code'       => $this->organization->postal_code,
+            'phone'             => $this->organization->phone,
+            'email'             => $this->organization->email,
+
+            'police_place_code' => $this->organization->police_place_code
+                ? (int) $this->organization->police_place_code
+                : null,
         ];
+
+        // ✅ allinea city/province/country_code al valore del picker già salvato
+        $this->syncGeoFieldsFromPolicePlaceCode();
     }
 
-    /**
-     * Regole validazione.
-     *
-     * - P.IVA unica tra tutte le organizations (ignore sull'attuale org admin).
-     *
-     * @return array<string, mixed>
-     */
     protected function rules(): array
     {
         return [
@@ -94,53 +83,101 @@ class UpdateAdminAnagraphicForm extends Component
             'state.country_code' => ['nullable', 'string', 'max:8'],
             'state.phone'        => ['nullable', 'string', 'max:64'],
             'state.email'        => ['nullable', 'email', 'max:191'],
+
+            'state.police_place_code' => ['nullable', 'integer', 'exists:cargos_luoghi,code'],
         ];
     }
 
-    /**
-     * Messaggi di validazione personalizzati.
-     *
-     * @var array<string, string>
-     */
     protected array $messages = [
-        'state.legal_name.max' => 'La ragione sociale può contenere al massimo :max caratteri.',
-        'state.vat.max'        => 'La Partita IVA può contenere al massimo :max caratteri.',
-        'state.vat.unique'     => 'Esiste già un’organizzazione con questa Partita IVA.',
-        'state.email.email'    => 'Inserisci un indirizzo email valido.',
-        'state.email.max'      => 'L’email può contenere al massimo :max caratteri.',
-        'state.phone.max'      => 'Il telefono può contenere al massimo :max caratteri.',
-        'state.address_line.max' => 'L’indirizzo può contenere al massimo :max caratteri.',
-        'state.city.max'         => 'La città può contenere al massimo :max caratteri.',
-        'state.province.max'     => 'La provincia può contenere al massimo :max caratteri.',
-        'state.postal_code.max'  => 'Il CAP può contenere al massimo :max caratteri.',
-        'state.country_code.max' => 'Il codice paese può contenere al massimo :max caratteri.',
+        'state.vat.unique' => 'Esiste già un’organizzazione con questa Partita IVA.',
+        'state.email.email' => 'Inserisci un indirizzo email valido.',
+
+        'state.police_place_code.integer' => 'Il codice luogo deve essere numerico.',
+        'state.police_place_code.exists'  => 'Seleziona un luogo valido dal picker CARGOS.',
     ];
 
     /**
-     * Salva i dati anagrafici dell'organizzazione admin.
+     * ✅ Hook Livewire: quando cambia il picker, riallinea i campi derivati.
      */
+    public function updatedStatePolicePlaceCode($value): void
+    {
+        $this->state['police_place_code'] = $value ? (int) $value : null;
+        $this->syncGeoFieldsFromPolicePlaceCode();
+    }
+
+    /**
+     * ✅ Fonte unica: police_place_code (CargosLuogo).
+     *
+     * Regole:
+     * - NULL => city/province/country_code = null
+     * - Nazione estera (province_code = 'ES') => country_code = luogo.country_code (può essere null), city/province null
+     * - Comune IT => country_code = 'IT', province = luogo.province_code, city = luogo.name
+     *
+     * Nota: sovrascriviamo SEMPRE (anche null), come richiesto.
+     */
+    private function syncGeoFieldsFromPolicePlaceCode(): void
+    {
+        $code = $this->state['police_place_code'] ?? null;
+        $code = $code ? (int) $code : null;
+
+        if (! $code) {
+            $this->state['city'] = null;
+            $this->state['province'] = null;
+            $this->state['country_code'] = null;
+            return;
+        }
+
+        $luogo = CargosLuogo::query()->find($code);
+        if (! $luogo) {
+            // verrà comunque bloccato dalla validation exists, ma intanto puliamo
+            $this->state['city'] = null;
+            $this->state['province'] = null;
+            $this->state['country_code'] = null;
+            return;
+        }
+
+        // NAZIONE (estero)
+        if ($luogo->province_code === 'ES') {
+            $this->state['country_code'] = $luogo->country_code ?: null;
+            $this->state['province'] = null;
+            $this->state['city'] = null;
+            return;
+        }
+
+        // COMUNE ITALIA
+        $this->state['country_code'] = 'IT';
+        $this->state['province'] = $luogo->province_code ?: null;
+        $this->state['city'] = $luogo->name ?: null;
+    }
+
     public function updateAdminAnagraphic(): void
     {
         $this->validate();
 
-        // Sicurezza: organization deve essere caricata.
         if (! $this->organization) {
             abort(403);
         }
 
+        // ✅ ultima difesa: garantisce coerenza anche se l'hook non è scattato
+        $this->syncGeoFieldsFromPolicePlaceCode();
+
         $this->organization->update([
-            'legal_name'   => $this->state['legal_name'],
-            'vat'          => $this->state['vat'],
-            'address_line' => $this->state['address_line'],
-            'city'         => $this->state['city'],
-            'province'     => $this->state['province'],
-            'postal_code'  => $this->state['postal_code'],
-            'country_code' => $this->state['country_code'],
-            'phone'        => $this->state['phone'],
-            'email'        => $this->state['email'],
+            'legal_name'        => $this->state['legal_name'],
+            'vat'               => $this->state['vat'],
+            'address_line'      => $this->state['address_line'],
+
+            // ✅ sovrascrivi SEMPRE (anche null)
+            'city'              => $this->state['city'],
+            'province'          => $this->state['province'],
+            'country_code'      => $this->state['country_code'],
+
+            'postal_code'       => $this->state['postal_code'],
+            'phone'             => $this->state['phone'],
+            'email'             => $this->state['email'],
+
+            'police_place_code' => $this->state['police_place_code'],
         ]);
 
-        // Stile Jetstream: mostra "Salvato."
         $this->dispatch('saved');
     }
 

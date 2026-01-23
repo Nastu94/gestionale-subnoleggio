@@ -1,3 +1,5 @@
+{{-- resources/views/profile/update-admin-anagraphic-form.blade.php --}}
+
 <x-form-section submit="updateAdminAnagraphic">
     <x-slot name="title">
         Dati anagrafici (Admin)
@@ -40,6 +42,18 @@
             <x-input-error for="state.phone" class="mt-2" />
         </div>
 
+        {{-- ✅ Luogo (CARGOS) = unico punto di input per città/provincia/nazione --}}
+        <div class="col-span-6 pt-2 border-t border-gray-200 dark:border-gray-700">
+            <livewire:shared.cargos-luogo-picker
+                wire:key="admin-org-police-place-code"
+                wire:model="state.police_place_code"
+                title="Luogo (CARGOS)"
+                hint="Italia: seleziona provincia e comune. Estero: seleziona la nazione."
+                mode="full"
+            />
+            <x-input-error for="state.police_place_code" class="mt-2" />
+        </div>
+
         {{-- Indirizzo --}}
         <div class="col-span-6">
             <x-label for="address_line" value="Indirizzo" />
@@ -48,36 +62,12 @@
             <x-input-error for="state.address_line" class="mt-2" />
         </div>
 
-        {{-- Città --}}
-        <div class="col-span-6 sm:col-span-2">
-            <x-label for="city" value="Città" />
-            <x-input id="city" type="text" class="mt-1 block w-full"
-                     wire:model="state.city" autocomplete="address-level2" />
-            <x-input-error for="state.city" class="mt-2" />
-        </div>
-
-        {{-- Provincia --}}
-        <div class="col-span-6 sm:col-span-2">
-            <x-label for="province" value="Provincia" />
-            <x-input id="province" type="text" class="mt-1 block w-full"
-                     wire:model="state.province" autocomplete="address-level1" />
-            <x-input-error for="state.province" class="mt-2" />
-        </div>
-
         {{-- CAP --}}
         <div class="col-span-6 sm:col-span-2">
             <x-label for="postal_code" value="CAP" />
             <x-input id="postal_code" type="text" class="mt-1 block w-full"
                      wire:model="state.postal_code" autocomplete="postal-code" />
             <x-input-error for="state.postal_code" class="mt-2" />
-        </div>
-
-        {{-- Paese --}}
-        <div class="col-span-6 sm:col-span-2">
-            <x-label for="country_code" value="Paese (codice)" />
-            <x-input id="country_code" type="text" class="mt-1 block w-full"
-                     wire:model="state.country_code" placeholder="IT" autocomplete="country" />
-            <x-input-error for="state.country_code" class="mt-2" />
         </div>
     </x-slot>
 
