@@ -222,4 +222,11 @@
             </div>
         </form>
     </section>
+
+    {{-- =========================
+        TAB CONTRATTI
+    ========================== --}}
+    <section x-show="tab === 'contratti'" x-cloak>
+        <livewire:customers.rentals-table :customer="$customer" />
+    </section>
 </div>

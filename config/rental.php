@@ -103,7 +103,7 @@ return [
                 'body' => implode("\n", [
                     "In caso di sinistro, furto o incendio il cliente è obbligato a:",
                     "",
-                    "• informare immediatamente AMD Mobility;",
+                    "• informare immediatamente la società di noleggio;",
                     "• presentare denuncia scritta alle autorità competenti entro 24 ore;",
                     "• compilare il modulo CID presente a bordo.",
                     "",
@@ -138,7 +138,7 @@ return [
                 'n' => 10,
                 'title' => 'Risoluzione e foro competente',
                 'body' => implode("\n", [
-                    "AMD Mobility si riserva la facoltà di risolvere il contratto in caso di uso improprio del veicolo o mancato pagamento.",
+                    "La società di noleggio si riserva la facoltà di risolvere il contratto in caso di uso improprio del veicolo o mancato pagamento.",
                     "Per ogni controversia è competente in via esclusiva il Foro di Bari, con espressa pattuizione di esclusione di qualsiasi altro foro.",
                 ]),
             ],
@@ -146,7 +146,7 @@ return [
                 'n' => 11,
                 'title' => 'Privacy',
                 'body' => implode("\n", [
-                    "I dati personali forniti saranno trattati da AMD Mobility Srls in conformità al Regolamento UE 2016/679 (GDPR) per le sole finalità connesse all’esecuzione del contratto e agli obblighi di legge.",
+                    "I dati personali forniti saranno trattati dalla società di noleggio in conformità al Regolamento UE 2016/679 (GDPR) per le sole finalità connesse all’esecuzione del contratto e agli obblighi di legge.",
                 ]),
             ],
             [
