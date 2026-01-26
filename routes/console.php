@@ -9,10 +9,21 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 /**
- * Scheduler:
- * - Chiude le assegnazioni con end_at passato ma ancora status=active.
- * - withoutOverlapping evita esecuzioni concorrenti se il server è lento o schedulato più volte.
+ * Scheduler applicativo (Laravel 12).
+ *
+ * Qui definiamo i comandi da eseguire; sul server servirà un SOLO cron
+ * che lancia "php artisan schedule:run" ogni minuto.
  */
+Schedule::command('assignments:activate-scheduled')
+    ->everyMinute()
+    /**
+     * Evita esecuzioni concorrenti se un run impiega troppo tempo.
+     * Nota: richiede un cache driver che supporti atomic locks (es. redis/database).
+     */
+    // ->withoutOverlapping()
+    ->description('Attiva assegnazioni scheduled e aggiorna default_pickup_location_id quando diventano active.');
+
 Schedule::command('assignments:close-expired')
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
+    ->everyMinute()
+    // ->withoutOverlapping()
+    ->description('Chiude assegnazioni active con end_at passato (status=ended).');

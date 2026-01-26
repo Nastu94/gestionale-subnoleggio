@@ -13,7 +13,8 @@ use App\Models\{
     VehicleAssignment,
     VehicleBlock,
     VehicleState,
-    Organization
+    Organization,
+    Location
 };
 
 /**
@@ -87,6 +88,20 @@ class VehicleAssigner extends Component
     {
         // Livewire 3: browser event → intercettato dal tuo componente toast
         $this->dispatch('toast', type: $type, message: $message, duration: $duration);
+    }
+
+    /**
+     * Restituisce l'ID della prima sede del renter selezionato (ordinata per id).
+     *
+     * @param int $orgId
+     * @return int|null
+     */
+    protected function firstRenterLocationId(int $orgId): ?int
+    {
+        return Location::query()
+            ->where('organization_id', $orgId)
+            ->orderBy('id')
+            ->value('id');
     }
 
     /**
@@ -383,12 +398,27 @@ class VehicleAssigner extends Component
             return;
         }
 
+        /**
+         * Prima sede del renter:
+         * la calcoliamo subito per evitare query ripetute nel loop.
+         * Nota: servirà per aggiornare il veicolo quando l'assegnazione diventa "active".
+         */
+        $renterLocId = $this->firstRenterLocationId((int) $this->renterOrgId);
+        if (!$renterLocId) {
+            $this->toast(
+                'error',
+                'Il renter selezionato non ha sedi configurate. Crea almeno una sede prima di assegnare veicoli.',
+                6000
+            );
+            return;
+        }
+
         [$from, $to] = $this->rangeAsCarbon();
         $created = 0;
         $failed  = [];
 
-        DB::transaction(function () use (&$created, &$failed, $from, $to, $selected) {
-            foreach ($selected as $vehicleId) {
+        DB::transaction(function () use (&$created, &$failed, $from, $to, $selected, $renterLocId) {
+            foreach ($selected as $vehicleId) {                
                 $hasConflict = VehicleAssignment::query()
                     ->where('vehicle_id', $vehicleId)
                     ->whereIn('status', ['scheduled','active'])
@@ -408,6 +438,11 @@ class VehicleAssigner extends Component
                     continue;
                 }
 
+                /**
+                 * Stato dell'assegnazione:
+                 * - scheduled se parte nel futuro
+                 * - active se parte ora o nel passato
+                 */
                 $status = $from->isFuture() ? 'scheduled' : 'active';
 
                 /** @var VehicleAssignment $va */
@@ -415,13 +450,25 @@ class VehicleAssigner extends Component
                     'vehicle_id'    => $vehicleId,
                     'renter_org_id' => $this->renterOrgId,
                     'start_at'      => $from,
-                    'end_at'        => $to,         // può essere null
-                    'status'        => $status,     // ['scheduled','active','ended','revoked']
+                    'end_at'        => $to,
+                    'status'        => $status,
                     'mileage_start' => null,
                     'mileage_end'   => null,
                     'notes'         => null,
                     'created_by'    => Auth::id(),
                 ]);
+
+                /**
+                 * ✅ Regola richiesta:
+                 * - Se l'assegnazione è ACTIVE, aggiorniamo subito il default pickup del veicolo
+                 *   alla prima sede del renter.
+                 * - Se è SCHEDULED, NON tocchiamo il veicolo: lo faremo quando passerà ad ACTIVE (Step 2).
+                 */
+                if ($status === 'active') {
+                    Vehicle::query()
+                        ->whereKey($vehicleId)
+                        ->update(['default_pickup_location_id' => $renterLocId]);
+                }
 
                 $this->logStateForAssignment($va);
                 $created++;

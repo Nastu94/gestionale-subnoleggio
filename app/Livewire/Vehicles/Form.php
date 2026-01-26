@@ -185,8 +185,9 @@ class Form extends Component
         $this->saving = true;
 
         // Scegli la policy in base alla modalità
-        $this->isEdit() ? $this->authorize('update', $this->vehicle)
-                        : $this->authorize('create', Vehicle::class);
+        $this->isEdit()
+            ? $this->authorize('update', $this->vehicle)
+            : $this->authorize('create', Vehicle::class);
 
         $data = $this->validate()['form'];
 
@@ -223,29 +224,81 @@ class Form extends Component
         $save['insurance_cristalli_cents'] = $toCents($data['insurance_cristalli_eur'] ?? null);
         $save['insurance_furto_cents']     = $toCents($data['insurance_furto_eur']     ?? null);
 
-        // Forzature backend: org admin + prima sede + attivo
+        /**
+         * Forzature backend:
+         * - admin_organization_id: sempre coerente con l’admin loggato (come da tua logica attuale)
+         * - is_active: sempre 1 (come da tua logica attuale)
+         * - default_pickup_location_id: SOLO in CREATE (mai in EDIT)
+         */
         $adminOrgId = $this->adminOrgId();
-        $firstLocId = $this->firstAdminLocationId($adminOrgId);
-        if (!$adminOrgId || !$firstLocId) {
-            $this->dispatch('toast', ['type' => 'error', 'message' => 'Organizzazione o sede non configurata.']);
+        if (!$adminOrgId) {
+            $this->dispatch('toast', ['type' => 'error', 'message' => 'Organizzazione admin non configurata.']);
             $this->saving = false;
             return;
         }
-        $save['admin_organization_id']      = $adminOrgId;
-        $save['default_pickup_location_id'] = $firstLocId;
-        $save['is_active']                  = 1;
+
+        $save['admin_organization_id'] = $adminOrgId;
+        $save['is_active']             = 1;
+
+        // ✅ SOLO CREATE: assegna la prima sede dell’organizzazione admin
+        if (!$this->isEdit()) {
+            $firstLocId = $this->firstAdminLocationId($adminOrgId);
+
+            if (!$firstLocId) {
+                $this->dispatch('toast', ['type' => 'error', 'message' => 'Sede non configurata per questa organizzazione.']);
+                $this->saving = false;
+                return;
+            }
+
+            $save['default_pickup_location_id'] = $firstLocId;
+        }
 
         if ($this->isEdit()) {
+            // ✅ In EDIT non tocchiamo default_pickup_location_id
             $this->vehicle->update($save);
             $vehicle = $this->vehicle->fresh();
             $this->dispatch('toast', ['type' => 'success', 'message' => 'Veicolo aggiornato.']);
         } else {
-            $vehicle = Vehicle::create($save);
-            $this->dispatch('toast', ['type' => 'success', 'message' => 'Veicolo creato.']);
+            // ✅ CREATE: servono org admin e prima sede dell’org
+            $adminOrgId = $this->adminOrgId();
+            if (!$adminOrgId) {
+                $this->dispatch('toast', ['type' => 'error', 'message' => 'Organizzazione admin non configurata.']);
+                $this->saving = false;
+                return;
+            }
+
+            $firstLocId = $this->firstAdminLocationId($adminOrgId);
+            if (!$firstLocId) {
+                $this->dispatch('toast', ['type' => 'error', 'message' => 'Sede non configurata per questa organizzazione.']);
+                $this->saving = false;
+                return;
+            }
+
+            $save['admin_organization_id']      = $adminOrgId;
+            $save['default_pickup_location_id'] = $firstLocId;
+            $save['is_active']                  = 1;
         }
 
-        // Redirect sicuro
         $this->redirectRoute('vehicles.show', ['vehicle' => $vehicle], navigate: true);
+    }
+
+    /**
+     * Restituisce l’ID della prima sede dell’organizzazione admin, o null
+     * @param int|null $orgId
+     * @return int|null
+     */
+    private function firstAdminLocationId(?int $orgId): ?int
+    {
+        if (!$orgId) return null;
+
+        /**
+         * La migration conferma che locations ha organization_id,
+         * quindi filtriamo SEMPRE: evita assegnazioni errate “cross-org”.
+         */
+        return Location::query()
+            ->where('organization_id', $orgId)
+            ->orderBy('id')
+            ->value('id');
     }
 
     /**
@@ -279,25 +332,6 @@ class Form extends Component
         if (!$org) return null;
         $isAdmin = method_exists($org, 'isAdmin') ? $org->isAdmin() : ($org->type === 'admin');
         return $isAdmin ? $org->id : null;
-    }
-
-    /**
-     * Restituisce l’ID della prima sede dell’organizzazione admin, o null
-     * @param int|null $orgId
-     * @return int|null
-     */
-    private function firstAdminLocationId(?int $orgId): ?int
-    {
-        if (!$orgId) return null;
-
-        $q = \App\Models\Location::query()->orderBy('id');
-        try {
-            if (\Schema::hasColumn('locations', 'organization_id')) {
-                $q->where('organization_id', $orgId);
-            }
-        } catch (\Throwable $e) { /* ignore */ }
-
-        return $q->value('id');
     }
     
     /**
