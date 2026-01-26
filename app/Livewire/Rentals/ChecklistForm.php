@@ -357,6 +357,13 @@ class ChecklistForm extends Component
         DB::enableQueryLog();
         try {
             DB::transaction(function () use ($data, $traceId) {
+                /**
+                 * Timestamp unico per questo salvataggio:
+                 * lo usiamo per valorizzare actual_pickup_at / actual_return_at
+                 * in modo coerente e deterministico.
+                 */
+                $savedAt = now();
+
                 $existing = $this->rental->checklists()
                     ->where('type', $this->type)
                     ->lockForUpdate()
@@ -435,6 +442,13 @@ class ChecklistForm extends Component
                         $updates = [];
                         if ($mOut !== null) $updates['mileage_out']      = (int) $mOut;
                         if ($fOut !== null) $updates['fuel_out_percent'] = (int) $fOut;
+                        /**
+                         * ✅ Imposta l’orario di pickup “reale” al primo salvataggio della checklist base pickup.
+                         * Non lo sovrascriviamo se già valorizzato (evita falsi orari in caso di edit successivi).
+                         */
+                        if (is_null($this->rental->actual_pickup_at)) {
+                            $updates['actual_pickup_at'] = $savedAt;
+                        }
                         if ($updates) {
                             $this->rental->fill($updates)->save();
                             Log::debug('[CHK][saveBase] Rental OUT fields updated', [
@@ -447,6 +461,13 @@ class ChecklistForm extends Component
                         $updates = [];
                         if ($mOut !== null) $updates['mileage_in']      = (int) $mOut;
                         if ($fOut !== null) $updates['fuel_in_percent'] = (int) $fOut;
+                        /**
+                         * ✅ Imposta l’orario di return “reale” al primo salvataggio della checklist base return.
+                         * Non lo sovrascriviamo se già valorizzato (evita falsi orari in caso di edit successivi).
+                         */
+                        if (is_null($this->rental->actual_return_at)) {
+                            $updates['actual_return_at'] = $savedAt;
+                        }
                         if ($updates) {
                             $this->rental->fill($updates)->save();
                             Log::debug('[CHK][saveBase] Rental IN fields updated', [
@@ -517,6 +538,13 @@ class ChecklistForm extends Component
                         $updates = [];
                         if ($mOut !== null) $updates['mileage_out']      = (int) $mOut;
                         if ($fOut !== null) $updates['fuel_out_percent'] = (int) $fOut;
+                        /**
+                         * ✅ Imposta l’orario di pickup “reale” al primo salvataggio della checklist base pickup.
+                         * Non lo sovrascriviamo se già valorizzato (evita falsi orari in caso di edit successivi).
+                         */
+                        if (is_null($this->rental->actual_pickup_at)) {
+                            $updates['actual_pickup_at'] = $savedAt;
+                        }
                         if ($updates) {
                             $this->rental->fill($updates)->save();
                             Log::debug('[CHK][saveBase] Rental OUT fields updated (create)', [
@@ -529,6 +557,13 @@ class ChecklistForm extends Component
                         $updates = [];
                         if ($mOut !== null) $updates['mileage_in']      = (int) $mOut;
                         if ($fOut !== null) $updates['fuel_in_percent'] = (int) $fOut;
+                        /**
+                         * ✅ Imposta l’orario di return “reale” al primo salvataggio della checklist base return.
+                         * Non lo sovrascriviamo se già valorizzato (evita falsi orari in caso di edit successivi).
+                         */
+                        if (is_null($this->rental->actual_return_at)) {
+                            $updates['actual_return_at'] = $savedAt;
+                        }
                         if ($updates) {
                             $this->rental->fill($updates)->save();
                             Log::debug('[CHK][saveBase] Rental IN fields updated', [
