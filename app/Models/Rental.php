@@ -199,16 +199,17 @@ class Rental extends Model implements SpatieHasMedia
 
 /**
  * Risolve i km inclusi nel noleggio.
- * Fonte preferita: tabella snapshot (freeze-once) -> campo JSON pricing_snapshot.
+ * Fonte preferita: snapshot (freeze-once) -> campo JSON pricing_snapshot.
+ *
+ * Regola:
+ * - Se nello snapshot esistono km_daily_limit e days (o days derivabile dalle date),
+ *   allora gli inclusi sono: km_daily_limit * days.
+ * - Altrimenti usa i campi legacy (included_km_total / included_km / km_included_total).
  *
  * @return int|null
  */
 protected function resolveIncludedKm(): ?int
 {
-    /**
-     * ✅ Fonte primaria: RentalContractSnapshot.pricing_snapshot (castato ad array).
-     * NB: nel tuo model RentalContractSnapshot NON esiste una colonna "included_km".
-     */
     $snapModel = null;
 
     if ($this->relationLoaded('contractSnapshot')) {
@@ -219,7 +220,7 @@ protected function resolveIncludedKm(): ?int
         try {
             $snapModel = $this->contractSnapshot()->first();
         } catch (\Throwable $e) {
-            // Non blocchiamo mai: valore accessorio
+            // Valore accessorio: non deve mai bloccare.
             $snapModel = null;
         }
     }
@@ -232,10 +233,39 @@ protected function resolveIncludedKm(): ?int
     $snap = is_array($snapModel->pricing_snapshot ?? null) ? $snapModel->pricing_snapshot : [];
 
     /**
-     * ✅ Chiavi possibili (dipende da come hai salvato lo snapshot nel generator):
-     * - included_km_total (molto probabile)
-     * - included_km (fallback)
-     * - km_included_total (fallback)
+     * ✅ PRIORITÀ: se lo snapshot è giornaliero, il totale incluso è:
+     * km_daily_limit * days
+     */
+    $kmDaily = $snap['km_daily_limit'] ?? null;
+    $daysRaw = $snap['days'] ?? null;
+
+    // Normalizza days dallo snapshot (se presente)
+    $days = is_numeric($daysRaw) ? max(1, (int) $daysRaw) : null;
+
+    // Fallback days: derivazione dalle date del rental (se nello snapshot manca "days")
+    if ($days === null) {
+        $from = $this->planned_pickup_at ?? $this->actual_pickup_at;
+        $to   = $this->planned_return_at ?? $this->actual_return_at;
+
+        if ($from && $to && method_exists($from, 'diffInDays')) {
+            $days = max(1, (int) $from->diffInDays($to));
+        }
+    }
+
+    // Se ho km giornalieri e giorni, ricostruisco SEMPRE il totale incluso
+    if (is_numeric($kmDaily) && $days !== null) {
+        $computed = (int) $kmDaily * $days;
+        return $computed > 0 ? $computed : 0;
+    }
+
+    /**
+     * ✅ Fallback legacy:
+     * - included_km_total
+     * - included_km
+     * - km_included_total
+     *
+     * Nota: se questi valori nel tuo snapshot sono "giornalieri" ma non hai km_daily_limit/days,
+     * allora qui NON possiamo moltiplicare in modo affidabile.
      */
     $candidates = [
         $snap['included_km_total'] ?? null,
@@ -248,18 +278,6 @@ protected function resolveIncludedKm(): ?int
             $n = (int) $v;
             return $n > 0 ? $n : 0;
         }
-    }
-
-    /**
-     * ✅ Fallback ragionato:
-     * se esistono km_daily_limit e days, ricostruiamo gli inclusi.
-     */
-    $kmDaily = $snap['km_daily_limit'] ?? null;
-    $days    = $snap['days'] ?? null;
-
-    if (is_numeric($kmDaily) && is_numeric($days)) {
-        $computed = (int) $kmDaily * max(1, (int) $days);
-        return $computed > 0 ? $computed : 0;
     }
 
     return null;

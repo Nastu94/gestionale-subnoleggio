@@ -415,85 +415,63 @@ class RentalController extends Controller
      * Calcola l'addebito per km eccedenti
      * - Ritorna anche "has_payment" per allineare UI/JS e prevenire codice morto.
      */
-    public function distanceOverage(Rental $rental, VehiclePricingService $svc)
+    public function distanceOverage(Rental $rental)
     {
         /**
-         * ✅ Fonte unica backend: "overage pagato?"
-         * Usato dalla UI per:
-         * - badge km extra
-         * - abilitazione chiusura
-         * - pre-compilazioni modale
+         * ✅ Fonte unica: flag "overage pagato?"
+         * (manteniamo lo stesso comportamento UI)
          */
         $hasPayment = (bool) $rental->has_distance_overage_payment;
 
-        // servono km_in/km_out; se mancano, niente badge
-        if (is_null($rental->mileage_out) || is_null($rental->mileage_in)) {
-            return response()->json([
-                'ok'          => true,
-                'has_data'    => false,
-                'cents'       => 0,
-                'amount'      => '0.00',
+        /**
+         * ✅ Fonte unica: km extra calcolati dal Model
+         * Il Model:
+         * - usa mileage checklist se presenti, fallback su mileage_in/out
+         * - usa snapshot per inclusi (km_daily_limit * days)
+         */
+        $kmExtra = (int) $rental->distance_overage_km;
 
-                // ✅ nuovi campi (sempre presenti per UI)
-                'km_total'    => 0,
-                'km_included' => 0,
-                'km_extra'    => 0,
-                'has_payment' => $hasPayment, // ✅ sempre presente
+        // Se non ci sono km extra, rispondo in modo "vuoto" ma coerente
+        if ($kmExtra <= 0) {
+            return response()->json([
+                'ok'        => true,
+                'has_data'  => true,
+                'km_extra'  => 0,
+                'cents'     => 0,
+                'amount'    => 0,
+                'has_payment' => $hasPayment,
             ]);
         }
 
-        // listino attivo per il renter corrente del veicolo
-        $pl = $svc->findActivePricelistForCurrentRenter($rental->vehicle);
-        if (!$pl) {
-            return response()->json([
-                'ok'          => false,
-                'message'     => 'Nessun listino attivo per il renter corrente.',
-
-                // ✅ nuovi campi (coerenti anche in errore)
-                'km_total'    => 0,
-                'km_included' => 0,
-                'km_extra'    => 0,
-
-                'has_payment' => $hasPayment, // ✅ coerente anche in errore
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
-
-        // giorni reali se disponibili, altrimenti pianificati
-        $pickupAt  = $rental->actual_pickup_at  ?? $rental->planned_pickup_at  ?? now();
-        $returnAt  = $rental->actual_return_at  ?? $rental->planned_return_at  ?? now();
-
-        // km percorsi (min 0)
-        $km = max(0, (int) $rental->mileage_in - (int) $rental->mileage_out);
-
-        $quote  = $svc->quote($pl, $pickupAt, $returnAt, $km);
-        $cents  = (int) ($quote['km_extra'] ?? 0);
-        $amount = number_format($cents / 100, 2, '.', '');
-
         /**
-         * ✅ Calcolo km inclusi e km extra effettivi (da mostrare nel badge)
-         * Coerente con la quote() perché usa gli stessi "days".
+         * ✅ Prezzo al km (cents) dallo snapshot congelato.
+         * Nel tuo esempio: extra_km_cents = 59
          */
-        $days = (int) ($quote['days'] ?? 1);
+        $snap = (array) ($rental->contractSnapshot?->pricing_snapshot ?? []);
+        $extraKmCents = (int) ($snap['extra_km_cents'] ?? 0);
 
-        $included = 0;
-        if (!empty($pl->km_included_per_day)) {
-            $included = (int) $pl->km_included_per_day * $days;
+        // Se manca la tariffa extra, meglio non inventare importi
+        if ($extraKmCents <= 0) {
+            return response()->json([
+                'ok'        => true,
+                'has_data'  => true,
+                'km_extra'  => $kmExtra,
+                'cents'     => 0,
+                'amount'    => 0,
+                'has_payment' => $hasPayment,
+            ]);
         }
 
-        $kmExtra = max(0, $km - $included);
+        $cents  = $kmExtra * $extraKmCents;
+        $amount = round($cents / 100, 2);
 
         return response()->json([
-            'ok'          => true,
-            'has_data'    => true,
-            'cents'       => $cents,
-            'amount'      => $amount,
-
-            // ✅ nuovi campi per il badge
-            'km_total'    => $km,
-            'km_included' => $included,
-            'km_extra'    => $kmExtra,
-
-            'has_payment' => $hasPayment, // ✅ sempre presente
+            'ok'        => true,
+            'has_data'  => true,
+            'km_extra'  => $kmExtra,
+            'cents'     => $cents,
+            'amount'    => $amount,
+            'has_payment' => $hasPayment,
         ]);
     }
 }

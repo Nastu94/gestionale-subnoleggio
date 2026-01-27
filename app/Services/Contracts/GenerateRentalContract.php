@@ -504,6 +504,7 @@ class GenerateRentalContract
         $signatureCustomerDataUri = $this->mediaToDataUri($customerSignatureMedia);
         $signatureLessorDataUri   = $this->mediaToDataUri($lessorSignatureMedia);
         $logoAmdDataUri = $this->fileToDataUri(public_path('images/logo-amd.png'));
+        $logoEraDataUri = $this->fileToDataUri(public_path('images/erarent.png'));
 
         /**
          * ✅ Flag esplicito per la view:
@@ -601,6 +602,7 @@ class GenerateRentalContract
 
             'logos' => [
                 'amd'    => $logoAmdDataUri,
+                'era'    => $logoEraDataUri,
             ],
 
             'pricing'    => $pricingData,

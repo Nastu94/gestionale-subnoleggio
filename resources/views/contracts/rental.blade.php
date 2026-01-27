@@ -48,15 +48,32 @@
 
 <body>
 
-    {{-- BOX LOGHI (DOMPDF safe) --}}
-    <div style="position:absolute; top:20px; right:20px; width:180px; height:80px; text-align:right;">
-        @if(!empty($logos['amd']))
-            <div style="height:38px; margin-bottom:4px;">
-                <img src="{{ $logos['amd'] }}" alt="Logo AMD"
-                    style="max-width:180px; max-height:38px;">
-            </div>
-        @endif
-    </div>
+{{-- BOX LOGHI (DOMPDF safe) --}}
+<div style="position:absolute; top:20px; right:20px; width:260px; height:38px; text-align:right;">
+    {{-- DOMPDF: layout affiancato più affidabile con table --}}
+    <table style="width:100%; height:38px; border-collapse:collapse; table-layout:fixed;">
+        <tr>
+            <td style="width:50%; text-align:right; vertical-align:middle; padding-right:6px;">
+                @if(!empty($logos['amd']))
+                    <img
+                        src="{{ $logos['amd'] }}"
+                        alt="Logo AMD"
+                        style="max-width:120px; max-height:38px; display:inline-block;">
+                @endif
+            </td>
+
+            <td style="width:50%; text-align:right; vertical-align:middle;">
+                @if(!empty($logos['era']))
+                    <img
+                        src="{{ $logos['era'] }}"
+                        alt="Logo Era Rent"
+                        style="max-width:120px; max-height:38px; display:inline-block;">
+                @endif
+            </td>
+        </tr>
+    </table>
+</div>
+
 
     <h1>Contratto di noleggio veicolo</h1>
 

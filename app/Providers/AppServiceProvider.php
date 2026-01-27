@@ -5,6 +5,7 @@ namespace App\Providers;
 use Illuminate\Support\ServiceProvider;
 use Spatie\MediaLibrary\MediaCollections\Models\Media as SpatieMedia;
 use App\Observers\RentalDamageMediaObserver;
+use App\Observers\MediaObserver;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -26,5 +27,6 @@ class AppServiceProvider extends ServiceProvider
          * In questo modo intercettiamo create/delete di media associati a RentalDamage.
          */
         SpatieMedia::observe(RentalDamageMediaObserver::class);
+        SpatieMedia::observe(MediaObserver::class);
     }
 }

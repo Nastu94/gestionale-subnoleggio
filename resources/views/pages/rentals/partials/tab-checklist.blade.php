@@ -91,12 +91,12 @@
                                    accept="application/pdf,image/jpeg,image/png"
                                    @change="send($refs.file)"
                                    :disabled="state.locked">
-                            Carica checklist firmata
+                            Carica
                         </label>
 
                         <button
                             type="button"
-                            class="btn btn-primary shadow-none
+                            class="p-2 btn btn-primary shadow-none
                                 !bg-primary !text-primary-content !border-primary
                                 hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30
                                 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -108,18 +108,43 @@
                                 ? 'Genera il PDF della checklist con le firme (cliente + noleggiante)'
                                 : 'Per generare serve la firma cliente e la firma noleggiante (oltre a checklist non bloccata)' }}"
                         >
-                            <span wire:loading.remove wire:target="generateSignedChecklistPdf">Genera PDF firmato</span>
+                            <span wire:loading.remove wire:target="generateSignedChecklistPdf">Genera PDF</span>
                             <span wire:loading wire:target="generateSignedChecklistPdf" class="loading loading-spinner loading-sm"></span>
                         </button>
 
                         {{-- Apri PDF (preferisce firmato) --}}
                         <a href="{{ $openUrl ?: '#' }}" @if($openUrl) target="_blank" rel="noopener" @endif
-                           class="btn btn-primary shadow-none
-                                  !bg-primary !text-primary-content !border-primary
-                                  hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30
-                                  {{ $openUrl ? '' : 'btn-disabled opacity-50 cursor-not-allowed' }}">
+                           class="p-2 btn btn-primary shadow-none
+                                !bg-primary !text-primary-content !border-primary
+                                hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30
+                                disabled:opacity-50 disabled:cursor-not-allowed">
                             Apri PDF
                         </a>
+
+                        {{-- ✅ REINVIO MANUALE EMAIL: solo se esiste il firmato --}}
+                        @if($signed)
+                            <button
+                                type="button"
+                                x-data
+                                class="p-2 btn btn-primary shadow-none
+                                    !bg-primary !text-primary-content !border-primary
+                                    hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30
+                                    disabled:opacity-50 disabled:cursor-not-allowed"
+                                x-on:click="
+                                    if(confirm('Vuoi reinviare al cliente la checklist firmata via email?')) {
+                                        $wire.resendSignedChecklistEmail({{ (int) $checklist->id }});
+                                    }
+                                "
+                                wire:loading.attr="disabled"
+                                wire:target="resendSignedChecklistEmail"
+                                title="Reinvia al cliente la checklist firmata via email"
+                            >
+                                <span wire:loading.remove wire:target="resendSignedChecklistEmail">
+                                    Invia
+                                </span>
+                                <span wire:loading wire:target="resendSignedChecklistEmail" class="loading loading-spinner loading-sm"></span>
+                            </button>
+                        @endif
 
                         {{-- Apri/Modifica checklist (se lockata → sola lettura) --}}
                         <a href="{{ route('rental-checklists.create', ['rental'=>$rental->id, 'type'=>$type]) }}"
@@ -127,7 +152,7 @@
                                   {{ $isLocked
                                       ? '!bg-slate-200 !text-slate-800 !border-slate-300 hover:brightness-95'
                                       : '!bg-base-300 !text-base-content !border-base-300 hover:brightness-95' }}">
-                            {{ $isLocked ? 'Apri checklist (bloccata)' : 'Modifica checklist' }}
+                            {{ $isLocked ? 'Apri (bloccata)' : 'Modifica' }}
                         </a>
 
                         {{-- Nuova checklist sostitutiva (solo se lockata) --}}
@@ -142,7 +167,7 @@
                                 class="btn btn-accent shadow-none
                                     !bg-accent !text-accent-content !border-accent
                                     hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-accent/30">
-                                Nuova checklist (sostitutiva)
+                                Nuova
                             </a>
                         @endif
                     </div>

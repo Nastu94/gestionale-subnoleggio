@@ -124,6 +124,31 @@
                     Genera PDF firmato
                 </button>
             @endif
+
+            {{-- ✅ REINVIO MANUALE: invia l'ultimo contratto firmato al cliente --}}
+            @if($hasSigned)
+                <button
+                    type="button"
+                    x-data
+                    class="p-2 btn btn-primary shadow-none
+                        !bg-primary !text-primary-content !border-primary
+                        hover:brightness-95 focus-visible:outline-none focus-visible:ring focus-visible:ring-primary/30
+                        disabled:opacity-50 disabled:cursor-not-allowed"
+                    x-on:click="
+                        if(confirm('Vuoi reinviare al cliente l’ultimo contratto firmato via email?')) {
+                            $wire.resendSignedContractEmail();
+                        }
+                    "
+                    wire:loading.attr="disabled"
+                    wire:target="resendSignedContractEmail"
+                    title="Reinvia l'ultima versione del contratto firmato al cliente via email"
+                >
+                    <span wire:loading.remove wire:target="resendSignedContractEmail">
+                        Invia
+                    </span>
+                    <span wire:loading wire:target="resendSignedContractEmail" class="loading loading-spinner loading-sm"></span>
+                </button>
+            @endif
         </div>
 
         {{-- ===== PREZZO CONTRATTO (override) ===== --}}
