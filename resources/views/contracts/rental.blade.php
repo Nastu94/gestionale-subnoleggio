@@ -48,38 +48,38 @@
 
 <body>
 
-{{-- BOX LOGHI (DOMPDF safe) --}}
-<div style="position:absolute; top:20px; right:20px; width:260px; height:38px; text-align:right;">
-    {{-- DOMPDF: layout affiancato più affidabile con table --}}
-    <table style="width:100%; height:38px; border-collapse:collapse; table-layout:fixed;">
-        <tr>
-            <td style="width:50%; text-align:right; vertical-align:middle; padding-right:6px;">
-                @if(!empty($logos['amd']))
-                    <img
-                        src="{{ $logos['amd'] }}"
-                        alt="Logo AMD"
-                        style="max-width:120px; max-height:38px; display:inline-block;">
-                @endif
-            </td>
+    {{-- BOX LOGHI (DOMPDF safe) --}}
+    <div style="position:absolute; top:20px; right:20px; width:260px; height:38px; text-align:right;">
+        {{-- DOMPDF: layout affiancato più affidabile con table --}}
+        <table style="width:100%; height:38px; border-collapse:collapse; table-layout:fixed;">
+            <tr>
+                <td style="width:50%; text-align:right; vertical-align:middle; padding-right:6px;">
+                    @if(!empty($logos['amd']))
+                        <img
+                            src="{{ $logos['amd'] }}"
+                            alt="Logo AMD"
+                            style="max-width:120px; max-height:38px; display:inline-block;">
+                    @endif
+                </td>
 
-            <td style="width:50%; text-align:right; vertical-align:middle;">
-                @if(!empty($logos['era']))
-                    <img
-                        src="{{ $logos['era'] }}"
-                        alt="Logo Era Rent"
-                        style="max-width:120px; max-height:38px; display:inline-block;">
-                @endif
-            </td>
-        </tr>
-    </table>
-</div>
+                <td style="width:50%; text-align:right; vertical-align:middle;">
+                    @if(!empty($logos['era']))
+                        <img
+                            src="{{ $logos['era'] }}"
+                            alt="Logo Era Rent"
+                            style="max-width:120px; max-height:38px; display:inline-block;">
+                    @endif
+                </td>
+            </tr>
+        </table>
+    </div>
 
+    <h1>Noleggiante: <strong>{{ $vehicle_owner_name }}</strong><br></h1>
 
     <h1>Contratto di noleggio veicolo</h1>
 
     {{-- NEW — Nome noleggiatore descrittivo --}}
     <div class="muted">
-        Nome Noleggiante: <strong>{{ $vehicle_owner_name }}</strong><br>
         Numero contratto: <strong>{{ $rental['number_label'] }}</strong> —
         Data: {{ $rental['issued_at'] ?? now()->format('d/m/Y') }}
     </div>
