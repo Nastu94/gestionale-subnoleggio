@@ -36,6 +36,7 @@ class Organization extends Model implements SpatieHasMedia
         'cargos_password','cargos_puk', 
         'codice_utente_cargos',
         'agenzia_id_cargos',
+        'cargos_apikey',
     ];
 
     protected $casts = [
@@ -56,6 +57,7 @@ class Organization extends Model implements SpatieHasMedia
          */
         'cargos_password' => 'encrypted',
         'cargos_puk'      => 'encrypted',
+        'cargos_apikey'   => 'encrypted',
     ];
 
     // --- Relazioni principali ---

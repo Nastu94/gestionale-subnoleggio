@@ -30,6 +30,7 @@ class CargosModal extends Component
     public bool $hasCargosPuk = false;
     public bool $hasCargosUserCode = false;
     public bool $hasCargosAgencyId = false;
+    public bool $hasCargosApiKey = false;
 
     /**
      * Form state: valori da salvare.
@@ -40,6 +41,7 @@ class CargosModal extends Component
         'agenzia_id_cargos'    => null,
         'cargos_password'      => null,
         'cargos_puk'           => null,
+        'cargos_apikey'        => null,
     ];
 
     /**
@@ -54,6 +56,7 @@ class CargosModal extends Component
     public ?string $revealedCargosAgencyId = null;
     public ?string $revealedCargosPassword = null;
     public ?string $revealedCargosPuk = null;
+    public ?string $revealedCargosApiKey = null;
 
     protected $listeners = [
         'open-org-cargos' => 'openModal',
@@ -74,15 +77,15 @@ class CargosModal extends Component
 
             'state.cargos_password'      => ['nullable', 'string', 'max:255'],
             'state.cargos_puk'           => ['nullable', 'string', 'max:255'],
-
-            'confirmPassword' => ['nullable', 'string'],
+            'state.cargos_apikey'        => ['nullable', 'string', 'min:48', 'max:255'],
+            'confirmPassword'            => ['nullable', 'string'],
         ];
     }
 
     protected array $messages = [
         'state.codice_utente_cargos.max' => 'Il codice utente Cargos può contenere al massimo :max caratteri.',
         'state.agenzia_id_cargos.max'    => "L'agenzia ID Cargos può contenere al massimo :max caratteri.",
-
+        'state.cargos_apikey.min'        => 'La APIKEY deve avere almeno :min caratteri.',
         'state.cargos_password.max'      => 'La password Cargos può contenere al massimo :max caratteri.',
         'state.cargos_puk.max'           => 'Il PUK Cargos può contenere al massimo :max caratteri.',
     ];
@@ -99,6 +102,7 @@ class CargosModal extends Component
             'agenzia_id_cargos'    => null,
             'cargos_password'      => null,
             'cargos_puk'           => null,
+            'cargos_apikey'        => null,
         ];
 
         $this->confirmPassword = '';
@@ -119,7 +123,7 @@ class CargosModal extends Component
         $this->hasCargosPuk       = !empty($org->getRawOriginal('cargos_puk'));
         $this->hasCargosUserCode  = !empty($org->getRawOriginal('codice_utente_cargos'));
         $this->hasCargosAgencyId  = !empty($org->getRawOriginal('agenzia_id_cargos'));
-
+        $this->hasCargosApiKey    = !empty($org->getRawOriginal('cargos_apikey'));
         $this->open = true;
     }
 
@@ -152,7 +156,7 @@ class CargosModal extends Component
         $this->revealedCargosAgencyId = null;
         $this->revealedCargosPassword = null;
         $this->revealedCargosPuk = null;
-
+        $this->revealedCargosApiKey = null;
         $this->confirmPassword = '';
     }
 
@@ -206,6 +210,11 @@ class CargosModal extends Component
             $this->revealedCargosPuk = $org->cargos_puk;
         }
 
+        if ($field === 'apikey') {
+            $this->revealedCargosApiKey = $org->cargos_apikey;
+        }
+
+
         // igiene: svuota password admin
         $this->confirmPassword = '';
 
@@ -241,6 +250,10 @@ class CargosModal extends Component
                 $updates['agenzia_id_cargos'] = $this->state['agenzia_id_cargos'];
             }
 
+            if (!empty($this->state['cargos_apikey'])) {
+                $updates['cargos_apikey'] = $this->state['cargos_apikey'];
+            }
+
             // ✅ Esistenti
             if (!empty($this->state['cargos_password'])) {
                 $updates['cargos_password'] = $this->state['cargos_password'];
@@ -266,7 +279,8 @@ class CargosModal extends Component
             $this->hasCargosPuk      = !empty($org->getRawOriginal('cargos_puk'));
             $this->hasCargosUserCode = !empty($org->getRawOriginal('codice_utente_cargos'));
             $this->hasCargosAgencyId = !empty($org->getRawOriginal('agenzia_id_cargos'));
-
+            $this->hasCargosApiKey   = !empty($org->getRawOriginal('cargos_apikey'));
+            
             // pulizia state inserito + reveal
             $this->state = [
                 'codice_utente_cargos' => null,

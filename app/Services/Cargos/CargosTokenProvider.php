@@ -41,6 +41,7 @@ class CargosTokenProvider
 
         $username = (string) $creds['username'];
         $password = (string) $creds['password'];
+        $apiKey     = (string) ($creds['apikey'] ?? '');
 
         $cacheKey = 'cargos.token.v2.' . sha1($username);
 
@@ -49,13 +50,12 @@ class CargosTokenProvider
         if (is_array($cached) && isset($cached['access_token'], $cached['expires_at'])) {
             $expiresAt = Carbon::parse($cached['expires_at']);
 
-            // buffer: se scade entro 60s, rigeneriamo
             if ($expiresAt->diffInSeconds(now(), false) < -60) {
                 return [
-                    'bearer'      => $this->cryptor->encrypt((string) $cached['access_token']),
+                    'bearer'      => $this->cryptor->encryptWithApiKey((string) $cached['access_token'], $apiKey), // ✅
                     'expires_at'  => $expiresAt->toIso8601String(),
-                    'source'      => $credSource,   // ✅ sempre cred source
-                    'token_source'=> 'cache',       // ✅ info extra
+                    'source'      => $credSource,
+                    'token_source'=> 'cache',
                     'username'    => $username,
                     'agency_id'   => (string) $creds['agency_id'],
                 ];
@@ -79,10 +79,10 @@ class CargosTokenProvider
         ], $expiresAt);
 
         return [
-            'bearer'      => $this->cryptor->encrypt($accessToken),
+            'bearer'      => $this->cryptor->encryptWithApiKey($accessToken, $apiKey), // ✅
             'expires_at'  => $expiresAt->toIso8601String(),
-            'source'      => $credSource, // ✅ sempre cred source
-            'token_source'=> 'api',       // ✅ info extra
+            'source'      => $credSource,
+            'token_source'=> 'api',
             'username'    => $username,
             'agency_id'   => (string) $creds['agency_id'],
         ];

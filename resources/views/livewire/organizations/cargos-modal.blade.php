@@ -53,6 +53,11 @@
                                     PUK {{ $hasCargosPuk ? 'impostato' : 'non impostato' }}
                                 </span>
 
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold
+                                             {{ $hasCargosApiKey ? 'bg-emerald-200 text-emerald-900 dark:bg-emerald-700 dark:text-white' : 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100' }}">
+                                    APIKEY {{ $hasCargosApiKey ? 'impostata' : 'non impostata' }}
+                                </span>
+
                                 <span class="ml-auto italic opacity-80">
                                     Lascia vuoto per non modificare i valori esistenti.
                                 </span>
@@ -83,6 +88,17 @@
                                    autocomplete="off"
                                    placeholder="Es: 12345">
                             @error('state.agenzia_id_cargos') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
+                        </div>
+
+                        {{-- APIKEY cargos --}}
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs text-gray-600 dark:text-gray-300 mb-1">Nuova APIKEY Cargos</label>
+                            <input type="text"
+                                   wire:model.defer="state.cargos_apikey"
+                                   class="w-full px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100"
+                                   autocomplete="off"
+                                   placeholder="Es: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+                            @error('state.cargos_apikey') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
                         </div>
 
                         {{-- Nuova Password cargos --}}
@@ -135,6 +151,14 @@
                                     </button>
 
                                     <button type="button"
+                                            wire:click="reveal('apikey')"
+                                            class="inline-flex items-center px-3 py-2 rounded-md text-xs font-semibold
+                                                   bg-slate-100 text-slate-800 border border-slate-200
+                                                   hover:bg-slate-200 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 transition">
+                                        <i class="fas fa-eye mr-1"></i> Mostra APIKEY
+                                    </button>
+
+                                    <button type="button"
                                             wire:click="reveal('password')"
                                             class="inline-flex items-center px-3 py-2 rounded-md text-xs font-semibold
                                                    bg-slate-100 text-slate-800 border border-slate-200
@@ -174,6 +198,13 @@
                                 <div class="mt-3 p-3 rounded-md bg-amber-50 border border-amber-200 text-amber-900">
                                     <div class="text-xs font-semibold mb-1">Agenzia ID Cargos (visibile temporaneamente)</div>
                                     <div class="font-mono text-sm break-all">{{ $revealedCargosAgencyId }}</div>
+                                </div>
+                            @endif
+
+                            @if($revealedCargosApiKey)
+                                <div class="mt-3 p-3 rounded-md bg-amber-50 border border-amber-200 text-amber-900">
+                                    <div class="text-xs font-semibold mb-1">APIKEY Cargos (visibile temporaneamente)</div>
+                                    <div class="font-mono text-sm break-all">{{ $revealedCargosApiKey }}</div>
                                 </div>
                             @endif
 

@@ -41,4 +41,34 @@ class CargosTokenCryptor
 
         return base64_encode($raw);
     }
+
+    /**
+     * Nuovo: cifra usando una APIKEY passata (DB o env).
+     */
+    public function encryptWithApiKey(string $accessToken, string $apiKey): string
+    {
+        $apiKey = trim($apiKey);
+
+        if ($apiKey === '' || strlen($apiKey) < 48) {
+            throw new RuntimeException('CARGOS APIKEY non valida: deve avere almeno 48 caratteri (32 Key + 16 IV).');
+        }
+
+        $key = substr($apiKey, 0, 32);
+        $iv  = substr($apiKey, 32, 16);
+
+        $raw = openssl_encrypt(
+            $accessToken,
+            'AES-256-CBC',
+            $key,
+            OPENSSL_RAW_DATA,
+            $iv
+        );
+
+        if ($raw === false) {
+            $err = openssl_error_string() ?: 'openssl_encrypt returned false';
+            throw new RuntimeException("CARGOS: criptazione AES fallita ({$err}).");
+        }
+
+        return base64_encode($raw);
+    }
 }
