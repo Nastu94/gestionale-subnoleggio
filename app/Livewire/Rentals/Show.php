@@ -976,9 +976,7 @@ class Show extends Component
     {
         $this->authorize('update', $this->rental);
 
-        // Verifica cliente e email
         $this->rental->loadMissing(['customer']);
-
         $customer = $this->rental->customer;
 
         if (!$customer || empty($customer->email)) {
@@ -986,7 +984,9 @@ class Show extends Component
             return;
         }
 
-        // Recupera l'ultimo contratto firmato (collection principale + fallback compat)
+        $adminEmail = (string) config('rentals.admin_email');
+
+        // Recupera ultimo contratto firmato (principale + fallback compat)
         $media = null;
 
         if (method_exists($this->rental, 'getMedia')) {
@@ -1002,44 +1002,36 @@ class Show extends Component
             return;
         }
 
-        // Documento logico = Rental + collection "signatures" (qui reinviamo solo il contratto firmato)
+        // Documento logico = Rental + collection "signatures"
         $docModelType  = Rental::class;
         $docModelId    = (int) $this->rental->id;
         $docCollection = 'signatures';
 
-        // Crea/recupera log delivery (anti-duplicati per documento logico)
         $delivery = MediaEmailDelivery::query()->firstOrNew([
             'model_type'      => $docModelType,
             'model_id'        => $docModelId,
             'collection_name' => $docCollection,
         ]);
 
-        // Aggiorna recipient e "ultima versione generata"
         $delivery->recipient_email  = (string) $customer->email;
         $delivery->current_media_id = (int) $media->getKey();
-
-        // Marca richiesta reinvio manuale (audit)
         $delivery->status              = MediaEmailDelivery::STATUS_RESEND_REQUESTED;
         $delivery->resend_requested_at = now();
-
         $delivery->save();
 
-        // Prepara contenuti email
         $rentalLabel = $this->rental->reference ?? $this->rental->display_number_label ?? ('#' . $this->rental->id);
 
         $subject = 'Contratto firmato - Noleggio ' . $rentalLabel;
-
         $body = "In allegato trovi il contratto firmato relativo al tuo noleggio ({$rentalLabel}).\n\n"
             . "Se non riconosci questa email, contatta l'assistenza.";
 
         try {
-            // Tracciamo il tentativo PRIMA dell'invio (così logghiamo anche in caso di errore)
-            $delivery->send_attempts       = (int) $delivery->send_attempts + 1;
-            $delivery->last_attempt_at     = now();
-            $delivery->last_error_message  = null;
+            // Tracking tentativo PRIMA dell'invio (cliente)
+            $delivery->send_attempts      = (int) $delivery->send_attempts + 1;
+            $delivery->last_attempt_at    = now();
+            $delivery->last_error_message = null;
             $delivery->save();
 
-            // Legge file dal disk configurato su Spatie Media
             $disk = $media->disk;
             $path = $media->getPathRelativeToRoot();
 
@@ -1047,26 +1039,26 @@ class Show extends Component
                 throw new \RuntimeException("File non trovato su storage: disk={$disk}, path={$path}");
             }
 
-            $fileContents = Storage::disk($disk)->get($path);
-
-            // Invia email con allegato
-            Mail::raw($body, function ($message) use ($customer, $subject, $media, $fileContents): void {
+            // === INVIO CLIENTE (TRACCIATO) ===
+            Mail::raw($body, function ($message) use ($customer, $subject, $media, $disk, $path): void {
                 $message
                     ->to($customer->email)
                     ->subject($subject)
-                    ->from(config('mail.from.address'), config('mail.from.name'))
-                    ->attachData(
-                        $fileContents,
-                        $media->file_name,
-                        ['mime' => $media->mime_type]
-                    );
+                    ->from(config('mail.from.address'), config('mail.from.name'));
+
+                // Evita RAM (preferibile)
+                if (method_exists($message, 'attachFromStorageDisk')) {
+                    $message->attachFromStorageDisk($disk, $path, $media->file_name, ['mime' => $media->mime_type]);
+                } else {
+                    // fallback (meno efficiente)
+                    $fileContents = Storage::disk($disk)->get($path);
+                    $message->attachData($fileContents, $media->file_name, ['mime' => $media->mime_type]);
+                }
             });
 
-            // Success tracking
+            // Success tracking (cliente)
             if (is_null($delivery->first_sent_at)) {
                 $delivery->first_sent_at = now();
-
-                // Se non impostato, fissiamo la prima versione inviata
                 if (is_null($delivery->first_media_id)) {
                     $delivery->first_media_id = (int) $media->getKey();
                 }
@@ -1075,14 +1067,41 @@ class Show extends Component
             $delivery->last_sent_at       = now();
             $delivery->last_sent_media_id = (int) $media->getKey();
             $delivery->status             = MediaEmailDelivery::STATUS_SENT;
-
             $delivery->save();
+
+            // === INVIO ADMIN (NON TRACCIATO, NON BLOCCANTE) ===
+            if (!empty($adminEmail)) {
+                try {
+                    $adminSubject = '[ADMIN] ' . $subject;
+
+                    $adminBody = "È stato reinviato un contratto firmato.\n\n"
+                        . "Noleggio: {$rentalLabel}\n"
+                        . "Cliente: " . ($customer->name ?? '—') . "\n"
+                        . "Email cliente: " . ($customer->email ?? '—') . "\n\n"
+                        . "Documento in allegato.";
+
+                    Mail::raw($adminBody, function ($message) use ($adminEmail, $adminSubject, $media, $disk, $path): void {
+                        $message
+                            ->to($adminEmail)
+                            ->subject($adminSubject)
+                            ->from(config('mail.from.address'), config('mail.from.name'));
+
+                        if (method_exists($message, 'attachFromStorageDisk')) {
+                            $message->attachFromStorageDisk($disk, $path, $media->file_name, ['mime' => $media->mime_type]);
+                        } else {
+                            $fileContents = Storage::disk($disk)->get($path);
+                            $message->attachData($fileContents, $media->file_name, ['mime' => $media->mime_type]);
+                        }
+                    });
+                } catch (\Throwable $ignored) {
+                    // volutamente ignorato
+                }
+            }
 
             $this->dispatch('toast', type: 'success', message: 'Email inviata con il contratto firmato.');
         } catch (\Throwable $e) {
             report($e);
 
-            // Failure tracking (senza incrementare di nuovo i tentativi: già fatto sopra)
             $delivery->status             = MediaEmailDelivery::STATUS_FAILED;
             $delivery->last_error_message = $e->getMessage();
             $delivery->save();
@@ -1491,7 +1510,6 @@ class Show extends Component
             ->with(['rental.customer'])
             ->findOrFail($checklistId);
 
-        // Safety: evita di inviare checklist di un altro noleggio
         if ((int) $checklist->rental_id !== (int) $this->rental->id) {
             $this->dispatch('toast', type: 'error', message: 'Checklist non valida per questo noleggio.');
             return;
@@ -1504,20 +1522,18 @@ class Show extends Component
             return;
         }
 
-        // Ricava la collection firmata (pickup/return) con fallback robusto
+        $adminEmail = (string) config('rentals.admin_email');
+
         $signedCollection = method_exists($checklist, 'signedCollectionName')
             ? (string) $checklist->signedCollectionName()
             : ((string) ($checklist->type ?? '') === 'pickup' ? 'checklist_pickup_signed' : 'checklist_return_signed');
 
         $signedCollection = $this->normalizeSignedChecklistCollection($signedCollection);
 
-        // Recupera ultimo media firmato
         $media = null;
-
         if (method_exists($checklist, 'getMedia')) {
             $media = $checklist->getMedia($signedCollection)->sortByDesc('created_at')->first();
 
-            // Compat extra: se qualcuno ha salvato davvero la collection col nome sbagliato
             if (!$media && $signedCollection === 'checklist_return_signed') {
                 $media = $checklist->getMedia('checklists_return_signed')->sortByDesc('created_at')->first();
             }
@@ -1528,7 +1544,6 @@ class Show extends Component
             return;
         }
 
-        // Documento logico = Checklist + collection (anti-duplicati / audit)
         $docModelType  = RentalChecklist::class;
         $docModelId    = (int) $checklist->id;
         $docCollection = $signedCollection;
@@ -1539,17 +1554,12 @@ class Show extends Component
             'collection_name' => $docCollection,
         ]);
 
-        // Aggiorna destinatario e ultima versione disponibile
         $delivery->recipient_email  = (string) $customer->email;
         $delivery->current_media_id = (int) $media->getKey();
-
-        // Marca richiesta reinvio manuale (audit)
         $delivery->status              = MediaEmailDelivery::STATUS_RESEND_REQUESTED;
         $delivery->resend_requested_at = now();
-
         $delivery->save();
 
-        // Soggetto e corpo
         $rentalLabel = $this->rental->reference ?? $this->rental->display_number_label ?? ('#' . $this->rental->id);
 
         $subject = match ((string) ($checklist->type ?? '')) {
@@ -1562,13 +1572,11 @@ class Show extends Component
             . "Se non riconosci questa email, contatta l'assistenza.";
 
         try {
-            // Tracking tentativo PRIMA dell'invio
             $delivery->send_attempts      = (int) $delivery->send_attempts + 1;
             $delivery->last_attempt_at    = now();
             $delivery->last_error_message = null;
             $delivery->save();
 
-            // Legge file dal disk configurato su Spatie Media
             $disk = $media->disk;
             $path = $media->getPathRelativeToRoot();
 
@@ -1576,26 +1584,23 @@ class Show extends Component
                 throw new \RuntimeException("File non trovato su storage: disk={$disk}, path={$path}");
             }
 
-            $fileContents = Storage::disk($disk)->get($path);
-
-            // Invio email con allegato
-            Mail::raw($body, function ($message) use ($customer, $subject, $media, $fileContents): void {
+            // === INVIO CLIENTE (TRACCIATO) ===
+            Mail::raw($body, function ($message) use ($customer, $subject, $media, $disk, $path): void {
                 $message
                     ->to($customer->email)
                     ->subject($subject)
-                    ->from(config('mail.from.address'), config('mail.from.name'))
-                    ->attachData(
-                        $fileContents,
-                        $media->file_name,
-                        ['mime' => $media->mime_type]
-                    );
+                    ->from(config('mail.from.address'), config('mail.from.name'));
+
+                if (method_exists($message, 'attachFromStorageDisk')) {
+                    $message->attachFromStorageDisk($disk, $path, $media->file_name, ['mime' => $media->mime_type]);
+                } else {
+                    $fileContents = Storage::disk($disk)->get($path);
+                    $message->attachData($fileContents, $media->file_name, ['mime' => $media->mime_type]);
+                }
             });
 
-            // Success tracking
             if (is_null($delivery->first_sent_at)) {
                 $delivery->first_sent_at = now();
-
-                // Fissa anche la prima versione inviata (se non presente)
                 if (is_null($delivery->first_media_id)) {
                     $delivery->first_media_id = (int) $media->getKey();
                 }
@@ -1604,8 +1609,37 @@ class Show extends Component
             $delivery->last_sent_at       = now();
             $delivery->last_sent_media_id = (int) $media->getKey();
             $delivery->status             = MediaEmailDelivery::STATUS_SENT;
-
             $delivery->save();
+
+            // === INVIO ADMIN (NON TRACCIATO, NON BLOCCANTE) ===
+            if (!empty($adminEmail)) {
+                try {
+                    $adminSubject = '[ADMIN] ' . $subject;
+
+                    $adminBody = "È stata reinviata una checklist firmata.\n\n"
+                        . "Noleggio: {$rentalLabel}\n"
+                        . "Checklist: #" . $checklist->id . " (" . ($checklist->type ?? '—') . ")\n"
+                        . "Cliente: " . ($customer->name ?? '—') . "\n"
+                        . "Email cliente: " . ($customer->email ?? '—') . "\n\n"
+                        . "Documento in allegato.";
+
+                    Mail::raw($adminBody, function ($message) use ($adminEmail, $adminSubject, $media, $disk, $path): void {
+                        $message
+                            ->to($adminEmail)
+                            ->subject($adminSubject)
+                            ->from(config('mail.from.address'), config('mail.from.name'));
+
+                        if (method_exists($message, 'attachFromStorageDisk')) {
+                            $message->attachFromStorageDisk($disk, $path, $media->file_name, ['mime' => $media->mime_type]);
+                        } else {
+                            $fileContents = Storage::disk($disk)->get($path);
+                            $message->attachData($fileContents, $media->file_name, ['mime' => $media->mime_type]);
+                        }
+                    });
+                } catch (\Throwable $ignored) {
+                    // ignora
+                }
+            }
 
             $this->dispatch('toast', type: 'success', message: 'Email inviata con la checklist firmata.');
         } catch (\Throwable $e) {
