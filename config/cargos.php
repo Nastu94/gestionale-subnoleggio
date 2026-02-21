@@ -31,6 +31,12 @@ return [
     // record_preview in tabella è 160: teniamoci coerenti
     'preview_len' => (int) env('CARGOS_PREVIEW_LEN', 160),
 
+    /**
+     * Se false, l'azione SEND viene simulata (dry-run) anche in production.
+     * Abilitare a true SOLO quando si è pronti ad inviare davvero a CARGOS.
+     */
+    'send_enabled' => env('CARGOS_SEND_ENABLED', false),
+
     /*
     |--------------------------------------------------------------------------
     | CARGOS Base URL

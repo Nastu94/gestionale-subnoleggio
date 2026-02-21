@@ -110,14 +110,23 @@ class CargosSendService
         }
 
         $linkedCheckId = $okCheck->id;
-
+        
         // --- DRY-RUN ---
-        if (!app()->environment('production')) {
+        // In non-production l'invio è sempre simulato.
+        // In production l'invio è reale SOLO se abilitato via config/env.
+        $sendEnabled = (bool) config('cargos.send_enabled', false);
+
+        if (!app()->environment('production') || !$sendEnabled) {
+            // Motivo dry-run utile per log/diagnostica (senza impattare il flusso)
+            $reason = !app()->environment('production')
+                ? 'ambiente non-production'
+                : 'CARGOS_SEND_ENABLED=false';
+
             $this->safeLog([
                 'rental_id'              => $rentalId,
                 'agency_organization_id' => $agencyId,
                 'operator_user_id'       => $operatorId,
-                'linked_check_id'        => $linkedCheckId, // ✅ QUI
+                'linked_check_id'        => $linkedCheckId,
                 'action'                 => $action,
                 'ok'                     => true,
                 'stage'                  => 'preflight.send',
@@ -125,25 +134,27 @@ class CargosSendService
                 'record_length'          => strlen($record),
                 'record_preview'         => $this->preview($record),
                 'record'                 => $this->recordToStore($record),
+
+                // Risposta simulata coerente con quella attuale, con nota più esplicita
                 'api_response'           => [
                     [
-                        'dry_run' => true,
-                        'note' => 'SEND non eseguito (ambiente non-production). Pre-flight OK.',
+                        'dry_run'         => true,
+                        'note'            => 'SEND non eseguito (' . $reason . '). Pre-flight OK.',
                         'linked_check_id' => $linkedCheckId,
-                        'hash' => $hash,
+                        'hash'            => $hash,
                     ]
                 ],
             ]);
 
             return [
-                'ok' => true,
-                'stage' => 'preflight.send',
-                'errors' => [],
-                'dry_run' => true,
+                'ok'       => true,
+                'stage'    => 'preflight.send',
+                'errors'   => [],
+                'dry_run'  => true,
                 'response' => [
-                    'dry_run' => true,
-                    'linked_check_id' => $linkedCheckId, // ✅ QUI
-                    'hash' => $hash,
+                    'dry_run'         => true,
+                    'linked_check_id' => $linkedCheckId,
+                    'hash'            => $hash,
                 ],
             ];
         }
