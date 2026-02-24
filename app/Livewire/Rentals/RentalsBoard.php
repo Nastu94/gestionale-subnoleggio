@@ -29,6 +29,7 @@ class RentalsBoard extends Component
 
     /**
      * Modalità del planner:
+     * - 'month' => vista mensile (giorni del mese)
      * - 'week'  => vista settimanale (veicoli x giorni)
      * - 'day'   => vista giornaliera (veicoli x ore)
      *
@@ -270,23 +271,21 @@ class RentalsBoard extends Component
 
     /**
      * Restituisce un'etichetta leggibile per il periodo del planner
-     * in base alla modalità corrente (settimana / giorno).
-     *
-     * Esempi:
-     * - modalità 'week': "10/11/2025 – 16/11/2025"
-     * - modalità 'day':  "11/11/2025"
+     * in base alla modalità corrente (mese / settimana / giorno).
      */
     public function getPlannerPeriodLabelProperty(): string
     {
-        // Se per qualche motivo plannerDate è null, ripieghiamo su oggi
         $date = Carbon::parse($this->plannerDate ?? now()->toDateString());
 
         if ($this->plannerMode === 'day') {
-            // Vista giornaliera: mostriamo solo la data del giorno
             return $date->format('d/m/Y');
         }
 
-        // Vista settimanale: calcoliamo lunedì e domenica della settimana
+        if ($this->plannerMode === 'month') {
+            // Es: "Febbraio 2026" (richiede locale 'it' configurata)
+            return ucfirst($date->translatedFormat('F Y'));
+        }
+
         $start = $date->copy()->startOfWeek(Carbon::MONDAY);
         $end   = $date->copy()->endOfWeek(Carbon::SUNDAY);
 
@@ -309,28 +308,32 @@ class RentalsBoard extends Component
     }
 
     /**
-     * Imposta la modalità del planner (settimana/giorno),
+     * Imposta la modalità del planner (mese/settimana/giorno),
      * normalizzando la data di riferimento.
      *
-     * - 'day'  => quando passiamo esplicitamente alla vista giornaliera
-     *             tramite il pulsante, puntiamo sempre ad OGGI.
-     * - 'week' => la data viene allineata al lunedì della settimana
-     *             relativa alla plannerDate corrente (o ad oggi se nulla).
+     * - 'month' => allinea la plannerDate al primo giorno del mese
+     * - 'week'  => allinea la plannerDate al lunedì della settimana
+     * - 'day'   => quando passiamo alla vista giornaliera dal pulsante, puntiamo ad oggi
      */
     public function setPlannerMode(string $mode): void
     {
-        // Normalizziamo il valore richiesto: solo 'week' o 'day'
-        $mode = in_array($mode, ['week', 'day'], true) ? $mode : 'week';
+        // Normalizziamo il valore richiesto: solo 'month', 'week' o 'day'
+        $mode = in_array($mode, ['month', 'week', 'day'], true) ? $mode : 'week';
 
         $this->plannerMode = $mode;
 
         if ($this->plannerMode === 'day') {
-            // Vista giornaliera: quando l'utente clicca "Giorno"
-            // vogliamo sempre puntare ad oggi.
+            // Vista giornaliera: quando l'utente clicca "Giorno" vogliamo puntare ad oggi
             $date = Carbon::today()->startOfDay();
+        } elseif ($this->plannerMode === 'month') {
+            // Vista mensile: ci allineiamo al primo giorno del mese corrente (o della plannerDate attuale)
+            $base = $this->plannerDate
+                ? Carbon::parse($this->plannerDate)
+                : Carbon::today();
+
+            $date = $base->startOfMonth()->startOfDay();
         } else {
-            // Vista settimanale: usiamo la plannerDate corrente (se presente),
-            // altrimenti oggi, e la portiamo al LUNEDÌ di quella settimana.
+            // Vista settimanale: allineiamo al LUNEDÌ della settimana relativa alla plannerDate corrente (o ad oggi)
             $base = $this->plannerDate
                 ? Carbon::parse($this->plannerDate)
                 : Carbon::today();
@@ -344,25 +347,22 @@ class RentalsBoard extends Component
 
     /**
      * Sposta il planner al periodo precedente
-     * (una settimana o un giorno in base alla modalità corrente).
+     * (un mese/una settimana/un giorno in base alla modalità corrente).
      */
     public function goToPreviousPeriod(): void
     {
         $date = Carbon::parse($this->plannerDate ?? now()->toDateString());
 
         if ($this->plannerMode === 'day') {
-            // Vista giornaliera: ci muoviamo di 1 giorno
             $date->subDay();
-        } else {
-            // Vista settimanale: ci muoviamo di 1 settimana
-            $date->subWeek();
-        }
-
-        // Normalizziamo la data come in setPlannerMode
-        if ($this->plannerMode === 'week') {
-            $date->startOfWeek(Carbon::MONDAY);
-        } else {
             $date->startOfDay();
+        } elseif ($this->plannerMode === 'month') {
+            // No overflow evita stranezze su mesi con giorni diversi
+            $date->subMonthNoOverflow();
+            $date->startOfMonth()->startOfDay();
+        } else {
+            $date->subWeek();
+            $date->startOfWeek(Carbon::MONDAY);
         }
 
         $this->plannerDate = $date->toDateString();
@@ -370,27 +370,41 @@ class RentalsBoard extends Component
 
     /**
      * Sposta il planner al periodo successivo
-     * (una settimana o un giorno in base alla modalità corrente).
+     * (un mese/una settimana/un giorno in base alla modalità corrente).
      */
     public function goToNextPeriod(): void
     {
         $date = Carbon::parse($this->plannerDate ?? now()->toDateString());
 
         if ($this->plannerMode === 'day') {
-            // Vista giornaliera: +1 giorno
             $date->addDay();
-        } else {
-            // Vista settimanale: +1 settimana
-            $date->addWeek();
-        }
-
-        if ($this->plannerMode === 'week') {
-            $date->startOfWeek(Carbon::MONDAY);
-        } else {
             $date->startOfDay();
+        } elseif ($this->plannerMode === 'month') {
+            $date->addMonthNoOverflow();
+            $date->startOfMonth()->startOfDay();
+        } else {
+            $date->addWeek();
+            $date->startOfWeek(Carbon::MONDAY);
         }
 
         $this->plannerDate = $date->toDateString();
+    }
+
+    /**
+     * Dalla vista MENSILE, apre la vista SETTIMANALE
+     * relativa alla data cliccata.
+     *
+     * - Imposta plannerMode su 'week'
+     * - Allinea plannerDate al lunedì della settimana del giorno scelto
+     */
+    public function openPlannerWeek(string $date): void
+    {
+        $weekStart = Carbon::parse($date)
+            ->startOfDay()
+            ->startOfWeek(Carbon::MONDAY);
+
+        $this->plannerMode = 'week';
+        $this->plannerDate = $weekStart->toDateString();
     }
 
     /**
@@ -413,39 +427,61 @@ class RentalsBoard extends Component
     }
 
     /**
+     * Elenco dei giorni da mostrare nella vista MENSILE del planner.
+     *
+     * Struttura identica a plannerWeekDays, ma con 28–31 elementi:
+     * - 'date'  => 'Y-m-d'
+     * - 'label' => es. "lun 01" (in italiano, se locale configurata)
+     *
+     * In Blade sarà accessibile come $this->plannerMonthDays.
+     */
+    public function getPlannerMonthDaysProperty(): array
+    {
+        $base = $this->plannerDate
+            ? Carbon::parse($this->plannerDate)
+            : Carbon::today();
+
+        $start = $base->copy()->startOfMonth()->startOfDay();
+        $end   = $base->copy()->endOfMonth()->startOfDay();
+
+        $days = [];
+        $current = $start->copy();
+
+        while ($current->lessThanOrEqualTo($end)) {
+            $days[] = [
+                'date'  => $current->toDateString(),
+                'label' => $current->translatedFormat('D d'), // es. "lun 01"
+            ];
+
+            $current->addDay();
+        }
+
+        return $days;
+    }
+
+    /**
      * Calcola il range temporale corrente del planner in base a:
-     * - $plannerMode  ('week' | 'day')
+     * - $plannerMode  ('month' | 'week' | 'day')
      * - $plannerDate  (stringa 'Y-m-d')
-     *
-     * Ritorna un array associativo con:
-     * - 'start' => Carbon (inizio range)
-     * - 'end'   => Carbon (fine range)
-     *
-     * Questo metodo verrà riutilizzato sia per:
-     * - la vista settimanale (range lunedì–domenica)
-     * - la vista giornaliera (range giorno singolo)
      */
     protected function getPlannerRange(): array
     {
-        // Se plannerDate è null per qualsiasi motivo, ripieghiamo su oggi
         $base = $this->plannerDate
             ? Carbon::parse($this->plannerDate)
             : Carbon::today();
 
         if ($this->plannerMode === 'day') {
-            // Vista giornaliera: range = intero giorno (00:00–23:59:59)
             $start = $base->copy()->startOfDay();
             $end   = $base->copy()->endOfDay();
+        } elseif ($this->plannerMode === 'month') {
+            $start = $base->copy()->startOfMonth()->startOfDay();
+            $end   = $base->copy()->endOfMonth()->endOfDay();
         } else {
-            // Vista settimanale: range = lunedì–domenica della settimana corrente
             $start = $base->copy()->startOfWeek(Carbon::MONDAY);
             $end   = $base->copy()->endOfWeek(Carbon::SUNDAY);
         }
 
-        return [
-            'start' => $start,
-            'end'   => $end,
-        ];
+        return ['start' => $start, 'end' => $end];
     }
 
     /**
@@ -642,7 +678,9 @@ class RentalsBoard extends Component
     public function getPlannerMatrixProperty(): array
     {
         $vehicles = $this->plannerVehicles;
-        $days     = $this->plannerWeekDays;
+        $days = $this->plannerMode === 'month'
+                ? $this->plannerMonthDays
+                : $this->plannerWeekDays;
         $rentals  = $this->plannerRentals;
 
         $matrix = [];
@@ -767,7 +805,9 @@ class RentalsBoard extends Component
     public function getPlannerBarsProperty(): array
     {
         $vehicles = $this->plannerVehicles;
-        $days     = $this->plannerWeekDays;
+        $days = $this->plannerMode === 'month'
+                ? $this->plannerMonthDays
+                : $this->plannerWeekDays;
         $rentals  = $this->plannerRentals;
 
         // Se per qualche motivo non abbiamo giorni, niente barre

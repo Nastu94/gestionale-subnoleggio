@@ -323,19 +323,27 @@
                     </button>
                 </div>
 
-                {{-- Toggle vista: Settimana / Giorno --}}
+                {{-- Toggle vista: Mese / Settimana / Giorno --}}
                 <div class="flex-1 flex items-center justify-end gap-2">
                     <span class="text-xs uppercase opacity-70">Vista:</span>
                     <div class="join">
                         <button type="button"
                                 class="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibold uppercase
-                                       join-item {{ $plannerMode === 'week' ? 'btn-primary bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700' }}"
+                                    join-item {{ $plannerMode === 'month' ? 'btn-primary bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700' }}"
+                                wire:click="setPlannerMode('month')">
+                            Mese
+                        </button>
+
+                        <button type="button"
+                                class="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibold uppercase
+                                    join-item {{ $plannerMode === 'week' ? 'btn-primary bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700' }}"
                                 wire:click="setPlannerMode('week')">
                             Settimana
                         </button>
+
                         <button type="button"
                                 class="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibold uppercase
-                                       join-item {{ $plannerMode === 'day' ? 'btn-primary bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700' }}"
+                                    join-item {{ $plannerMode === 'day' ? 'btn-primary bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700' }}"
                                 wire:click="setPlannerMode('day')">
                             Giorno
                         </button>
@@ -382,7 +390,32 @@
             </div>
 
             {{-- Griglia base del planner: per ora solo header settimanale / placeholder righe --}}
-            @if($plannerMode === 'week')
+            @if(in_array($plannerMode, ['week', 'month']))
+                @php
+                    /**
+                    * Giorni mostrati nel planner:
+                    * - week  => 7 colonne (lun–dom)
+                    * - month => 28–31 colonne (tutti i giorni del mese)
+                    */
+                    $days = $plannerMode === 'month'
+                        ? $this->plannerMonthDays
+                        : $this->plannerWeekDays;
+
+                    $daysCount = count($days);
+
+                    /**
+                    * Click sull’header giorno:
+                    * - month => apre la settimana del giorno cliccato
+                    * - week  => apre il giorno
+                    */
+                    $dayClickMethod = $plannerMode === 'month' ? 'openPlannerWeek' : 'openPlannerDay';
+
+                    /**
+                    * Griglia colonne dinamica con la stessa regola di larghezza della settimana:
+                    * min 120px per colonna + scroll orizzontale (min-w-max già presente).
+                    */
+                    $daysGridStyle = 'grid-template-columns: repeat(' . $daysCount . ', minmax(120px, 1fr));';
+                @endphp
                 {{-- Vista settimanale: header con colonna veicolo + giorni lun–dom --}}
                 <div class="border rounded-lg overflow-auto bg-gray-50 dark:bg-gray-900/40 max-h-[70vh]">
                     {{-- min-w-max assicura che header e righe abbiano SEMPRE la stessa larghezza,
@@ -400,12 +433,12 @@
 
                             {{-- Parte destra: stessa struttura delle righe (relative + grid 7 colonne) --}}
                             <div class="relative flex-1">
-                                <div class="grid grid-cols-7">
-                                    @foreach($this->plannerWeekDays as $day)
+                                <div class="grid" style="{{ $daysGridStyle }}">
+                                    @foreach($days as $day)
                                         <button
                                             type="button"
                                             class="border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/60 hover:bg-gray-100 dark:hover:bg-gray-800 min-w-[120px] w-full text-center py-2"
-                                            wire:click="openPlannerDay('{{ $day['date'] }}')"
+                                            wire:click="{{ $dayClickMethod }}('{{ $day['date'] }}')"
                                         >
                                             <div class="font-medium">
                                                 {{ ucfirst($day['label']) }}
@@ -437,8 +470,6 @@
                             <div class="bg-white dark:bg-gray-900/40 divide-y divide-gray-200 dark:divide-gray-700">
                                 @foreach($vehicles as $vehicle)
                                     @php
-                                        $weekDays    = $this->plannerWeekDays;
-                                        $daysCount   = count($weekDays);
                                         $vehicleBars = $this->plannerBars[$vehicle->id] ?? [];
                                         $busyDays    = $busyWeek[$vehicle->id] ?? [];
                                     @endphp
@@ -457,9 +488,9 @@
 
                                         {{-- Colonne giorni + barre noleggio --}}
                                         <div class="relative flex-1">
-                                            {{-- Griglia di sfondo: 7 colonne (lun–dom) --}}
-                                            <div class="grid grid-cols-7 h-14">
-                                                @foreach($weekDays as $day)
+                                            {{-- Griglia di sfondo: colonne dinamiche (settimana/mese) --}}
+                                            <div class="grid h-14" style="{{ $daysGridStyle }}">
+                                                @foreach($days as $day)
                                                     @php
                                                         $date   = $day['date'];
                                                         $isBusy = !empty($busyDays[$date]);
@@ -700,8 +731,6 @@
                                                     </div>
                                                 </a>
                                             @endforeach
-
-
                                         </div>
                                     </div>
                                 @endforeach
