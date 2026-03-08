@@ -525,8 +525,10 @@
                                                     $statusLabel = $stateLabels[$rental->status] ?? $rental->status;
                                                     $statusClass = $stateColors[$rental->status] ?? 'bg-gray-100 border-gray-300 text-gray-800';
 
-                                                    $pickup = optional($rental->planned_pickup_at);
-                                                    $return = optional($rental->planned_return_at);
+                                                    // Date effettive del planner:
+                                                    // actual_* se presenti, altrimenti planned_*
+                                                    $pickup = $this->getPlannerDisplayPickupAt($rental);
+                                                    $return = $this->getPlannerDisplayReturnAt($rental);
 
                                                     $left = $bar['start_index'];
                                                     $span = $bar['span'];
@@ -545,7 +547,8 @@
                                                 style="
                                                     left:  calc({{ $left }} * (100% / {{ $daysCount }}));
                                                     width: calc({{ $span }} * (100% / {{ $daysCount }}));
-                                                ">
+                                                "
+                                                title="#{{ $rental->reference ?? $rental->display_number_label }} · {{ optional($rental->customer)->name ?? '—' }} · {{ $pickup ? $pickup->format('d/m H:i') : '—' }} → {{ $return ? $return->format('d/m H:i') : '—' }}">
                                                     <div class="flex items-center justify-start gap-1">
                                                         @if($isOverbooked)
                                                             {{-- Piccola icona di warning per evidenziare il conflitto --}}
@@ -558,9 +561,11 @@
                                                             {{ $rental->reference ?? ($rental->display_number_label) }}
                                                         </div>
                                                     </div>
+
                                                     <div class="text-[9px] opacity-80 truncate">
                                                         {{ optional($rental->customer)->name ?? '—' }}
                                                     </div>
+
                                                     <div class="text-[9px] opacity-60 whitespace-nowrap">
                                                         {{ $pickup ? $pickup->format('d/m H:i') : '—' }}
                                                         →
@@ -690,8 +695,10 @@
 
                                                     $statusClass = $stateColors[$rental->status] ?? 'bg-gray-100 border-gray-300 text-gray-800';
 
-                                                    $pickup = optional($rental->planned_pickup_at);
-                                                    $return = optional($rental->planned_return_at);
+                                                    // Date effettive del planner:
+                                                    // actual_* se presenti, altrimenti planned_*
+                                                    $pickup = $this->getPlannerDisplayPickupAt($rental);
+                                                    $return = $this->getPlannerDisplayReturnAt($rental);
 
                                                     $left = $bar['start_index'];
                                                     $span = $bar['span'];
@@ -717,13 +724,16 @@
                                                                 ⚠
                                                             </span>
                                                         @endif
+
                                                         <div class="font-semibold truncate">
                                                             {{ $rental->reference ?? $rental->display_number_label }}
                                                         </div>
                                                     </div>
+
                                                     <div class="text-[9px] opacity-80 truncate">
                                                         {{ optional($rental->customer)->name ?? '—' }}
                                                     </div>
+
                                                     <div class="text-[9px] opacity-60 whitespace-nowrap">
                                                         {{ $pickup ? $pickup->format('H:i') : '—' }}
                                                         →

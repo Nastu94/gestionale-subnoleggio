@@ -23,6 +23,8 @@ use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\VehicleDocumentController;
 use App\Http\Controllers\VehiclePhotoController;
 
+use App\Http\Controllers\Admin\ReportPresetRunController;
+use App\Http\Controllers\Admin\ReportPresetController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\AuditController;
 
@@ -655,6 +657,45 @@ Route::middleware([
         ->name('reports.index')
         ->middleware('permission:reports.view');
 
+    /**
+     * Esegue un preset report e restituisce i dati (JSON).
+     * Permesso: manage.renters (perché i preset sono creati dagli admin)
+     */
+    Route::get('/admin/report-presets/{reportPreset}/run', ReportPresetRunController::class)
+        ->name('admin.report-presets.run')
+        ->middleware('can:manage.renters');
+
+    /**
+     * Elenca i preset report salvati.
+     * Permesso: manage.renters (perché i preset sono creati dagli admin)
+     */
+    Route::get('/admin/report-presets', [ReportPresetController::class, 'index'])
+        ->name('admin.report-presets.index')
+        ->middleware('can:manage.renters');
+
+    /**
+     * Salva un preset report.
+     * Permesso: manage.renters (perché i preset sono creati dagli admin)
+     */
+    Route::post('/admin/report-presets', [ReportPresetController::class, 'store'])
+        ->name('admin.report-presets.store')
+        ->middleware('can:manage.renters');
+
+    /**
+     * Mostra il dettaglio di un preset report.
+     * Permesso: manage.renters (perché i preset sono creati dagli admin
+     */
+    Route::get('/admin/report-presets/{reportPreset}', [ReportPresetController::class, 'show'])
+        ->name('admin.report-presets.show')
+        ->middleware('can:manage.renters');
+
+    /**
+     * Aggiorna un preset report esistente.
+     * Permesso: manage.renters (perché i preset sono creati dagli admin
+     */
+    Route::put('/admin/report-presets/{reportPreset}', [ReportPresetController::class, 'update'])
+        ->name('admin.report-presets.update')
+        ->middleware('can:manage.renters');
     /*
     | Audit – log eventi/azioni
     | Permesso: audit.view

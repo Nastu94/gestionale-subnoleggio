@@ -597,23 +597,93 @@ class RentalsBoard extends Component
     }
 
     /**
-     * Noleggi da usare nel planner (settimana/giorno).
+     * Restituisce la data/ora di ritiro "effettiva" da usare nel planner.
+     *
+     * Priorità:
+     * 1. actual_pickup_at
+     * 2. planned_pickup_at
+     *
+     * Nota importante:
+     * il fallback è PER CAMPO, non "a coppia".
+     * Quindi se actual_pickup_at esiste ma actual_return_at no,
+     * useremo comunque actual_pickup_at e planned_return_at.
+     */
+    protected function getPlannerEffectivePickupAt(Rental $rental): ?Carbon
+    {
+        $pickupAt = $rental->actual_pickup_at ?: $rental->planned_pickup_at;
+
+        if (! $pickupAt) {
+            return null;
+        }
+
+        return $pickupAt instanceof Carbon
+            ? $pickupAt->copy()
+            : Carbon::parse($pickupAt);
+    }
+
+    /**
+     * Restituisce la data/ora di riconsegna "effettiva" da usare nel planner.
+     *
+     * Priorità:
+     * 1. actual_return_at
+     * 2. planned_return_at
+     *
+     * Anche qui il fallback è per singolo campo.
+     */
+    protected function getPlannerEffectiveReturnAt(Rental $rental): ?Carbon
+    {
+        $returnAt = $rental->actual_return_at ?: $rental->planned_return_at;
+
+        if (! $returnAt) {
+            return null;
+        }
+
+        return $returnAt instanceof Carbon
+            ? $returnAt->copy()
+            : Carbon::parse($returnAt);
+    }
+
+    /**
+     * Espone alla Blade la data/ora di ritiro effettiva del planner.
+     *
+     * La Blade non deve conoscere la logica di fallback:
+     * - actual_pickup_at
+     * - planned_pickup_at
+     */
+    public function getPlannerDisplayPickupAt(Rental $rental): ?Carbon
+    {
+        return $this->getPlannerEffectivePickupAt($rental);
+    }
+
+    /**
+     * Espone alla Blade la data/ora di rientro effettiva del planner.
+     *
+     * La Blade non deve conoscere la logica di fallback:
+     * - actual_return_at
+     * - planned_return_at
+     */
+    public function getPlannerDisplayReturnAt(Rental $rental): ?Carbon
+    {
+        return $this->getPlannerEffectiveReturnAt($rental);
+    }
+
+    /**
+     * Recupera i noleggi da mostrare nel planner corrente.
      *
      * Regole:
-     * - Subiscono le stesse restrizioni di visibilità dell'utente
-     *   (admin / renter / sub-renter) via restrictToViewer().
-     * - Applicano la ricerca libera $q (id + nome cliente).
-     * - Applicano il filtro di stato del PLANNER ($plannerStatusFilter),
-     *   che è indipendente da $state (usato da tabella/bacheca).
-     * - Devono "toccare" il range temporale del planner:
-     *   [planned_pickup_at, planned_return_at] si sovrappone al range
-     *   [start, end] calcolato da getPlannerRange().
+     * - devono essere visibili all'utente corrente;
+     * - devono rispettare la ricerca libera e il filtro stato planner;
+     * - devono "toccare" il range temporale corrente del planner.
+     *
+     * Per il planner usiamo SEMPRE le date effettive con fallback:
+     * - pickup  => COALESCE(actual_pickup_at, planned_pickup_at)
+     * - return  => COALESCE(actual_return_at, planned_return_at)
      *
      * In Blade useremo $this->plannerRentals.
      */
     public function getPlannerRentalsProperty()
     {
-        // Range corrente del planner (settimana intera o singolo giorno)
+        // Range corrente del planner (mese / settimana / giorno)
         $range = $this->getPlannerRange();
         $start = $range['start']->copy()->startOfDay();
         $end   = $range['end']->copy()->endOfDay();
@@ -627,42 +697,41 @@ class RentalsBoard extends Component
         // Applichiamo la ricerca libera (id + nome cliente)
         $q = $this->applySearch($q);
 
-        // Filtro di stato specifico del PLANNER:
+        // Filtro di stato specifico del planner:
         // - 'all' => nessun filtro aggiuntivo
         // - altro => where status = valore scelto
         if ($this->plannerStatusFilter !== 'all') {
             $q->where('status', $this->plannerStatusFilter);
         }
 
-        // Sovrapposizione con il range del planner:
-        // includiamo solo i noleggi il cui intervallo
-        // [planned_pickup_at, planned_return_at] "tocca" [start, end].
+        // Sovrapposizione con il range del planner usando le date effettive
+        // con fallback sulle pianificate.
         $q->where(function (Builder $overlap) use ($start, $end) {
             $overlap
-                // Il ritiro deve avvenire PRIMA o entro la fine del range
-                ->where('planned_pickup_at', '<=', $end)
-                // E la riconsegna deve essere DOPO o entro l'inizio del range,
-                // oppure NULL (noleggio ancora aperto).
+                // Il pickup effettivo deve avvenire prima o entro la fine del range
+                ->whereRaw('COALESCE(actual_pickup_at, planned_pickup_at) <= ?', [$end])
+                // Il return effettivo deve essere dopo o entro l'inizio del range,
+                // oppure NULL (intervallo ancora aperto).
                 ->where(function (Builder $inner) use ($start) {
                     $inner
-                        ->whereNull('planned_return_at')
-                        ->orWhere('planned_return_at', '>=', $start);
+                        ->whereRaw('COALESCE(actual_return_at, planned_return_at) IS NULL')
+                        ->orWhereRaw('COALESCE(actual_return_at, planned_return_at) >= ?', [$start]);
                 });
         });
 
-        // Precarichiamo le relazioni che sicuramente serviranno nel planner
+        // Precarichiamo le relazioni necessarie nel planner
         return $q
             ->with(['vehicle', 'customer'])
             ->get();
     }
 
     /**
-     * Matrice veicolo × giorno per la vista settimanale del planner.
+     * Matrice veicolo × giorno per la vista del planner.
      *
      * Struttura:
      * [
      *   vehicle_id => [
-     *       'YYYY-MM-DD' => [ Rental, Rental, ... ],   // noleggi che toccano quel giorno
+     *       'YYYY-MM-DD' => [ Rental, Rental, ... ],
      *       ...
      *   ],
      *   ...
@@ -670,8 +739,8 @@ class RentalsBoard extends Component
      *
      * - Considera solo i rentals già filtrati da getPlannerRentalsProperty().
      * - Considera solo i veicoli presenti in plannerVehicles.
-     * - Un rental viene associato a tutti i giorni della settimana in cui
-     *   il suo intervallo [pickup, return] si sovrappone a quel giorno.
+     * - Un rental viene associato a tutti i giorni visibili in cui
+     *   il suo intervallo effettivo [pickup, return] si sovrappone al giorno.
      *
      * In Blade useremo $this->plannerMatrix.
      */
@@ -695,11 +764,10 @@ class RentalsBoard extends Component
             }
         }
 
-        // Indichiamo velocemente i giorni della settimana come Carbon,
-        // così evitiamo di fare parse ripetute dentro i loop dei rentals.
-        $dayRanges = [];
+        // Precalcoliamo i range dei singoli giorni visibili
         foreach ($days as $day) {
             $dayDate = Carbon::parse($day['date']);
+
             $dayRanges[$day['date']] = [
                 'start' => $dayDate->copy()->startOfDay(),
                 'end'   => $dayDate->copy()->endOfDay(),
@@ -713,33 +781,30 @@ class RentalsBoard extends Component
                 continue;
             }
 
-            // Otteniamo gli estremi dell'intervallo del rental
-            $pickupAt = $rental->planned_pickup_at
-                ? Carbon::parse($rental->planned_pickup_at)
-                : null;
+            // Usiamo le date effettive del planner
+            $pickupAt = $this->getPlannerEffectivePickupAt($rental);
+            $returnAt = $this->getPlannerEffectiveReturnAt($rental);
 
-            $returnAt = $rental->planned_return_at
-                ? Carbon::parse($rental->planned_return_at)
-                : null;
-
-            // Se manca la data di ritiro, il rental è "sospetto": per ora lo ignoriamo nel planner
+            // Se manca la data di ritiro, non possiamo collocare il rental nel planner
             if (! $pickupAt) {
                 continue;
             }
 
-            // Se manca la return, consideriamo l'intervallo aperto verso il futuro
+            // Se manca la data di rientro, consideriamo un intervallo aperto verso il futuro
             if (! $returnAt) {
-                $returnAt = $pickupAt->copy()->addMonth(); // placeholder ampio: tanto poi filtriamo per giorni effettivi
+                $returnAt = $pickupAt->copy()->addMonth();
             }
 
-            // Per ogni giorno della settimana corrente, controlliamo overlap
+            // Intervallo non valido: lo ignoriamo
+            if ($returnAt->lt($pickupAt)) {
+                continue;
+            }
+
+            // Per ogni giorno visibile, controlliamo la sovrapposizione
             foreach ($dayRanges as $dateKey => $range) {
                 $dayStart = $range['start'];
                 $dayEnd   = $range['end'];
 
-                // Condizione di sovrapposizione a livello di GIORNO:
-                // il rental "tocca" il giorno se il suo intervallo
-                // [pickupAt, returnAt] si sovrappone a [dayStart, dayEnd].
                 $overlaps =
                     $pickupAt->lte($dayEnd) &&
                     $returnAt->gte($dayStart);
@@ -783,7 +848,7 @@ class RentalsBoard extends Component
     }
 
     /**
-     * Barre continue per la vista settimanale del planner.
+     * Barre continue per la vista settimanale/mensile del planner.
      *
      * Ritorna un array indicizzato per veicolo:
      *
@@ -791,16 +856,14 @@ class RentalsBoard extends Component
      *   vehicle_id => [
      *      [
      *          'rental'      => Rental,
-     *          'start_index' => 0..6,   // indice colonna di inizio (0 = lunedì)
-     *          'end_index'   => 0..6,   // indice colonna di fine
-     *          'span'        => 1..7,   // numero di giorni coperti
+     *          'start_index' => int,
+     *          'end_index'   => int,
+     *          'span'        => int,
      *      ],
      *      ...
      *   ],
      *   ...
      * ]
-     *
-     * Verrà usato SOLO nella vista settimanale per disegnare barre orizzontali.
      */
     public function getPlannerBarsProperty(): array
     {
@@ -822,13 +885,13 @@ class RentalsBoard extends Component
             $barsByVehicle[$vehicle->id] = [];
         }
 
-        // Mappa data -> indice colonna (0..6)
+        // Mappa data -> indice colonna
         $indexByDate = [];
         foreach ($days as $idx => $day) {
             $indexByDate[$day['date']] = $idx;
         }
 
-        // Estremi della settimana (in realtà del range settimanale)
+        // Estremi del range visibile
         $weekStart = Carbon::parse($days[0]['date'])->startOfDay();
         $weekEnd   = Carbon::parse($days[count($days) - 1]['date'])->endOfDay();
 
@@ -839,31 +902,39 @@ class RentalsBoard extends Component
                 continue;
             }
 
-            // Se manca la data di ritiro, non sappiamo dove piazzare la barra
-            if (! $rental->planned_pickup_at) {
+            // Usiamo le date effettive del planner
+            $pickupAt = $this->getPlannerEffectivePickupAt($rental);
+
+            // Se manca il pickup, non sappiamo dove piazzare la barra
+            if (! $pickupAt) {
                 continue;
             }
 
-            $pickupAt = Carbon::parse($rental->planned_pickup_at);
+            $returnAt = $this->getPlannerEffectiveReturnAt($rental);
 
             // Se manca la data di fine, consideriamo il noleggio aperto
-            $returnAt = $rental->planned_return_at
-                ? Carbon::parse($rental->planned_return_at)
-                : $pickupAt->copy()->addYear();
+            if (! $returnAt) {
+                $returnAt = $pickupAt->copy()->addYear();
+            }
 
-            // Se l'intervallo è completamente fuori dalla settimana, saltiamo
+            // Intervallo non valido
+            if ($returnAt->lt($pickupAt)) {
+                continue;
+            }
+
+            // Se l'intervallo è completamente fuori dal range visibile, saltiamo
             if ($returnAt->lt($weekStart) || $pickupAt->gt($weekEnd)) {
                 continue;
             }
 
-            // "Clippiamo" l'intervallo alla settimana visibile
+            // Clippiamo l'intervallo al range visibile
             $clampedStart = $pickupAt->lt($weekStart) ? $weekStart->copy() : $pickupAt->copy();
             $clampedEnd   = $returnAt->gt($weekEnd)   ? $weekEnd->copy()   : $returnAt->copy();
 
             $startDateKey = $clampedStart->toDateString();
             $endDateKey   = $clampedEnd->toDateString();
 
-            // Indici colonna: se per qualche motivo non troviamo la data, ripieghiamo su estremi
+            // Indici colonna: fallback agli estremi se la data non fosse trovata
             $startIndex = $indexByDate[$startDateKey] ?? 0;
             $endIndex   = $indexByDate[$endDateKey]   ?? (count($days) - 1);
 
@@ -888,19 +959,14 @@ class RentalsBoard extends Component
      * Identifica i noleggi in overbooking nel planner.
      *
      * Logica:
-     * - Lavora sui noleggi già filtrati da getPlannerRentalsProperty():
-     *   - visibilità (restrictToViewer),
-     *   - ricerca libera,
-     *   - filtro stato planner,
-     *   - range temporale settimana/giorno.
-     * - Raggruppa i noleggi per veicolo.
-     * - Per ogni veicolo ordina i noleggi per planned_pickup_at.
-     * - Due noleggi A e B sullo stesso veicolo sono in conflitto se:
+     * - lavora sui noleggi già filtrati da getPlannerRentalsProperty();
+     * - raggruppa i noleggi per veicolo;
+     * - ordina per pickup effettivo;
+     * - segnala conflitto se due intervalli effettivi si sovrappongono:
      *      A.start < B.end  E  B.start < A.end
-     *   (sovrapposizione a livello di data/ora, non solo di giorno).
      *
-     * Ritorna un array “piatto” di id di Rental che partecipano
-     * ad almeno un conflitto (ognuno una sola volta).
+     * Ritorna un array piatto di id di Rental coinvolti
+     * in almeno un conflitto.
      *
      * In Blade useremo $this->plannerOverbookedRentalIds.
      */
@@ -917,9 +983,13 @@ class RentalsBoard extends Component
         $overbookedIds = [];
 
         foreach ($grouped as $vehicleId => $list) {
-            // Ordiniamo per orario di ritiro
+            // Ordiniamo per pickup effettivo
             $sorted = $list
-                ->sortBy(fn ($r) => $r->planned_pickup_at ?? '1970-01-01')
+                ->sortBy(function ($r) {
+                    $pickupAt = $this->getPlannerEffectivePickupAt($r);
+
+                    return $pickupAt ? $pickupAt->format('Y-m-d H:i:s') : '1970-01-01 00:00:00';
+                })
                 ->values();
 
             $count = $sorted->count();
@@ -927,38 +997,51 @@ class RentalsBoard extends Component
             for ($i = 0; $i < $count; $i++) {
                 $a = $sorted[$i];
 
-                // Se manca la data di ritiro, non possiamo valutare correttamente l'intervallo
-                if (! $a->planned_pickup_at) {
+                $aStart = $this->getPlannerEffectivePickupAt($a);
+
+                // Se manca la data di ritiro, non possiamo valutare l'intervallo
+                if (! $aStart) {
                     continue;
                 }
 
-                $aStart = Carbon::parse($a->planned_pickup_at);
+                $aEnd = $this->getPlannerEffectiveReturnAt($a);
 
                 // Se manca la fine, consideriamo il noleggio aperto a lungo nel futuro
-                $aEnd = $a->planned_return_at
-                    ? Carbon::parse($a->planned_return_at)
-                    : $aStart->copy()->addYear();
+                if (! $aEnd) {
+                    $aEnd = $aStart->copy()->addYear();
+                }
+
+                // Intervallo non valido
+                if ($aEnd->lt($aStart)) {
+                    continue;
+                }
 
                 for ($j = $i + 1; $j < $count; $j++) {
                     $b = $sorted[$j];
 
-                    if (! $b->planned_pickup_at) {
+                    $bStart = $this->getPlannerEffectivePickupAt($b);
+
+                    if (! $bStart) {
                         continue;
                     }
 
-                    $bStart = Carbon::parse($b->planned_pickup_at);
-                    $bEnd = $b->planned_return_at
-                        ? Carbon::parse($b->planned_return_at)
-                        : $bStart->copy()->addYear();
+                    $bEnd = $this->getPlannerEffectiveReturnAt($b);
 
-                    // Ottimizzazione: se B inizia dopo/uguale alla fine di A,
-                    // i successivi inizieranno ancora più tardi → possiamo interrompere.
+                    if (! $bEnd) {
+                        $bEnd = $bStart->copy()->addYear();
+                    }
+
+                    if ($bEnd->lt($bStart)) {
+                        continue;
+                    }
+
+                    // Ottimizzazione: se B inizia dopo o uguale alla fine di A,
+                    // i successivi inizieranno ancora più tardi.
                     if ($bStart->gte($aEnd)) {
                         break;
                     }
 
-                    // Condizione di sovrapposizione a livello di data/ora:
-                    // intervalli [aStart, aEnd] e [bStart, bEnd] si sovrappongono?
+                    // Sovrapposizione a livello di data/ora
                     $overlaps = $aStart->lt($bEnd) && $bStart->lt($aEnd);
 
                     if ($overlaps) {
@@ -969,7 +1052,7 @@ class RentalsBoard extends Component
             }
         }
 
-        // Rimuoviamo duplicati e ritorniamo un array di id “pulito”
+        // Rimuoviamo duplicati e ritorniamo un array pulito
         return array_values(array_unique($overbookedIds));
     }
 
@@ -1005,15 +1088,14 @@ class RentalsBoard extends Component
     /**
      * Barre continue per la vista GIORNALIERA del planner.
      *
-     * Struttura identica a plannerBars (settimanale), ma con 24 colonne (ore):
-     *
+     * Struttura:
      * [
      *   vehicle_id => [
      *      [
      *          'rental'      => Rental,
-     *          'start_index' => 0..23,  // indice colonna ora di inizio
-     *          'end_index'   => 0..23,  // indice colonna ora di fine
-     *          'span'        => 1..24,  // numero di ore coperte
+     *          'start_index' => 0..23,
+     *          'end_index'   => 0..23,
+     *          'span'        => 1..24,
      *      ],
      *      ...
      *   ],
@@ -1049,16 +1131,25 @@ class RentalsBoard extends Component
                 continue;
             }
 
-            if (! $rental->planned_pickup_at) {
+            // Usiamo le date effettive del planner
+            $pickupAt = $this->getPlannerEffectivePickupAt($rental);
+
+            if (! $pickupAt) {
                 continue;
             }
 
-            $pickupAt = Carbon::parse($rental->planned_pickup_at);
-            $returnAt = $rental->planned_return_at
-                ? Carbon::parse($rental->planned_return_at)
-                : $pickupAt->copy()->addYear();
+            $returnAt = $this->getPlannerEffectiveReturnAt($rental);
 
-            // Intervallo completamente fuori dal giorno selezionato → salta
+            if (! $returnAt) {
+                $returnAt = $pickupAt->copy()->addYear();
+            }
+
+            // Intervallo non valido
+            if ($returnAt->lt($pickupAt)) {
+                continue;
+            }
+
+            // Intervallo completamente fuori dal giorno selezionato
             if ($returnAt->lt($dayStart) || $pickupAt->gt($dayEnd)) {
                 continue;
             }
@@ -1079,8 +1170,7 @@ class RentalsBoard extends Component
                 $startMinutes = 0;
             }
 
-            // Convertiamo in indici di "slot orari"
-            // slot = floor(minuti/60), manteniamo fine inclusivo
+            // Convertiamo in indici di slot orari
             $startIndex = intdiv($startMinutes, 60);
             $endIndex   = intdiv(max($endMinutes - 1, 0), 60);
 
@@ -1111,8 +1201,8 @@ class RentalsBoard extends Component
      * Ritorna:
      * [
      *   vehicle_id => [
-     *      0 => bool, // ora 00:00–01:00 occupata?
-     *      1 => bool, // 01:00–02:00
+     *      0 => bool,
+     *      1 => bool,
      *      ...
      *      23 => bool,
      *   ],
@@ -1123,7 +1213,7 @@ class RentalsBoard extends Component
     {
         $busy = [];
 
-        if (!$this->plannerRentals || $this->plannerRentals->isEmpty()) {
+        if (! $this->plannerRentals || $this->plannerRentals->isEmpty()) {
             return [];
         }
 
@@ -1133,33 +1223,29 @@ class RentalsBoard extends Component
         $dayEnd   = $dayStart->copy()->addDay(); // [dayStart, dayEnd)
 
         foreach ($this->plannerRentals as $rental) {
-            if (!$rental->vehicle_id) {
+            if (! $rental->vehicle_id) {
                 continue;
             }
 
-            if (!$rental->planned_pickup_at || !$rental->planned_return_at) {
+            // Usiamo le date effettive del planner
+            $start = $this->getPlannerEffectivePickupAt($rental);
+            $end   = $this->getPlannerEffectiveReturnAt($rental);
+
+            if (! $start || ! $end) {
                 continue;
             }
 
-            $start = $rental->planned_pickup_at instanceof Carbon
-                ? $rental->planned_pickup_at->copy()
-                : Carbon::parse($rental->planned_pickup_at);
-
-            $end = $rental->planned_return_at instanceof Carbon
-                ? $rental->planned_return_at->copy()
-                : Carbon::parse($rental->planned_return_at);
-
-            // intervallo non valido
+            // Intervallo non valido
             if ($end <= $start) {
                 continue;
             }
 
-            // nessuna sovrapposizione col giorno
+            // Nessuna sovrapposizione col giorno
             if ($end <= $dayStart || $start >= $dayEnd) {
                 continue;
             }
 
-            // tronchiamo agli estremi del giorno
+            // Tronchiamo agli estremi del giorno
             $segmentStart = $start->lessThan($dayStart) ? $dayStart : $start;
             $segmentEnd   = $end->greaterThan($dayEnd)  ? $dayEnd   : $end;
 
@@ -1167,11 +1253,11 @@ class RentalsBoard extends Component
                 continue;
             }
 
-            // minuti dall'inizio giornata
+            // Minuti dall'inizio giornata
             $startMin = $dayStart->diffInMinutes($segmentStart, false);
             $endMin   = $dayStart->diffInMinutes($segmentEnd, false); // esclusivo
 
-            // clamp
+            // Clamp
             $startMin = max(0, min(24 * 60, $startMin));
             $endMin   = max(0, min(24 * 60, $endMin));
 
@@ -1179,17 +1265,17 @@ class RentalsBoard extends Component
                 continue;
             }
 
-            // quali ore tocca? [startMin, endMin) vs blocchi [h*60, (h+1)*60)
-            $fromHour = intdiv($startMin, 60);
+            // Quali ore tocca? [startMin, endMin) vs blocchi [h*60, (h+1)*60)
+            $fromHour   = intdiv($startMin, 60);
             $lastMinute = $endMin - 1;
-            $toHour   = intdiv(max(0, $lastMinute), 60);
+            $toHour     = intdiv(max(0, $lastMinute), 60);
 
             $fromHour = max(0, min(23, $fromHour));
             $toHour   = max(0, min(23, $toHour));
 
             $vehicleId = $rental->vehicle_id;
 
-            if (!isset($busy[$vehicleId])) {
+            if (! isset($busy[$vehicleId])) {
                 $busy[$vehicleId] = array_fill(0, 24, false);
             }
 
