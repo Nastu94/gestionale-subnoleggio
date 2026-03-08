@@ -273,10 +273,12 @@ class Form extends Component
                 $this->saving = false;
                 return;
             }
-
             $save['admin_organization_id']      = $adminOrgId;
             $save['default_pickup_location_id'] = $firstLocId;
             $save['is_active']                  = 1;
+
+            $vehicle = Vehicle::create($save);
+            $this->dispatch('toast', ['type' => 'success', 'message' => 'Veicolo creato.']);
         }
 
         $this->redirectRoute('vehicles.show', ['vehicle' => $vehicle], navigate: true);
