@@ -173,45 +173,102 @@
                     <dd class="font-medium">{{ optional($rental->returnLocation)->name ?? '—' }}</dd>
                 </div>
 
+                @php
+                    /**
+                     * Mettiamo in sicurezza la sezione coperture:
+                     * - la relazione coverage può essere nulla;
+                     * - anche il vehicle può essere nullo su record incompleti;
+                     * - le franchigie di fallback vengono lette dal veicolo solo se disponibili.
+                     */
+                    $coverage = $rental->coverage;
+                    $vehicle = $rental->vehicle;
+
+                    $defaultFranchiseRca = ($vehicle && $vehicle->insurance_rca_cents !== null)
+                        ? ((float) $vehicle->insurance_rca_cents / 100)
+                        : null;
+
+                    $defaultFranchiseKasko = ($vehicle && $vehicle->insurance_kasko_cents !== null)
+                        ? ((float) $vehicle->insurance_kasko_cents / 100)
+                        : null;
+
+                    $defaultFranchiseFurtoIncendio = ($vehicle && $vehicle->insurance_furto_cents !== null)
+                        ? ((float) $vehicle->insurance_furto_cents / 100)
+                        : null;
+
+                    $defaultFranchiseCristalli = ($vehicle && $vehicle->insurance_cristalli_cents !== null)
+                        ? ((float) $vehicle->insurance_cristalli_cents / 100)
+                        : null;
+                @endphp
+
                 <div>
                     <dt class="opacity-70">Copertura RCA</dt>
-                    <dd class="font-medium">{{ $rental->coverage->rca ? 'Sì' : 'No' }}</dd>
+                    <dd class="font-medium">
+                        {{ $coverage ? ($coverage->rca ? 'Sì' : 'No') : '—' }}
+                    </dd>
                 </div>
                 <div>
                     <dt class="opacity-70">Franchigia RCA</dt>
-                    <dd class="font-medium">{{ $rental->coverage->rca ? ($rental->coverage->franchise_rca ?? $rental->vehicle->insurance_rca_cents/100) . ' €' : '—' }}</dd>
+                    @php
+                        $franchiseRca = $coverage?->franchise_rca ?? $defaultFranchiseRca;
+                    @endphp
+                    <dd class="font-medium">
+                        {{ ($coverage && $coverage->rca && $franchiseRca !== null) ? number_format((float) $franchiseRca, 2, ',', '.') . ' €' : '—' }}
+                    </dd>
                 </div>
 
                 <div>
                     <dt class="opacity-70">Copertura Kasko</dt>
-                    <dd class="font-medium">{{ $rental->coverage->kasko ? 'Sì' : 'No' }}</dd>
+                    <dd class="font-medium">
+                        {{ $coverage ? ($coverage->kasko ? 'Sì' : 'No') : '—' }}
+                    </dd>
                 </div>
                 <div>
                     <dt class="opacity-70">Franchigia Kasko</dt>
-                    <dd class="font-medium">{{ $rental->coverage->kasko ? ($rental->coverage->franchise_kasko ?? $rental->vehicle->insurance_kasko_cents/100) . ' €' : '—' }}</dd>
+                    @php
+                        $franchiseKasko = $coverage?->franchise_kasko ?? $defaultFranchiseKasko;
+                    @endphp
+                    <dd class="font-medium">
+                        {{ ($coverage && $coverage->kasko && $franchiseKasko !== null) ? number_format((float) $franchiseKasko, 2, ',', '.') . ' €' : '—' }}
+                    </dd>
                 </div>
 
                 <div>
                     <dt class="opacity-70">Copertura Furto e Incendio</dt>
-                    <dd class="font-medium">{{ $rental->coverage->furto_incendio ? 'Sì' : 'No' }}</dd>
+                    <dd class="font-medium">
+                        {{ $coverage ? ($coverage->furto_incendio ? 'Sì' : 'No') : '—' }}
+                    </dd>
                 </div>
                 <div>
                     <dt class="opacity-70">Franchigia Furto e Incendio</dt>
-                    <dd class="font-medium">{{ $rental->coverage->furto_incendio ? ($rental->coverage->franchise_furto_incendio ?? $rental->vehicle->insurance_furto_cents/100) . ' €' : '—' }}</dd>
+                    @php
+                        $franchiseFurtoIncendio = $coverage?->franchise_furto_incendio ?? $defaultFranchiseFurtoIncendio;
+                    @endphp
+                    <dd class="font-medium">
+                        {{ ($coverage && $coverage->furto_incendio && $franchiseFurtoIncendio !== null) ? number_format((float) $franchiseFurtoIncendio, 2, ',', '.') . ' €' : '—' }}
+                    </dd>
                 </div>
 
                 <div>
                     <dt class="opacity-70">Copertura Cristalli</dt>
-                    <dd class="font-medium">{{ $rental->coverage->cristalli ? 'Sì' : 'No' }}</dd>
+                    <dd class="font-medium">
+                        {{ $coverage ? ($coverage->cristalli ? 'Sì' : 'No') : '—' }}
+                    </dd>
                 </div>
                 <div>
                     <dt class="opacity-70">Franchigia Cristalli</dt>
-                    <dd class="font-medium">{{ $rental->coverage->cristalli ? ($rental->coverage->franchise_cristalli ?? $rental->vehicle->insurance_cristalli_cents/100) . ' €' : '—' }}</dd>
+                    @php
+                        $franchiseCristalli = $coverage?->franchise_cristalli ?? $defaultFranchiseCristalli;
+                    @endphp
+                    <dd class="font-medium">
+                        {{ ($coverage && $coverage->cristalli && $franchiseCristalli !== null) ? number_format((float) $franchiseCristalli, 2, ',', '.') . ' €' : '—' }}
+                    </dd>
                 </div>
 
                 <div>
                     <dt class="opacity-70">Copertura Assistenza</dt>
-                    <dd class="font-medium">{{ $rental->coverage->assistenza ? 'Sì' : 'No' }}</dd>
+                    <dd class="font-medium">
+                        {{ $coverage ? ($coverage->assistenza ? 'Sì' : 'No') : '—' }}
+                    </dd>
                 </div>
 
             </dl>
