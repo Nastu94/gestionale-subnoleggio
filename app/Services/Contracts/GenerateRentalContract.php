@@ -69,6 +69,23 @@ class GenerateRentalContract
                 ->where('name', 'AMD Mobility')
                 ->first();
 
+        /**
+         * Dati AMD Point:
+         * se l'organizzazione del noleggio non ha una licenza valida,
+         * mostriamo a destra i suoi dati come "AMD Point".
+         */
+        $pointOrg = (!$hasValidLicense && $org)
+            ? [
+                'name'    => $org->name ?? null,
+                'vat'     => $org->vat ?? null,
+                'address' => $org->address_line ?? null,
+                'zip'     => $org->postal_code ?? null,
+                'city'    => $org->city ?? null,
+                'phone'   => $org->phone ?? null,
+                'email'   => $org->email ?? null,
+            ]
+            : null;
+
         // ---------------------------------------------------------------------
         // 2) PRICING
         // ---------------------------------------------------------------------
@@ -531,6 +548,10 @@ class GenerateRentalContract
                 'phone'   => $lessorOrg?->phone ?? null,
                 'email'   => $lessorOrg?->email ?? null,
             ],
+
+            // NEW — gestione doppio box noleggiante / AMD Point
+            'show_dual_lessor_box' => !$hasValidLicense && !empty($pointOrg),
+            'point_org'            => $pointOrg,
 
             'pricing_totals' => [
                 'currency'                 => (string) $snapCurrency,

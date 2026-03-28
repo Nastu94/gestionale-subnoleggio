@@ -74,7 +74,7 @@ Route::middleware([
     */
     Route::get('/customers', [CustomerController::class, 'index'])
         ->name('customers.index')
-        ->middleware('permission:customers.viewAny');
+        ->middleware('can:manage.renters');
 
     /*
     | Dettaglio cliente
@@ -82,7 +82,7 @@ Route::middleware([
     */
     Route::get('/customers/{customer}', [CustomerController::class, 'show'])
         ->name('customers.show')
-        ->middleware('permission:customers.view');
+        ->middleware('can:manage.renters');
 
     /*
     | Crea cliente (POST) – form via SPA/modale o pagina separata
@@ -703,4 +703,26 @@ Route::middleware([
     Route::get('/audit', [AuditController::class, 'index'])
         ->name('audit.index')
         ->middleware('permission:audit.view');
+
+/*
+|--------------------------------------------------------------------------
+| STAMPA MODULI VUOTI DI EMERGENZA
+|--------------------------------------------------------------------------
+*/
+
+    /*
+    | Stampa contratto vuoto (PDF)
+    | Permesso: rentals.viewAny
+    */
+    Route::get('/print/contracts/blank', [DashboardController::class, 'printBlankContract'])
+        ->name('contracts.blank.print')
+        ->middleware('permission:rentals.viewAny');
+
+    /*
+    | Stampa checklist vuota (PDF)
+    | Permesso: rentals.viewAny
+    */
+    Route::get('/print/checklists/blank', [DashboardController::class, 'printBlankChecklist'])
+        ->name('checklists.blank.print')
+        ->middleware('permission:rentals.viewAny');
 });

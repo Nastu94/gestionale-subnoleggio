@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Barryvdh\DomPDF\Facade\Pdf;
 use App\Models\{
     Vehicle,
     VehicleState,
@@ -78,6 +79,477 @@ class DashboardController extends Controller
         ];
 
         return view('dashboard', compact('badges'));
+    }
+
+    /**
+     * Stampa un contratto vuoto di emergenza.
+     *
+     * Obiettivo:
+     * - usare la stessa Blade del contratto reale;
+     * - precompilare solo i dati del noleggiante secondo la logica della licenza;
+     * - lasciare il resto il più possibile vuoto per la compilazione manuale.
+     */
+    public function printBlankContract(Request $request)
+    {
+        /** @var \App\Models\User|null $user */
+        $user = Auth::user();
+
+        /** @var \App\Models\Organization|null $userOrganization */
+        $userOrganization = $user?->organization;
+
+        /**
+         * Risolve l'organizzazione "noleggiante" da usare nel PDF vuoto.
+         *
+         * Regola applicata:
+         * - se l'organizzazione corrente è admin, usiamo quella;
+         * - se è renter con licenza valida e non scaduta, usiamo quella;
+         * - altrimenti fallback su una organization admin.
+         *
+         * Nota:
+         * questa è la miglior approssimazione possibile qui, senza avere
+         * il contesto di uno specifico noleggio/veicolo.
+         */
+        $lessorOrganization = $this->resolveBlankContractLessorOrganization($userOrganization);
+
+        /**
+         * Stabilisce se l'organizzazione dell'utente ha una licenza valida.
+         *
+         * Se non la possiede, nel PDF mostreremo:
+         * - a sinistra il noleggiante effettivo
+         * - a destra l'AMD Point (organizzazione dell'utente)
+         */
+        $hasValidLicense = $this->organizationHasValidRentalLicense($userOrganization);
+
+        /**
+         * Dati AMD Point:
+         * li valorizziamo solo quando l'organizzazione dell'utente
+         * non è il noleggiante effettivo.
+         */
+        $pointOrg = (!$hasValidLicense && $userOrganization)
+            ? [
+                'name'    => $userOrganization->name ?? '',
+                'vat'     => $userOrganization->vat ?? '',
+                'address' => $userOrganization->address_line ?? '',
+                'zip'     => $userOrganization->postal_code ?? '',
+                'city'    => $userOrganization->city ?? '',
+                'phone'   => $userOrganization->phone ?? '',
+                'email'   => $userOrganization->email ?? '',
+            ]
+            : null;
+
+        /*
+         * Dati noleggiante.
+         * Manteniamo le stesse chiavi già attese dalla Blade esistente.
+         */
+        $org = [
+            'name'    => $lessorOrganization?->name ?? '',
+            'vat'     => $lessorOrganization?->vat ?? '',
+            'address' => $lessorOrganization?->address_line ?? '',
+            'zip'     => $lessorOrganization?->postal_code ?? '',
+            'city'    => $lessorOrganization?->city ?? '',
+            'phone'   => $lessorOrganization?->phone ?? '',
+            'email'   => $lessorOrganization?->email ?? '',
+        ];
+
+        /*
+         * Dati contratto placeholder.
+         * Numero contratto volutamente vuoto come richiesto.
+         */
+        $rental = [
+            'number_label'    => '',
+            'issued_at'       => now()->format('d/m/Y'),
+            'pickup_at'       => '',
+            'pickup_location' => '',
+            'return_at'       => '',
+            'return_location' => '',
+        ];
+
+        /*
+         * Dati cliente lasciati vuoti per compilazione manuale.
+         */
+        $customer = [
+            'name'                  => '',
+            'tax_id'                => '',
+            'driver_license_number' => '',
+            'doc_id_type'           => '',
+            'doc_id_number'         => '',
+            'address'               => '',
+            'zip'                   => '',
+            'city'                  => '',
+            'province'              => '',
+            'phone'                 => '',
+            'email'                 => '',
+        ];
+
+        /*
+         * Dati veicolo lasciati vuoti per compilazione manuale.
+         */
+        $vehicle = [
+            'make'   => '',
+            'model'  => '',
+            'plate'  => '',
+            'color'  => '',
+            'vin'    => '',
+        ];
+
+        /*
+         * Pricing placeholder.
+         *
+         * Nota:
+         * la Blade oggi forza la stampa numerica della tariffa,
+         * quindi lato controller possiamo solo passare valori neutri.
+         * Per avere davvero il campo vuoto servirà un piccolo ritocco in Blade.
+         */
+        $pricing = [
+            'days'              => '',
+            'km_daily_limit'    => null,
+            'included_km_total' => '',
+            'extra_km_rate'     => '',
+            'deposit'           => '',
+        ];
+
+        /*
+         * Totali coerenti con la struttura usata dalla Blade.
+         * Anche qui, tariffa a zero solo per compatibilità del template attuale.
+         */
+        $pricing_totals = [
+            'currency'               => 'EUR',
+            'tariff_total_cents'     => 0,
+            'tariff_effective_cents' => 0,
+            'second_driver_cents'    => 0,
+            'computed_total_cents'   => 0,
+        ];
+
+        /*
+         * Coperture e franchigie volutamente vuote.
+         *
+         * Nota:
+         * la Blade oggi trasforma false in "Non inclusa", quindi per averle davvero
+         * vuote servirà una piccola modifica nel template.
+         */
+        $coverages = [
+            'kasko'          => null,
+            'furto_incendio' => null,
+            'cristalli'      => null,
+            'assistenza'     => null,
+        ];
+
+        $franchigie = [
+            'rca'             => null,
+            'kasko'           => null,
+            'furto_incendio'  => null,
+            'cristalli'       => null,
+        ];
+
+        /*
+         * Manteniamo la compatibilità col fallback della Blade.
+         */
+        $clauses = [];
+
+        /*
+         * Nessuna seconda guida nel modulo vuoto.
+         */
+        $second_driver = null;
+
+        /*
+         * Nessuna firma grafica renderizzata nel modulo di emergenza.
+         */
+        $render_signatures = false;
+        $signature_customer = null;
+        $signature_lessor = null;
+
+        /*
+         * Loghi contratto.
+         *
+         * Replichiamo la stessa logica del servizio GenerateRentalContract:
+         * - conversione file locale -> data URI
+         * - path statici in public/images
+         */
+        $logos = [
+            'amd' => $this->fileToDataUri(public_path('images/logo-amd.png')),
+            'era' => $this->fileToDataUri(public_path('images/erarent.png')),
+        ];
+
+        $viewData = [
+            'org'                => $org,
+            'rental'             => $rental,
+            'customer'           => $customer,
+            'vehicle'            => $vehicle,
+            'pricing'            => $pricing,
+            'pricing_totals'     => $pricing_totals,
+            'coverages'          => $coverages,
+            'franchigie'         => $franchigie,
+            'clauses'            => $clauses,
+            'vehicle_owner_name' => $lessorOrganization?->name ?? '',
+            'second_driver'      => $second_driver,
+            'final_amount'       => null,
+            'render_signatures'  => $render_signatures,
+            'signature_customer' => $signature_customer,
+            'signature_lessor'   => $signature_lessor,
+            'logos'              => $logos,
+            'show_dual_lessor_box' => !$hasValidLicense && !empty($pointOrg),
+            'point_org'            => $pointOrg,
+        ];
+
+        $pdf = Pdf::loadView('contracts.rental', $viewData)
+            ->setPaper('a4');
+
+        $fileName = sprintf('contratto-vuoto-%s.pdf', now()->format('Ymd_His'));
+
+        return $pdf->stream($fileName);
+    }
+
+    /**
+     * Stampa una checklist vuota di emergenza.
+     *
+     * Obiettivo:
+     * - usare la Blade checklist esistente;
+     * - non indicare pickup/return nel titolo;
+     * - lasciare i campi dati base vuoti invece di mostrare 0 o trattini.
+     */
+    public function printBlankChecklist(Request $request)
+    {
+        /** @var \App\Models\User|null $user */
+        $user = Auth::user();
+
+        /** @var \App\Models\Organization|null $organization */
+        $organization = $user?->organization;
+
+        /*
+         * Customer placeholder.
+         */
+        $customer = (object) [
+            'name'          => '',
+            'surname'       => '',
+            'business_name' => '',
+            'tax_code'      => '',
+            'vat_number'    => '',
+        ];
+
+        /*
+         * Vehicle placeholder.
+         */
+        $vehicle = (object) [
+            'brand' => '',
+            'model' => '',
+            'plate' => '',
+            'id'    => null,
+        ];
+
+        /*
+         * Rental placeholder.
+         */
+        $rental = (object) [
+            'display_number_label' => '',
+            'vehicle'              => $vehicle,
+            'customer'             => $customer,
+            'organization'         => (object) [
+                'name' => $organization?->name ?? '',
+            ],
+        ];
+
+        /*
+         * Checklist placeholder.
+         *
+         * Nota:
+         * type lo lasciamo vuoto così il titolo non mostra PICKUP/RETURN.
+         */
+        $checklist = new class($rental) {
+            /**
+             * Tipo checklist lasciato vuoto per stampa manuale.
+             *
+             * @var string
+             */
+            public $type = '';
+
+            /**
+             * Identificativo placeholder.
+             *
+             * @var string
+             */
+            public $id = '';
+
+            /**
+             * Nessuna checklist sostituita.
+             *
+             * @var int|null
+             */
+            public $replaces_checklist_id = null;
+
+            /**
+             * Rental placeholder associato.
+             *
+             * @var object
+             */
+            public $rental;
+
+            /**
+             * Costruttore.
+             *
+             * @param object $rental
+             */
+            public function __construct(object $rental)
+            {
+                $this->rental = $rental;
+            }
+
+            /**
+             * Il modulo vuoto non è mai bloccato.
+             */
+            public function isLocked(): bool
+            {
+                return false;
+            }
+        };
+
+        /*
+         * Payload placeholder.
+         *
+         * Per i dati base usiamo stringhe vuote così la Blade possa stampare campi vuoti
+         * quando andremo ad adeguarla nel punto successivo.
+         */
+        $payload = [
+            'base' => [
+                'mileage'      => '',
+                'fuel_percent' => '',
+                'cleanliness'  => '',
+            ],
+            'json' => [
+                'documents' => [
+                    'id_card'        => false,
+                    'driver_license' => false,
+                    'contract_copy'  => false,
+                ],
+                'equipment' => [
+                    'spare_wheel' => false,
+                    'jack'        => false,
+                    'triangle'    => false,
+                    'vest'        => false,
+                ],
+                'vehicle' => [
+                    'lights_ok'     => false,
+                    'horn_ok'       => false,
+                    'brakes_ok'     => false,
+                    'tires_ok'      => false,
+                    'windshield_ok' => false,
+                ],
+                'notes' => '',
+            ],
+            'damages' => [],
+        ];
+
+        $viewData = [
+            'checklist'    => $checklist,
+            'payload'      => $payload,
+            'generated_at' => now(),
+            'signatures'   => [],
+        ];
+
+        $pdf = Pdf::loadView('pdfs.checklist', $viewData)
+            ->setPaper('a4');
+
+        $fileName = sprintf('checklist-vuota-%s.pdf', now()->format('Ymd_His'));
+
+        return $pdf->stream($fileName);
+    }
+
+    /**
+     * Risolve l'organizzazione noleggiante da usare nel contratto vuoto.
+     *
+     * Regole:
+     * - organization admin => usa quella;
+     * - organization renter con licenza valida => usa quella;
+     * - organization renter senza licenza valida/scaduta => fallback a una admin organization.
+     *
+     * @param \App\Models\Organization|null $organization
+     * @return \App\Models\Organization|null
+     */
+    private function resolveBlankContractLessorOrganization(?Organization $organization): ?Organization
+    {
+        if (!$organization) {
+            return Organization::query()
+                ->where('type', 'admin')
+                ->orderBy('id')
+                ->first();
+        }
+
+        if ($organization->isAdmin()) {
+            return $organization;
+        }
+
+        $hasValidLicense = (bool) $organization->rental_license
+            && (
+                is_null($organization->rental_license_expires_at)
+                || $organization->rental_license_expires_at->isToday()
+                || $organization->rental_license_expires_at->isFuture()
+            );
+
+        if ($hasValidLicense) {
+            return $organization;
+        }
+
+        return Organization::query()
+            ->where('type', 'admin')
+            ->orderBy('id')
+            ->first();
+    }
+
+    /**
+     * Verifica se l'organizzazione possiede una licenza noleggio valida.
+     *
+     * @param \App\Models\Organization|null $organization
+     * @return bool
+     */
+    private function organizationHasValidRentalLicense(?Organization $organization): bool
+    {
+        if (!$organization) {
+            return false;
+        }
+
+        return (bool) $organization->rental_license
+            && (
+                is_null($organization->rental_license_expires_at)
+                || $organization->rental_license_expires_at->isToday()
+                || $organization->rental_license_expires_at->isFuture()
+            );
+    }
+
+    /**
+     * Converte un file locale in data URI compatibile con DomPDF.
+     *
+     * Questo approccio evita problemi di risoluzione URL/path nel rendering PDF.
+     *
+     * @param string $absolutePath
+     * @return string|null
+     */
+    private function fileToDataUri(string $absolutePath): ?string
+    {
+        /*
+         * Se il file non esiste, non mostriamo il logo.
+         */
+        if (!is_file($absolutePath)) {
+            return null;
+        }
+
+        /*
+         * Proviamo a rilevare il MIME reale del file.
+         * Fallback: image/png.
+         */
+        $mime = (function_exists('mime_content_type') ? mime_content_type($absolutePath) : null) ?: 'image/png';
+
+        /*
+         * Lettura binaria del file.
+         */
+        $bin = @file_get_contents($absolutePath);
+
+        if ($bin === false) {
+            return null;
+        }
+
+        /*
+         * Restituisce una data URI DOMPDF-friendly.
+         */
+        return 'data:' . $mime . ';base64,' . base64_encode($bin);
     }
 
     /* =========================================================

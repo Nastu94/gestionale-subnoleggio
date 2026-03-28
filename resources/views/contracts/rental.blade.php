@@ -20,13 +20,219 @@
     // NB: se non esiste, rimane array vuoto e usiamo fallback su $clauses.
     $rentalConfigClauses = config('rental.clauses', []);
     $rentalClauseSections = $rentalConfigClauses['sections'] ?? [];
+
+    /**
+     * =========================================================
+     * Helper di visualizzazione
+     * =========================================================
+     */
+
+    /**
+     * Nome noleggiante coerente tra:
+     * - intestazione iniziale
+     * - box "Noleggiante"
+     * - firma noleggiante
+     */
+    $lessorName = trim((string)($org['name'] ?? ''));
+    if ($lessorName === '') {
+        $lessorName = trim((string)($vehicle_owner_name ?? ''));
+    }
+
+    /**
+     * Numero contratto:
+     * - per il contratto vuoto resta realmente vuoto
+     * - per il contratto reale mostra il valore esistente
+     */
+    $contractNumber = trim((string)($rental['number_label'] ?? ''));
+
+    /**
+     * Data contratto.
+     */
+    $contractDate = trim((string)($rental['issued_at'] ?? now()->format('d/m/Y')));
+
+    /**
+     * Indirizzo noleggiante.
+     */
+    $orgAddressText = trim(
+        (string)($org['address'] ?? '') . ' ' .
+        (string)($org['zip'] ?? '') . ' ' .
+        (string)($org['city'] ?? '')
+    );
+
+    /**
+     * Dati AMD Point passati dalla view.
+     */
+    $pointOrgData = is_array($point_org ?? null) ? $point_org : null;
+
+    /**
+     * Indirizzo AMD Point.
+     */
+    $pointOrgAddressText = trim(
+        (string)($pointOrgData['address'] ?? '') . ' ' .
+        (string)($pointOrgData['zip'] ?? '') . ' ' .
+        (string)($pointOrgData['city'] ?? '')
+    );
+
+    /**
+     * Indirizzo cliente.
+     */
+    $customerAddressText = trim(
+        (string)($customer['address'] ?? '') . ' ' .
+        (string)($customer['zip'] ?? '') . ' ' .
+        (string)($customer['city'] ?? '') . ' ' .
+        (string)($customer['province'] ?? '')
+    );
+
+    /**
+     * Ritiro e riconsegna:
+     * mostriamo "data @ sede" solo se i pezzi sono effettivamente valorizzati.
+     */
+    $pickupAt = trim((string)($rental['pickup_at'] ?? ''));
+    $pickupLocation = trim((string)($rental['pickup_location'] ?? ''));
+    $pickupText = trim(
+        $pickupAt .
+        (($pickupAt !== '' && $pickupLocation !== '') ? ' @ ' : '') .
+        $pickupLocation
+    );
+
+    $returnAt = trim((string)($rental['return_at'] ?? ''));
+    $returnLocation = trim((string)($rental['return_location'] ?? ''));
+    $returnText = trim(
+        $returnAt .
+        (($returnAt !== '' && $returnLocation !== '') ? ' @ ' : '') .
+        $returnLocation
+    );
+
+    /**
+     * Modalità "contratto vuoto di emergenza".
+     *
+     * La rileviamo dai principali campi lasciati intenzionalmente vuoti.
+     * In questo modo la Blade continua a comportarsi bene anche per i contratti reali.
+     */
+    $isBlankEmergencyContract =
+        $contractNumber === ''
+        && trim((string)($customer['name'] ?? '')) === ''
+        && trim((string)($vehicle['make'] ?? '')) === ''
+        && trim((string)($pricing['days'] ?? '')) === '';
+
+    /**
+     * Tariffa:
+     * - contratto vuoto => campo vuoto
+     * - contratto reale => importo formattato
+     */
+    $tariffRaw = $pricing_totals['tariff_effective_cents'] ?? $pricing_totals['tariff_total_cents'] ?? null;
+    $tariffText = '';
+
+    if (!$isBlankEmergencyContract && $tariffRaw !== null && $tariffRaw !== '') {
+        $tariffText = number_format(((int) $tariffRaw) / 100, 2, ',', '.') . ' (IVA incl.)';
+    }
+
+    /**
+     * Giorni noleggio.
+     */
+    $daysText = trim((string)($pricing['days'] ?? ''));
+
+    /**
+     * Chilometraggio incluso:
+     * - contratto vuoto => vuoto
+     * - contratto reale => logica esistente
+     */
+    $includedKmText = '';
+
+    if (!$isBlankEmergencyContract) {
+        if (is_null($pricing['km_daily_limit'] ?? null)) {
+            $includedKmText = 'Illimitato.';
+        } else {
+            $includedKmText =
+                'Limite giornaliero: ' . ($pricing['km_daily_limit'] ?? '') . ' km × ' . ($pricing['days'] ?? '?') . ' giorno/i' .
+                ' = ' . ($pricing['included_km_total'] ?? '') . ' km inclusi totali.' .
+                ' Oltre tale soglia: ' . ($pricing['extra_km_rate'] ?? '') . ' €/km.';
+        }
+    }
+
+    /**
+     * Coperture e franchigie:
+     * - contratto vuoto => celle completamente vuote
+     * - contratto reale => logica esistente
+     */
+    $rcaText = '';
+    $kaskoText = '';
+    $furtoIncendioText = '';
+    $cristalliText = '';
+    $assistenzaText = '';
+    $depositText = '';
+
+    /**
+     * Helper per stampare una riga compilabile manualmente.
+     *
+     * - Se il valore esiste, mostra il valore.
+     * - Se siamo nel contratto vuoto, mostra una linea scrivibile.
+     * - Negli altri casi lascia vuoto.
+     */
+    $writeLine = function ($value = null, string $width = '180px', string $minHeight = '18px') use ($isBlankEmergencyContract): string {
+        $value = trim((string) $value);
+
+        if ($value !== '') {
+            return e($value);
+        }
+
+        if ($isBlankEmergencyContract) {
+            return '<span class="write-line" style="width: '.$width.'; min-height: '.$minHeight.';"></span>';
+        }
+
+        return '';
+    };
+
+    /**
+     * Helper per stampare un blocco compilabile manualmente.
+     *
+     * Utile nei box testuali come "Cliente".
+     */
+    $writeBlock = function ($value = null, string $minHeight = '20px') use ($isBlankEmergencyContract): string {
+        $value = trim((string) $value);
+
+        if ($value !== '') {
+            return '<div class="write-block-text" style="min-height: '.$minHeight.';">'.e($value).'</div>';
+        }
+
+        if ($isBlankEmergencyContract) {
+            return '<div class="write-block" style="min-height: '.$minHeight.';"></div>';
+        }
+
+        return '';
+    };
+
+    if (!$isBlankEmergencyContract) {
+        $rcaText = 'Inclusa (obbligatoria)';
+        if (isset($franchigie['rca']) && $franchigie['rca'] !== null && $franchigie['rca'] !== '') {
+            $rcaText .= ' — Franchigia: € ' . number_format((float) $franchigie['rca'], 2, ',', '.');
+        }
+
+        $kaskoText = !empty($coverages['kasko']) ? 'Inclusa' : 'Non inclusa';
+        if (!empty($coverages['kasko']) && isset($franchigie['kasko']) && $franchigie['kasko'] !== null && $franchigie['kasko'] !== '') {
+            $kaskoText .= ' — Franchigia: € ' . number_format((float) $franchigie['kasko'], 2, ',', '.');
+        }
+
+        $furtoIncendioText = !empty($coverages['furto_incendio']) ? 'Inclusa' : 'Non inclusa';
+        if (!empty($coverages['furto_incendio']) && isset($franchigie['furto_incendio']) && $franchigie['furto_incendio'] !== null && $franchigie['furto_incendio'] !== '') {
+            $furtoIncendioText .= ' — Franchigia: € ' . number_format((float) $franchigie['furto_incendio'], 2, ',', '.');
+        }
+
+        $cristalliText = !empty($coverages['cristalli']) ? 'Inclusa' : 'Non inclusa';
+        if (!empty($coverages['cristalli']) && isset($franchigie['cristalli']) && $franchigie['cristalli'] !== null && $franchigie['cristalli'] !== '') {
+            $cristalliText .= ' — Franchigia: € ' . number_format((float) $franchigie['cristalli'], 2, ',', '.');
+        }
+
+        $assistenzaText = !empty($coverages['assistenza']) ? 'Inclusa' : 'Non inclusa';
+        $depositText = trim((string)($pricing['deposit'] ?? ''));
+    }
 @endphp
 
 <!doctype html>
 <html lang="it">
 <head>
     <meta charset="utf-8">
-    <title>Contratto di noleggio {{ $rental['number_label'] }}</title>
+    <title>Contratto di noleggio{{ $contractNumber !== '' ? ' '.$contractNumber : '' }}</title>
     <style>
         body { font-family: DejaVu Sans, Arial, sans-serif; font-size: 12px; color: #111; }
         h1, h2 { margin: 0 0 6px; }
@@ -43,6 +249,76 @@
         .avoid-break { page-break-inside: avoid; }
         .table thead { display: table-header-group; }
         .table tr { page-break-inside: avoid; }
+        .write-line {
+            display: inline-block;
+            vertical-align: bottom;
+            border-bottom: 1px solid #999;
+        }
+
+        .write-block {
+            display: block;
+            width: 100%;
+            border-bottom: 1px solid #999;
+        }
+
+        .write-block-text {
+            display: block;
+            width: 100%;
+            min-height: 18px;
+        }
+
+        .blank-field {
+            margin-bottom: 8px;
+        }
+
+        .blank-field-label {
+            display: block;
+            margin-bottom: 2px;
+            font-weight: 700;
+        }
+        .manual-form-table {
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .manual-form-table th,
+        .manual-form-table td {
+            padding: 6px 8px;
+            vertical-align: middle;
+        }
+
+        .manual-form-table th {
+            white-space: nowrap;
+        }
+
+        .manual-blank-cell {
+            color: transparent;
+        }
+        .split-box {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        .split-box td {
+            vertical-align: top;
+            padding: 0 8px;
+        }
+
+        .split-box td:first-child {
+            padding-left: 0;
+            border-right: 1px solid #e5e5e5;
+        }
+
+        .split-box td:last-child {
+            padding-right: 0;
+        }
+
+        .split-box-title {
+            font-size: 12px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
     </style>
 </head>
 
@@ -74,42 +350,107 @@
         </table>
     </div>
 
-    <h1>Noleggiante: <strong>{{ $vehicle_owner_name }}</strong><br></h1>
+    <h1>Noleggiante: <strong>{{ $lessorName }}</strong><br></h1>
 
     <h1>Contratto di noleggio veicolo</h1>
 
-    {{-- NEW — Nome noleggiatore descrittivo --}}
     <div class="muted">
-        Numero contratto: <strong>{{ $rental['number_label'] }}</strong> —
-        Data: {{ $rental['issued_at'] ?? now()->format('d/m/Y') }}
+        @if($isBlankEmergencyContract)
+            Numero contratto: {!! $writeLine(null, '180px', '18px') !!}
+            &nbsp;&nbsp;&nbsp;
+            Data: {!! $writeLine(null, '120px', '18px') !!}
+        @else
+            Numero contratto: <strong>{{ $contractNumber }}</strong>
+            @if($contractDate !== '')
+                — Data: {{ $contractDate }}
+            @endif
+        @endif
     </div>
 
     <div class="row">
         <div class="col">
             <div class="box">
                 <h2>Noleggiante</h2>
-                <div><strong>{{ $org['name'] }}</strong></div>
-                <div>P.IVA/CF: {{ $org['vat'] ?? '—' }}</div>
-                <div>Indirizzo: {{ trim(($org['address'] ?? '') . ' ' . ($org['zip'] ?? '') . ' ' . ($org['city'] ?? '')) ?: '—' }}</div>
-                <div class="small">{{ $org['phone'] ?? '' }} {{ $org['email'] ?? '' }}</div>
+
+                @if(!empty($show_dual_lessor_box))
+                    <table class="split-box">
+                        <tr>
+                            {{-- Licenza noleggiante effettivo --}}
+                            <td style="width:50%;">
+                                <div class="split-box-title">Licenza Noleggiante</div>
+                                <div><strong>{{ $lessorName }}</strong></div>
+                                <div>P.IVA/CF: {{ $org['vat'] ?? '' }}</div>
+                                <div>Indirizzo: {{ $orgAddressText }}</div>
+                                <div class="small">{{ $org['phone'] ?? '' }} {{ $org['email'] ?? '' }}</div>
+                            </td>
+
+                            {{-- AMD Point --}}
+                            <td style="width:50%;">
+                                <div class="split-box-title">AMD Point</div>
+                                <div><strong>{{ $pointOrgData['name'] ?? '' }}</strong></div>
+                                <div>P.IVA/CF: {{ $pointOrgData['vat'] ?? '' }}</div>
+                                <div>Indirizzo: {{ $pointOrgAddressText }}</div>
+                                <div class="small">{{ $pointOrgData['phone'] ?? '' }} {{ $pointOrgData['email'] ?? '' }}</div>
+                            </td>
+                        </tr>
+                    </table>
+                @else
+                    <div><strong>{{ $lessorName }}</strong></div>
+                    <div>P.IVA/CF: {{ $org['vat'] ?? '' }}</div>
+                    <div>Indirizzo: {{ $orgAddressText }}</div>
+                    <div class="small">{{ $org['phone'] ?? '' }} {{ $org['email'] ?? '' }}</div>
+                @endif
             </div>
         </div>
         <div class="col">
             <div class="box">
                 <h2>Cliente</h2>
-                <div><strong>{{ $customer['name'] }}</strong></div>
 
-                <div>P.IVA/CF: {{ $customer['tax_id'] ?? '—' }}</div>
-                <div>Patente n.: {{ $customer['driver_license_number'] ?? '—' }}</div>
+                @if($isBlankEmergencyContract)
+                    <div class="blank-field">
+                        <span class="blank-field-label">Nome e cognome / Ragione sociale</span>
+                        {!! $writeBlock($customer['name'] ?? '', '22px') !!}
+                    </div>
 
-                <div>Doc: {{ $customer['doc_id_type'] ?? 'ID' }} {{ $customer['doc_id_number'] ?? '—' }}</div>
+                    <div class="blank-field">
+                        <span class="blank-field-label">P.IVA / CF</span>
+                        {!! $writeBlock($customer['tax_id'] ?? '', '22px') !!}
+                    </div>
 
-                <div>
-                    Indirizzo:
-                    {{ trim(($customer['address'] ?? '') . ' ' . ($customer['zip'] ?? '') . ' ' . ($customer['city'] ?? '') . ' ' . ($customer['province'] ?? '')) ?: '—' }}
-                </div>
+                    <div class="blank-field">
+                        <span class="blank-field-label">Patente n.</span>
+                        {!! $writeBlock($customer['driver_license_number'] ?? '', '22px') !!}
+                    </div>
 
-                <div class="small">{{ $customer['phone'] ?? '' }} {{ $customer['email'] ?? '' }}</div>
+                    <div class="blank-field">
+                        <span class="blank-field-label">Documento</span>
+                        {!! $writeBlock(trim((string)($customer['doc_id_type'] ?? '').' '.(string)($customer['doc_id_number'] ?? '')), '22px') !!}
+                    </div>
+
+                    <div class="blank-field">
+                        <span class="blank-field-label">Indirizzo</span>
+                        {!! $writeBlock($customerAddressText, '22px') !!}
+                    </div>
+
+                    <div class="blank-field">
+                        <span class="blank-field-label">Telefono / Email</span>
+                        {!! $writeBlock(trim((string)($customer['phone'] ?? '').' '.(string)($customer['email'] ?? '')), '22px') !!}
+                    </div>
+                @else
+                    <div><strong>{{ $customer['name'] ?? '' }}</strong></div>
+
+                    <div>P.IVA/CF: {{ $customer['tax_id'] ?? '' }}</div>
+                    <div>Patente n.: {{ $customer['driver_license_number'] ?? '' }}</div>
+
+                    <div>Doc: {{ ($customer['doc_id_type'] ?? '') }} {{ ($customer['doc_id_number'] ?? '') }}</div>
+
+                    <div>
+                        Indirizzo:
+                        {{ $customerAddressText }}
+                    </div>
+
+                    <div class="small">{{ $customer['phone'] ?? '' }} {{ $customer['email'] ?? '' }}</div>
+                @endif
             </div>
         </div>
     </div>
@@ -137,21 +478,66 @@
 
     <div class="box row avoid-break">
         <h2>Veicolo</h2>
-        <table class="table">
+
+        <table class="table {{ $isBlankEmergencyContract ? 'manual-form-table' : '' }}">
+            @if($isBlankEmergencyContract)
+                {{-- Colonne strette per le etichette, larghe per i valori --}}
+                <colgroup>
+                    <col style="width: 14%;">
+                    <col style="width: 36%;">
+                    <col style="width: 14%;">
+                    <col style="width: 36%;">
+                </colgroup>
+            @endif
+
             <tr>
-                <th>Marca</th><td>{{ $vehicle['make'] ?? '—' }}</td>
-                <th>Modello</th><td>{{ $vehicle['model'] ?? '—' }}</td>
+                <th>Marca</th>
+                <td>
+                    @if($isBlankEmergencyContract)
+                        <span class="manual-blank-cell">&nbsp;</span>
+                    @else
+                        {{ $vehicle['make'] ?? '' }}
+                    @endif
+                </td>
+
+                <th>Modello</th>
+                <td>
+                    @if($isBlankEmergencyContract)
+                        <span class="manual-blank-cell">&nbsp;</span>
+                    @else
+                        {{ $vehicle['model'] ?? '' }}
+                    @endif
+                </td>
             </tr>
+
             <tr>
-                <th>Targa</th><td>{{ $vehicle['plate'] ?? '—' }}</td>
-                <th>Colore</th><td>{{ $vehicle['color'] ?? '—' }}</td>
+                <th>Targa</th>
+                <td>
+                    @if($isBlankEmergencyContract)
+                        <span class="manual-blank-cell">&nbsp;</span>
+                    @else
+                        {{ $vehicle['plate'] ?? '' }}
+                    @endif
+                </td>
+
+                <th>Colore</th>
+                <td>
+                    @if($isBlankEmergencyContract)
+                        <span class="manual-blank-cell">&nbsp;</span>
+                    @else
+                        {{ $vehicle['color'] ?? '' }}
+                    @endif
+                </td>
             </tr>
-            @if(!empty($vehicle['vin']))
-            <tr>
-                <th>VIN</th><td colspan="3">{{ $vehicle['vin'] }}</td>
-            </tr>
+
+            @if(!$isBlankEmergencyContract && !empty($vehicle['vin']))
+                <tr>
+                    <th>VIN</th>
+                    <td colspan="3">{{ $vehicle['vin'] }}</td>
+                </tr>
             @endif
         </table>
+
         <div class="small muted" style="margin-top:6px;">
             Condizione carburante alla consegna: <strong>Pieno</strong>.
             Rilevazioni dettagliate (km, stato, accessori, danni) saranno effettuate e firmate nelle Checklist Pickup/Return.
@@ -160,33 +546,65 @@
 
     <div class="box row avoid-break">
         <h2>Dettagli noleggio</h2>
-        <table class="table">
+
+        <table class="table {{ $isBlankEmergencyContract ? 'manual-form-table' : '' }}">
+            @if($isBlankEmergencyContract)
+                {{-- Stessa logica: etichette strette, campi larghi --}}
+                <colgroup>
+                    <col style="width: 16%;">
+                    <col style="width: 34%;">
+                    <col style="width: 16%;">
+                    <col style="width: 34%;">
+                </colgroup>
+            @endif
+
             <tr>
                 <th>Ritiro</th>
-                <td>{{ $rental['pickup_at'] ?? '—' }} @ {{ $rental['pickup_location'] ?? '—' }}</td>
-                <th>Riconsegna</th>
-                <td>{{ $rental['return_at'] ?? '—' }} @ {{ $rental['return_location'] ?? '—' }}</td>
-            </tr>
-            <tr>
-                <th>Giorni</th>
-                <td>{{ $pricing['days'] ?? '—' }}</td>
-                <th>Tariffa</th>
-                @php
-                    $tariffEff = (int) ($pricing_totals['tariff_effective_cents'] ?? $pricing_totals['tariff_total_cents'] ?? 0);
-                @endphp
                 <td>
-                    {{ number_format($tariffEff / 100, 2, ',', '.') }} (IVA incl.)
+                    @if($isBlankEmergencyContract)
+                        <span class="manual-blank-cell">&nbsp;</span>
+                    @else
+                        {{ $pickupText }}
+                    @endif
+                </td>
+
+                <th>Riconsegna</th>
+                <td>
+                    @if($isBlankEmergencyContract)
+                        <span class="manual-blank-cell">&nbsp;</span>
+                    @else
+                        {{ $returnText }}
+                    @endif
                 </td>
             </tr>
+
+            <tr>
+                <th>Giorni</th>
+                <td>
+                    @if($isBlankEmergencyContract)
+                        <span class="manual-blank-cell">&nbsp;</span>
+                    @else
+                        {{ $daysText }}
+                    @endif
+                </td>
+
+                <th>Tariffa</th>
+                <td>
+                    @if($isBlankEmergencyContract)
+                        <span class="manual-blank-cell">&nbsp;</span>
+                    @else
+                        {{ $tariffText }}
+                    @endif
+                </td>
+            </tr>
+
             <tr>
                 <th>Chilometraggio incluso</th>
                 <td colspan="3">
-                    @if(is_null($pricing['km_daily_limit'] ?? null))
-                        Illimitato.
+                    @if($isBlankEmergencyContract)
+                        <span class="manual-blank-cell">&nbsp;</span>
                     @else
-                        Limite giornaliero: <strong>{{ $pricing['km_daily_limit'] }}</strong> km × {{ $pricing['days'] ?? '?' }} giorno/i
-                        = <strong>{{ $pricing['included_km_total'] ?? '—' }}</strong> km inclusi totali.
-                        Oltre tale soglia: <strong>{{ $pricing['extra_km_rate'] ?? '—' }} €/km</strong>.
+                        {{ $includedKmText }}
                     @endif
                 </td>
             </tr>
@@ -195,21 +613,34 @@
 
     <div class="box row avoid-break">
         <h2>Coperture e franchigie</h2>
-        <table class="table">
+
+        <table class="table {{ $isBlankEmergencyContract ? 'manual-form-table' : '' }}">
+            @if($isBlankEmergencyContract)
+                {{-- Anche qui privilegiamo lo spazio di scrittura --}}
+                <colgroup>
+                    <col style="width: 18%;">
+                    <col style="width: 32%;">
+                    <col style="width: 18%;">
+                    <col style="width: 32%;">
+                </colgroup>
+            @endif
+
             <tr>
                 <th>RC base</th>
                 <td>
-                    Inclusa (obbligatoria)
-                    @if(isset($franchigie['rca']))
-                        — Franchigia: € {{ number_format($franchigie['rca'], 2, ',', '.') }}
+                    @if($isBlankEmergencyContract)
+                        <span class="manual-blank-cell">&nbsp;</span>
+                    @else
+                        {{ $rcaText }}
                     @endif
                 </td>
 
                 <th>Kasko</th>
                 <td>
-                    {{ !empty($coverages['kasko']) ? 'Inclusa' : 'Non inclusa' }}
-                    @if(!empty($coverages['kasko']) && isset($franchigie['kasko']))
-                        — Franchigia: € {{ number_format($franchigie['kasko'], 2, ',', '.') }}
+                    @if($isBlankEmergencyContract)
+                        <span class="manual-blank-cell">&nbsp;</span>
+                    @else
+                        {{ $kaskoText }}
                     @endif
                 </td>
             </tr>
@@ -217,27 +648,41 @@
             <tr>
                 <th>Furto/Incendio</th>
                 <td>
-                    {{ !empty($coverages['furto_incendio']) ? 'Inclusa' : 'Non inclusa' }}
-                    @if(!empty($coverages['furto_incendio']) && isset($franchigie['furto_incendio']))
-                        — Franchigia: € {{ number_format($franchigie['furto_incendio'], 2, ',', '.') }}
+                    @if($isBlankEmergencyContract)
+                        <span class="manual-blank-cell">&nbsp;</span>
+                    @else
+                        {{ $furtoIncendioText }}
                     @endif
                 </td>
 
                 <th>Cristalli</th>
                 <td>
-                    {{ !empty($coverages['cristalli']) ? 'Inclusa' : 'Non inclusa' }}
-                    @if(!empty($coverages['cristalli']) && isset($franchigie['cristalli']))
-                        — Franchigia: € {{ number_format($franchigie['cristalli'], 2, ',', '.') }}
+                    @if($isBlankEmergencyContract)
+                        <span class="manual-blank-cell">&nbsp;</span>
+                    @else
+                        {{ $cristalliText }}
                     @endif
                 </td>
             </tr>
 
             <tr>
                 <th>Assistenza</th>
-                <td>{{ !empty($coverages['assistenza']) ? 'Inclusa' : 'Non inclusa' }}</td>
+                <td>
+                    @if($isBlankEmergencyContract)
+                        <span class="manual-blank-cell">&nbsp;</span>
+                    @else
+                        {{ $assistenzaText }}
+                    @endif
+                </td>
 
                 <th>Deposito cauzionale</th>
-                <td>{{ $pricing['deposit'] ?? '—' }}</td>
+                <td>
+                    @if($isBlankEmergencyContract)
+                        <span class="manual-blank-cell">&nbsp;</span>
+                    @else
+                        {{ $depositText }}
+                    @endif
+                </td>
             </tr>
         </table>
 
@@ -249,12 +694,9 @@
     @if($second_driver && !empty($pricing_totals))
         @php
             $cur = $pricing_totals['currency'] ?? 'EUR';
-            $money = function(int $cents) use ($cur) {
+            $money = function (int $cents) use ($cur) {
                 return number_format($cents / 100, 2, ',', '.') . ' ' . $cur;
             };
-            $tariffEff = (int) ($pricing_totals['tariff_effective_cents'] ?? $pricing_totals['tariff_total_cents'] ?? 0);
-            $tariffBase = (int) ($pricing_totals['tariff_total_cents'] ?? 0);
-            $tariffOv = $pricing_totals['tariff_override_cents'] ?? null;
         @endphp
 
         <div class="box row avoid-break">
@@ -304,7 +746,7 @@
         @endif
     </div>
 
-    {{-- NEW — FIRME SOLO ALLA FINE --}} 
+    {{-- NEW — FIRME SOLO ALLA FINE --}}
     <div class="row">
         <div class="col">
             <div class="box">
@@ -323,7 +765,7 @@
                     <div style="height:80px;border:1px dashed #bbb;margin-top:8px;"></div>
                 @endif
 
-                <div class="small">{{ $customer['name'] }}</div>
+                <div class="small">{{ $customer['name'] ?? '' }}</div>
             </div>
         </div>
 
@@ -344,7 +786,7 @@
                     <div style="height:80px;border:1px dashed #bbb;margin-top:8px;"></div>
                 @endif
 
-                <div class="small">{{ $org['name'] }}</div>
+                <div class="small">{{ $lessorName }}</div>
             </div>
         </div>
     </div>

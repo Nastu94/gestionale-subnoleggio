@@ -4,7 +4,12 @@
     $vehicle  = optional($rental)->vehicle;
     $customer = optional($rental)->customer;
 
-    // Helper
+    /**
+     * Helper per checkbox stampabili.
+     *
+     * @param mixed $v
+     * @return string
+     */
     $yes = fn ($v) => $v ? '☑' : '☐';
 
     // Etichette
@@ -18,19 +23,60 @@
     // Dati dal payload (già “congelati” in Livewire)
     $base      = $payload['base']     ?? [];
     $json      = $payload['json']     ?? [];
-    $damages   = $payload['damages']  ?? [];   // <-- già uniti (vehicle open + rental)
+    $damages   = $payload['damages']  ?? [];
     $documents = $json['documents']   ?? [];
     $equipment = $json['equipment']   ?? [];
     $vehState  = $json['vehicle']     ?? [];
     $notes     = trim((string)($json['notes'] ?? ''));
 
-    $titleType = strtoupper($checklist->type ?? ''); // PICKUP | RETURN
+    /**
+     * Tipo checklist:
+     * - per checklist reali: PICKUP | RETURN
+     * - per checklist vuota: stringa vuota
+     */
+    $titleType = strtoupper(trim((string)($checklist->type ?? '')));
+
+    /**
+     * Titolo documento:
+     * - "Checklist — PICKUP/RETURN" se il tipo è valorizzato
+     * - "Checklist" se il tipo è vuoto
+     */
+    $titleText = $titleType !== '' ? 'Checklist — '.$titleType : 'Checklist';
+
+    /**
+     * Numero noleggio e ID checklist:
+     * lasciamo vuoti i placeholder se il dato non esiste,
+     * così la stampa manuale rimane più pulita.
+     */
+    $rentalLabel = trim((string)($rental->display_number_label ?? ''));
+    $checklistId = trim((string)($checklist->id ?? ''));
+
+    /**
+     * Dati base:
+     * - se vuoti/null, non mostriamo 0, %, km o trattini
+     * - se valorizzati, manteniamo il formato originale
+     */
+    $mileage = $base['mileage'] ?? null;
+    $fuelPercent = $base['fuel_percent'] ?? null;
+    $clean = $base['cleanliness'] ?? null;
+
+    $mileageText = ($mileage === '' || $mileage === null)
+        ? ''
+        : number_format((int) $mileage, 0, ',', '.') . ' km';
+
+    $fuelPercentText = ($fuelPercent === '' || $fuelPercent === null)
+        ? ''
+        : (int) $fuelPercent . '%';
+
+    $cleanlinessText = ($clean === '' || $clean === null)
+        ? ''
+        : ($cleanlinessLabels[$clean] ?? '');
 @endphp
 <!DOCTYPE html>
 <html lang="it">
 <head>
     <meta charset="utf-8">
-    <title>Checklist — {{ $titleType }} #{{ $checklist->id }}</title>
+    <title>{{ $titleText }}@if($checklistId !== '') #{{ $checklistId }} @endif</title>
     <style>
         * { box-sizing: border-box; }
         body { font-family: DejaVu Sans, Arial, sans-serif; font-size: 12px; color: #222; margin: 24px; }
@@ -47,6 +93,7 @@
         th { background: #f5f5f5; text-align: left; }
         .right { text-align: right; } .center { text-align: center; }
         .strip { padding: 8px 10px; background: #eef; border: 1px solid #cdd; border-radius: 4px; }
+
         /* Firma box */
         .sign-block { border: 1px solid #ddd; border-radius: 4px; padding: 10px; }
         .sign-area { border: 2px dashed #bbb; height: 90px; margin-top: 8px; }
@@ -58,22 +105,37 @@
     {{-- HEADER --}}
     <div class="grid-2 mb-6">
         <div>
-            <h1>Checklist — {{ $titleType }}</h1>
+            <h1>{{ $titleText }}</h1>
             <div class="muted">
-                Noleggio {{ $rental->display_number_label ?? '—' }} · Checklist #{{ $checklist->id ?? '—' }}<br>
+                @if($rentalLabel !== '')
+                    Noleggio {{ $rentalLabel }}
+                @endif
+
+                @if($rentalLabel !== '' && $checklistId !== '')
+                    ·
+                @endif
+
+                @if($checklistId !== '')
+                    Checklist #{{ $checklistId }}
+                @endif
+
+                <br>
                 Generata il {{ optional($generated_at)->format('d/m/Y H:i') }}
             </div>
+
             @if($checklist->replaces_checklist_id)
                 <div class="mt-2 strip">
                     Questa checklist <strong>annulla e sostituisce</strong> la #{{ $checklist->replaces_checklist_id }}.
                 </div>
             @endif
+
             @if($checklist->isLocked())
                 <div class="mt-2 strip" style="background:#efe; border-color:#cfc;">
                     Stato: <strong>BLOCCATA</strong> (firma caricata).
                 </div>
             @endif
         </div>
+
         <div class="right">
             <div class="box">
                 <strong>Cliente</strong><br>
@@ -83,10 +145,24 @@
                 <div class="mt-2">
                     <strong>Veicolo</strong><br>
                     @php
+                        /**
+                        * Riga descrittiva veicolo.
+                        * - Per checklist reali mostra marca + modello se presenti.
+                        * - Per checklist vuote lascia il campo completamente vuoto.
+                        */
                         $vehLine1 = trim(($vehicle->brand ?? '').' '.($vehicle->model ?? ''));
-                        $vehLine2 = trim('Targa '.($vehicle->plate ?? '—'));
+
+                        /**
+                        * Riga targa.
+                        * - Mostra "Targa XXX" solo se la targa è valorizzata.
+                        * - Per checklist vuote non mostra nulla.
+                        */
+                        $vehLine2 = trim((string) ($vehicle->plate ?? '')) !== ''
+                            ? 'Targa '.trim((string) $vehicle->plate)
+                            : '';
                     @endphp
-                    {{ $vehLine1 !== '' ? $vehLine1 : 'ID #'.($vehicle->id ?? '—') }}<br>
+
+                    {{ $vehLine1 }}<br>
                     <span class="tiny">{{ $vehLine2 }}</span>
                 </div>
             </div>
@@ -100,16 +176,15 @@
     <table class="mb-6">
         <tr>
             <th style="width:30%">Chilometraggio</th>
-            <td>{{ number_format((int)($base['mileage'] ?? 0), 0, ',', '.') }} km</td>
+            <td>{{ $mileageText }}</td>
         </tr>
         <tr>
             <th>Carburante</th>
-            <td>{{ (int)($base['fuel_percent'] ?? 0) }}%</td>
+            <td>{{ $fuelPercentText }}</td>
         </tr>
         <tr>
             <th>Pulizia</th>
-            @php $clean = $base['cleanliness'] ?? null; @endphp
-            <td>{{ $cleanlinessLabels[$clean] ?? '—' }}</td>
+            <td>{{ $cleanlinessText }}</td>
         </tr>
     </table>
 
@@ -120,21 +195,21 @@
         <div class="strip mb-6">
             Nota: i documenti elencati si riferiscono a quelli acquisiti al momento del ritiro del veicolo.
         </div>
-    <h2 class="mb-2">Documenti</h2>
-    <table class="mb-6">
-        <tr>
-            <th style="width:60%">Carta d’identità acquisita</th>
-            <td class="center" style="width:40%">{{ $yes($documents['id_card'] ?? false) }}</td>
-        </tr>
-        <tr>
-            <th>Patente acquisita</th>
-            <td class="center">{{ $yes($documents['driver_license'] ?? false) }}</td>
-        </tr>
-        <tr>
-            <th>Copia contratto consegnata</th>
-            <td class="center">{{ $yes($documents['contract_copy'] ?? false) }}</td>
-        </tr>
-    </table>
+        <h2 class="mb-2">Documenti</h2>
+        <table class="mb-6">
+            <tr>
+                <th style="width:60%">Carta d’identità acquisita</th>
+                <td class="center" style="width:40%">{{ $yes($documents['id_card'] ?? false) }}</td>
+            </tr>
+            <tr>
+                <th>Patente acquisita</th>
+                <td class="center">{{ $yes($documents['driver_license'] ?? false) }}</td>
+            </tr>
+            <tr>
+                <th>Copia contratto consegnata</th>
+                <td class="center">{{ $yes($documents['contract_copy'] ?? false) }}</td>
+            </tr>
+        </table>
     @endif
 
     <br>

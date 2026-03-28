@@ -90,4 +90,47 @@
             </ul>
         </div>
     @endforeach
+
+    {{-- Pulsanti rapidi per la stampa dei moduli vuoti.
+        Nota: puntano a due route dedicate che creeremo nel prossimo step.
+        Li mostriamo agli utenti che possono accedere ai noleggi. --}}
+    @can('rentals.viewAny')
+        <div class="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+            <div class="px-4 py-4 space-y-2">
+                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Moduli di emergenza
+                </div>
+
+                {{-- Pulsante stampa contratto vuoto --}}
+                <a
+                    href="{{ route('contracts.blank.print') }}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="w-full inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium
+                           bg-white text-gray-700 border border-gray-300 shadow-sm
+                           hover:bg-gray-100
+                           dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700
+                           transition-colors"
+                >
+                    <i class="fas fa-file-contract"></i>
+                    <span>Stampa contratto vuoto</span>
+                </a>
+
+                {{-- Pulsante stampa checklist vuota --}}
+                <a
+                    href="{{ route('checklists.blank.print') }}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="w-full inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium
+                           bg-white text-gray-700 border border-gray-300 shadow-sm
+                           hover:bg-gray-100
+                           dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700
+                           transition-colors"
+                >
+                    <i class="fas fa-clipboard-check"></i>
+                    <span>Stampa checklist vuota</span>
+                </a>
+            </div>
+        </div>
+    @endcan
 </aside>

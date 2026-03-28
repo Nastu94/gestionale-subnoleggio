@@ -22,7 +22,7 @@ return [
             'section' => 'Anagrafiche',
             'items'   => [
                 // Elenchi → viewAny
-                ['label' => 'Clienti',  'route' => 'customers.index',  'permission' => 'customers.viewAny'],
+                ['label' => 'Clienti',  'route' => 'customers.index',  'permission' => 'manage.renters'],
                 ['label' => 'Veicoli',  'route' => 'vehicles.index',   'permission' => 'vehicles.viewAny'],
                 ['label' => 'Sedi',     'route' => 'locations.index',  'permission' => 'locations.viewAny'],
             ],
@@ -47,7 +47,7 @@ return [
             'section' => 'Report & Audit',
             'items'   => [
                 ['label' => 'Report', 'route' => 'reports.index', 'permission' => 'reports.view'],
-                ['label' => 'Audit',  'route' => 'audit.index',   'permission' => 'audit.view'],
+                //['label' => 'Audit',  'route' => 'audit.index',   'permission' => 'audit.view'],
             ],
         ],
         [
@@ -68,7 +68,7 @@ return [
             'section' => 'Anagrafiche',
             'icon'    => 'fa-address-book',
             'items'   => [
-                ['label' => 'Clienti',  'route' => 'customers.index',  'icon' => 'fa-user',          'permission' => 'customers.viewAny'],
+                ['label' => 'Clienti',  'route' => 'customers.index',  'icon' => 'fa-user',          'permission' => 'manage.renters'],
                 ['label' => 'Veicoli',  'route' => 'vehicles.index',   'icon' => 'fa-car',           'permission' => 'vehicles.viewAny'],
                 ['label' => 'Sedi',     'route' => 'locations.index',  'icon' => 'fa-location-dot',  'permission' => 'locations.viewAny'],
             ],
@@ -94,7 +94,7 @@ return [
             'icon'    => 'fa-chart-line',
             'items'   => [
                 ['label' => 'Report', 'route' => 'reports.index', 'icon' => 'fa-chart-pie',  'permission' => 'reports.view'],
-                ['label' => 'Audit',  'route' => 'audit.index',   'icon' => 'fa-clipboard',  'permission' => 'audit.view'],
+                //['label' => 'Audit',  'route' => 'audit.index',   'icon' => 'fa-clipboard',  'permission' => 'audit.view'],
             ],
         ],
         [
