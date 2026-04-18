@@ -21,7 +21,7 @@
 
             <div class="relative">
                 <input type="text" wire:model.live.debounce.400ms="q"
-                       placeholder="Cerca per riferimento o cliente…"
+                       placeholder="Cerca per id, cliente o targa…"
                        class="{{ $input }} w-72 pr-8" />
                 <div class="absolute right-2 top-1/2 -translate-y-1/2 opacity-60">🔎</div>
             </div>

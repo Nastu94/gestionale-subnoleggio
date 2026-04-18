@@ -144,23 +144,49 @@ class RentalsBoard extends Component
         return ['draft','reserved','in_use','checked_in','closed','cancelled'];
     }
 
-    /** Ricerca riutilizzabile su id e cliente */
+    /**
+     * Applica la ricerca libera ai noleggi.
+     *
+     * Campi ricercati:
+     * - id del noleggio
+     * - nome cliente
+     * - targa veicolo
+     *
+     * La ricerca viene riutilizzata da:
+     * - KPI
+     * - elenco tabellare
+     * - bacheca
+     * - planner
+     */
     protected function applySearch(Builder $q): Builder
     {
         $term = trim((string) $this->q);
+
+        // Se il termine è vuoto, non applichiamo alcun filtro.
         if ($term === '') {
             return $q;
         }
 
         return $q->where(function (Builder $sub) use ($term) {
-            // ✅ niente reference: ricerchiamo su id LIKE e nome cliente
+            // Ricerca per ID noleggio.
             $sub->where('id', 'like', "%{$term}%")
-                ->orWhereExists(function ($c) use ($term) {
-                    $c->selectRaw(1)
+
+                // Ricerca per nome cliente collegato al noleggio.
+                ->orWhereExists(function ($customerQuery) use ($term) {
+                    $customerQuery->selectRaw(1)
                         ->from('customers')
                         ->whereColumn('rentals.customer_id', 'customers.id')
                         ->whereNull('customers.deleted_at')
                         ->where('customers.name', 'like', "%{$term}%");
+                })
+
+                // Ricerca per targa del veicolo collegato al noleggio.
+                ->orWhereExists(function ($vehicleQuery) use ($term) {
+                    $vehicleQuery->selectRaw(1)
+                        ->from('vehicles')
+                        ->whereColumn('rentals.vehicle_id', 'vehicles.id')
+                        ->whereNull('vehicles.deleted_at')
+                        ->where('vehicles.plate', 'like', "%{$term}%");
                 });
         });
     }
