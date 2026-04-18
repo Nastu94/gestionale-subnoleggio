@@ -56,6 +56,7 @@ class RunAdHocReport extends Component
     public array $filters = [
         'organization_id' => null,
         'vehicle_id' => null,
+        'rental_id' => null,
         'payment_method' => null,
         'kind' => null,
         'is_commissionable' => null,
@@ -104,6 +105,23 @@ class RunAdHocReport extends Component
      * Etichetta veicolo selezionato, usata solo per la UI.
      */
     public ?string $selectedVehicleLabel = null;
+
+    /**
+     * Testo di ricerca noleggio.
+     */
+    public string $rentalSearch = '';
+
+    /**
+     * Risultati ricerca noleggio.
+     *
+     * @var array<int, array<string, mixed>>
+     */
+    public array $rentalOptions = [];
+
+    /**
+     * Etichetta noleggio selezionato, usata solo per la UI.
+     */
+    public ?string $selectedRentalLabel = null;
 
     /**
      * Righe risultato del report eseguito.
@@ -289,6 +307,7 @@ class RunAdHocReport extends Component
             'month' => 'Mese',
             'renter' => 'Renter',
             'vehicle' => 'Veicolo',
+            'rental' => 'Noleggio',
             'payment_method' => 'Metodo di pagamento',
             'kind' => 'Tipo di voce',
             'commissionable_flag' => 'Commissionabile',
@@ -306,6 +325,7 @@ class RunAdHocReport extends Component
             'month' => 'Raggruppa i risultati per mese.',
             'renter' => 'Raggruppa i risultati per renter.',
             'vehicle' => 'Raggruppa i risultati per veicolo.',
+            'rental' => 'Raggruppa i risultati per singolo noleggio.',
             'payment_method' => 'Raggruppa i risultati per metodo di pagamento.',
             'kind' => 'Raggruppa i risultati per tipo di voce economica.',
             'commissionable_flag' => 'Separa i risultati tra voci commissionabili e non commissionabili.',
@@ -322,6 +342,7 @@ class RunAdHocReport extends Component
         return [
             'organization_id' => 'Renter',
             'vehicle_id' => 'Veicolo',
+            'rental_id' => 'Noleggio',
             'payment_method' => 'Metodo di pagamento',
             'kind' => 'Tipo di voce',
             'is_commissionable' => 'Commissionabile',
@@ -338,6 +359,7 @@ class RunAdHocReport extends Component
         return [
             'organization_id' => 'Limita il report a un renter specifico.',
             'vehicle_id' => 'Limita il report a un singolo veicolo.',
+            'rental_id' => 'Limita il report a un singolo noleggio specifico.',
             'payment_method' => 'Limita il report a uno specifico metodo di pagamento.',
             'kind' => 'Limita il report a una specifica tipologia di voce economica.',
             'is_commissionable' => 'Limita il report alle sole voci che generano commissione, oppure a quelle che non la generano.',
@@ -404,6 +426,7 @@ class RunAdHocReport extends Component
             'month' => 'Mese',
             'organization_id' => 'Renter',
             'vehicle_id' => 'Veicolo',
+            'rental_id' => 'Noleggio',
             'payment_method' => 'Metodo di pagamento',
             'kind' => 'Tipo di voce',
             'is_commissionable' => 'Commissionabile',
@@ -592,6 +615,13 @@ class RunAdHocReport extends Component
             $this->selectedVehicleLabel = null;
         }
 
+        if (! in_array('rental_id', $availableFilters, true)) {
+            $this->rentalSearch = '';
+            $this->rentalOptions = [];
+            $this->selectedRentalLabel = null;
+            $this->filters['rental_id'] = null;
+        }
+
         if (! $this->canChooseChartType()) {
             $this->chart_type = 'table';
         }
@@ -645,6 +675,125 @@ class RunAdHocReport extends Component
     }
 
     /**
+     * Aggiorna la ricerca noleggio quando l'utente digita.
+     */
+    public function updatedRentalSearch(string $value): void
+    {
+        $this->filters['rental_id'] = null;
+        $this->selectedRentalLabel = null;
+
+        $this->searchRentals($value);
+    }
+
+    /**
+     * Cerca noleggi usando un termine libero.
+     *
+     * Regole:
+     * - se è selezionato un renter, limita la ricerca ai noleggi di quel renter;
+     * - se è selezionato un veicolo, limita la ricerca ai noleggi di quel veicolo.
+     *
+     * Ricerca su:
+     * - id noleggio
+     * - number_id
+     * - nome cliente
+     * - targa / marca / modello veicolo
+     */
+    protected function searchRentals(string $search): void
+    {
+        if (trim($search) === '') {
+            $this->rentalOptions = [];
+
+            return;
+        }
+
+        $term = mb_strtolower(trim($search));
+        $term = str_replace('*', '%', $term);
+        $term = preg_replace('/\s+/', '%', $term);
+        $like = "%{$term}%";
+
+        $q = Rental::query()
+            ->with([
+                'customer:id,name',
+                'vehicle:id,plate,make,model',
+            ])
+            ->whereNull('deleted_at');
+
+        if (! empty($this->filters['organization_id'])) {
+            $q->where('organization_id', (int) $this->filters['organization_id']);
+        }
+
+        if (! empty($this->filters['vehicle_id'])) {
+            $q->where('vehicle_id', (int) $this->filters['vehicle_id']);
+        }
+
+        $this->rentalOptions = $q
+            ->where(function ($query) use ($like) {
+                $query->whereRaw('CAST(rentals.id AS CHAR) LIKE ?', [$like])
+                    ->orWhereRaw('CAST(rentals.number_id AS CHAR) LIKE ?', [$like])
+                    ->orWhereHas('customer', function ($customerQuery) use ($like) {
+                        $customerQuery->whereRaw('LOWER(name) LIKE ?', [$like]);
+                    })
+                    ->orWhereHas('vehicle', function ($vehicleQuery) use ($like) {
+                        $vehicleQuery->whereRaw('LOWER(plate) LIKE ?', [$like])
+                            ->orWhereRaw('LOWER(make) LIKE ?', [$like])
+                            ->orWhereRaw('LOWER(model) LIKE ?', [$like]);
+                    });
+            })
+            ->orderByDesc('id')
+            ->limit(10)
+            ->get([
+                'id',
+                'number_id',
+                'customer_id',
+                'vehicle_id',
+                'organization_id',
+            ])
+            ->map(function (Rental $rental): array {
+                $vehicleLabel = trim(implode(' ', array_filter([
+                    optional($rental->vehicle)->plate,
+                    optional($rental->vehicle)->make,
+                    optional($rental->vehicle)->model,
+                ])));
+
+                $labelParts = array_filter([
+                    $rental->display_number_label,
+                    optional($rental->customer)->name,
+                    $vehicleLabel,
+                ]);
+
+                $label = implode(' — ', $labelParts);
+
+                return [
+                    'id' => $rental->id,
+                    'label' => $label !== '' ? $label : ('#' . $rental->id),
+                ];
+            })
+            ->toArray();
+    }
+
+    /**
+     * Seleziona un noleggio dai risultati di ricerca.
+     */
+    public function selectRental(int $rentalId, string $rentalLabel): void
+    {
+        $this->filters['rental_id'] = $rentalId;
+        $this->selectedRentalLabel = $rentalLabel;
+        $this->rentalSearch = $rentalLabel;
+        $this->rentalOptions = [];
+    }
+
+    /**
+     * Azzera il noleggio selezionato.
+     */
+    public function clearRentalSelection(): void
+    {
+        $this->filters['rental_id'] = null;
+        $this->rentalSearch = '';
+        $this->rentalOptions = [];
+        $this->selectedRentalLabel = null;
+    }
+
+    /**
      * Regole di validazione del componente.
      *
      * @return array<string, mixed>
@@ -691,6 +840,11 @@ class RunAdHocReport extends Component
                 'nullable',
                 'integer',
                 'exists:vehicles,id',
+            ],
+            'filters.rental_id' => [
+                'nullable',
+                'integer',
+                'exists:rentals,id',
             ],
             'filters.payment_method' => [
                 'nullable',
@@ -921,6 +1075,14 @@ class RunAdHocReport extends Component
      */
     public function selectVehicle(int $vehicleId, string $vehicleLabel): void
     {
+        $currentVehicleId = ! empty($this->filters['vehicle_id'])
+            ? (int) $this->filters['vehicle_id']
+            : null;
+
+        if ($currentVehicleId !== $vehicleId) {
+            $this->clearRentalSelection();
+        }
+
         $this->filters['vehicle_id'] = $vehicleId;
         $this->selectedVehicleLabel = $vehicleLabel;
         $this->vehicleSearch = $vehicleLabel;
@@ -949,6 +1111,12 @@ class RunAdHocReport extends Component
         $this->vehicleSearch = '';
         $this->vehicleOptions = [];
         $this->selectedVehicleLabel = null;
+
+        /**
+         * Il noleggio dipende anche dal contesto del veicolo:
+         * se rimuovo il veicolo, rimuovo anche l'eventuale noleggio selezionato.
+         */
+        $this->clearRentalSelection();
     }
 
     /**
@@ -968,6 +1136,7 @@ class RunAdHocReport extends Component
 
         $organizationMap = $this->loadOrganizationMap($rows);
         $vehicleMap = $this->loadVehicleMap($rows);
+        $rentalMap = $this->loadRentalMap($rows);
 
         $commissionableTotalsByGroup = $this->buildResolvedCommissionableTotalsByGroup(
             runtimePreset: $runtimePreset,
@@ -975,7 +1144,7 @@ class RunAdHocReport extends Component
         );
 
         return collect($rows)
-            ->map(function (array $row) use ($organizationMap, $vehicleMap, $commissionableTotalsByGroup): array {
+            ->map(function (array $row) use ($organizationMap, $vehicleMap, $rentalMap, $commissionableTotalsByGroup): array {
                 $groupKey = $this->buildRowGroupKey($row);
 
                 if (array_key_exists('organization_id', $row)) {
@@ -986,6 +1155,11 @@ class RunAdHocReport extends Component
                 if (array_key_exists('vehicle_id', $row)) {
                     $vehicleId = $row['vehicle_id'];
                     $row['vehicle_id'] = $vehicleMap[(int) $vehicleId] ?? $vehicleId;
+                }
+
+                if (array_key_exists('rental_id', $row)) {
+                    $rentalId = $row['rental_id'];
+                    $row['rental_id'] = $rentalMap[(int) $rentalId] ?? $rentalId;
                 }
 
                 if (array_key_exists('payment_method', $row)) {
@@ -1011,6 +1185,64 @@ class RunAdHocReport extends Component
                 return $row;
             })
             ->values()
+            ->toArray();
+    }
+
+    /**
+     * Carica etichette umane dei noleggi presenti nelle righe.
+     *
+     * Etichetta proposta:
+     * - numero noleggio
+     * - cliente
+     * - veicolo
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, string>
+     */
+    protected function loadRentalMap(array $rows): array
+    {
+        $rentalIds = collect($rows)
+            ->pluck('rental_id')
+            ->filter(fn ($value) => ! empty($value))
+            ->map(fn ($value) => (int) $value)
+            ->unique()
+            ->values();
+
+        if ($rentalIds->isEmpty()) {
+            return [];
+        }
+
+        return Rental::query()
+            ->with([
+                'customer:id,name',
+                'vehicle:id,plate,make,model',
+            ])
+            ->whereIn('id', $rentalIds->all())
+            ->get([
+                'id',
+                'number_id',
+                'customer_id',
+                'vehicle_id',
+            ])
+            ->mapWithKeys(function (Rental $rental): array {
+                $vehicleLabel = trim(implode(' ', array_filter([
+                    optional($rental->vehicle)->plate,
+                    optional($rental->vehicle)->make,
+                    optional($rental->vehicle)->model,
+                ])));
+
+                $labelParts = array_filter([
+                    $rental->display_number_label,
+                    optional($rental->customer)->name,
+                    $vehicleLabel,
+                ]);
+
+                $label = implode(' — ', $labelParts);
+
+                return [
+                    $rental->id => $label !== '' ? $label : ('#' . $rental->id),
+                ];
+            })
             ->toArray();
     }
 
@@ -1072,6 +1304,14 @@ class RunAdHocReport extends Component
                 if ($dimension === 'vehicle') {
                     $groupValues['vehicle_id'] = $rental->vehicle_id;
                 }
+
+                /**
+                 * Se il report è raggruppato per singolo noleggio,
+                 * i totali resolver devono seguire la stessa granularità.
+                 */
+                if ($dimension === 'rental') {
+                    $groupValues['rental_id'] = $rental->id;
+                }
             }
 
             $groupKey = $this->buildRowGroupKey($groupValues);
@@ -1108,7 +1348,7 @@ class RunAdHocReport extends Component
     {
         $groupParts = [];
 
-        foreach (['month', 'organization_id', 'vehicle_id'] as $key) {
+        foreach (['month', 'organization_id', 'vehicle_id', 'rental_id'] as $key) {
             if (array_key_exists($key, $values)) {
                 $groupParts[] = $key . ':' . ($values[$key] ?? '__null__');
             }
@@ -1356,12 +1596,13 @@ class RunAdHocReport extends Component
             'month' => 'month',
             'renter' => 'organization_id',
             'vehicle' => 'vehicle_id',
+            'rental' => 'rental_id',
             'payment_method' => 'payment_method',
             'kind' => 'kind',
             'commissionable_flag' => 'is_commissionable',
         ];
 
-        foreach (['month', 'renter', 'vehicle', 'payment_method', 'kind', 'commissionable_flag'] as $dimension) {
+        foreach (['month', 'renter', 'vehicle', 'rental', 'payment_method', 'kind', 'commissionable_flag'] as $dimension) {
             if (in_array($dimension, $dimensions, true) && isset($mapping[$dimension])) {
                 return $mapping[$dimension];
             }
@@ -1502,6 +1743,7 @@ class RunAdHocReport extends Component
             'month',
             'organization_id',
             'vehicle_id',
+            'rental_id',
             'payment_method',
             'kind',
             'is_commissionable',

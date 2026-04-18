@@ -207,6 +207,7 @@ class RunSavedPreset extends Component
             'month' => 'Mese',
             'renter' => 'Renter',
             'vehicle' => 'Veicolo',
+            'rental' => 'Noleggio',
             'payment_method' => 'Metodo di pagamento',
             'kind' => 'Tipo di voce',
             'commissionable_flag' => 'Commissionabile',
@@ -223,6 +224,7 @@ class RunSavedPreset extends Component
         return [
             'organization_id' => 'Renter',
             'vehicle_id' => 'Veicolo',
+            'rental_id' => 'Noleggio',
             'payment_method' => 'Metodo di pagamento',
             'kind' => 'Tipo di voce',
             'is_commissionable' => 'Commissionabile',
@@ -278,6 +280,7 @@ class RunSavedPreset extends Component
             'month' => 'Mese',
             'organization_id' => 'Renter',
             'vehicle_id' => 'Veicolo',
+            'rental_id' => 'Noleggio',
             'payment_method' => 'Metodo di pagamento',
             'kind' => 'Tipo di voce',
             'is_commissionable' => 'Commissionabile',
@@ -565,6 +568,7 @@ class RunSavedPreset extends Component
 
         $organizationMap = $this->loadOrganizationMap($rows);
         $vehicleMap = $this->loadVehicleMap($rows);
+        $rentalMap = $this->loadRentalMap($rows);
 
         /**
          * Il totale da commissionare tramite resolver ha senso solo sui report
@@ -575,7 +579,7 @@ class RunSavedPreset extends Component
             : [];
 
         return collect($rows)
-            ->map(function (array $row) use ($organizationMap, $vehicleMap, $commissionableTotalsByGroup): array {
+            ->map(function (array $row) use ($organizationMap, $vehicleMap, $rentalMap, $commissionableTotalsByGroup): array {
                 $groupKey = $this->buildRowGroupKey($row);
 
                 if (array_key_exists('organization_id', $row)) {
@@ -586,6 +590,11 @@ class RunSavedPreset extends Component
                 if (array_key_exists('vehicle_id', $row)) {
                     $vehicleId = $row['vehicle_id'];
                     $row['vehicle_id'] = $vehicleMap[(int) $vehicleId] ?? $vehicleId;
+                }
+
+                if (array_key_exists('rental_id', $row)) {
+                    $rentalId = $row['rental_id'];
+                    $row['rental_id'] = $rentalMap[(int) $rentalId] ?? $rentalId;
                 }
 
                 if (array_key_exists('payment_method', $row)) {
@@ -613,6 +622,59 @@ class RunSavedPreset extends Component
                 return $row;
             })
             ->values()
+            ->toArray();
+    }
+
+    /**
+     * Carica etichette umane dei noleggi presenti nelle righe.
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, string>
+     */
+    protected function loadRentalMap(array $rows): array
+    {
+        $rentalIds = collect($rows)
+            ->pluck('rental_id')
+            ->filter(fn ($value) => ! empty($value))
+            ->map(fn ($value) => (int) $value)
+            ->unique()
+            ->values();
+
+        if ($rentalIds->isEmpty()) {
+            return [];
+        }
+
+        return Rental::query()
+            ->with([
+                'customer:id,name',
+                'vehicle:id,plate,make,model',
+            ])
+            ->whereIn('id', $rentalIds->all())
+            ->get([
+                'id',
+                'number_id',
+                'customer_id',
+                'vehicle_id',
+            ])
+            ->mapWithKeys(function (Rental $rental): array {
+                $vehicleLabel = trim(implode(' ', array_filter([
+                    optional($rental->vehicle)->plate,
+                    optional($rental->vehicle)->make,
+                    optional($rental->vehicle)->model,
+                ])));
+
+                $labelParts = array_filter([
+                    $rental->display_number_label,
+                    optional($rental->customer)->name,
+                    $vehicleLabel,
+                ]);
+
+                $label = implode(' — ', $labelParts);
+
+                return [
+                    $rental->id => $label !== '' ? $label : ('#' . $rental->id),
+                ];
+            })
             ->toArray();
     }
 
@@ -676,9 +738,6 @@ class RunSavedPreset extends Component
              * Per il calcolo fee usiamo una data coerente col noleggio chiuso:
              * - actual_return_at se presente;
              * - altrimenti closed_at.
-             *
-             * Evitiamo così il fallback implicito a "now()",
-             * che può produrre commissioni errate o nulle.
              */
             $feeReferenceDate = $rental->actual_return_at ?: $rental->closed_at;
 
@@ -697,6 +756,14 @@ class RunSavedPreset extends Component
 
                 if ($dimension === 'vehicle') {
                     $groupValues['vehicle_id'] = $rental->vehicle_id;
+                }
+
+                /**
+                 * Se il report è raggruppato per singolo noleggio,
+                 * i totali resolver devono rispettare la stessa granularità.
+                 */
+                if ($dimension === 'rental') {
+                    $groupValues['rental_id'] = $rental->id;
                 }
             }
 
@@ -734,7 +801,7 @@ class RunSavedPreset extends Component
     {
         $groupParts = [];
 
-        foreach (['month', 'organization_id', 'vehicle_id'] as $key) {
+        foreach (['month', 'organization_id', 'vehicle_id', 'rental_id'] as $key) {
             if (array_key_exists($key, $values)) {
                 $groupParts[] = $key . ':' . ($values[$key] ?? '__null__');
             }
@@ -833,11 +900,50 @@ class RunSavedPreset extends Component
         return match ($key) {
             'organization_id' => $this->resolveOrganizationLabel((int) $value),
             'vehicle_id' => $this->resolveVehicleLabel((int) $value),
+            'rental_id' => $this->resolveRentalLabel((int) $value),
             'payment_method' => $this->humanizePaymentMethod((string) $value),
             'kind' => $this->humanizeKind((string) $value),
             'is_commissionable' => $this->humanizeBooleanValue($value),
             default => $value,
         };
+    }
+
+    /**
+     * Restituisce il nome umano di un noleggio.
+     */
+    protected function resolveRentalLabel(int $rentalId): string
+    {
+        $rental = Rental::query()
+            ->with([
+                'customer:id,name',
+                'vehicle:id,plate,make,model',
+            ])
+            ->find($rentalId, [
+                'id',
+                'number_id',
+                'customer_id',
+                'vehicle_id',
+            ]);
+
+        if (! $rental) {
+            return (string) $rentalId;
+        }
+
+        $vehicleLabel = trim(implode(' ', array_filter([
+            optional($rental->vehicle)->plate,
+            optional($rental->vehicle)->make,
+            optional($rental->vehicle)->model,
+        ])));
+
+        $labelParts = array_filter([
+            $rental->display_number_label,
+            optional($rental->customer)->name,
+            $vehicleLabel,
+        ]);
+
+        $label = implode(' — ', $labelParts);
+
+        return $label !== '' ? $label : ('#' . $rental->id);
     }
 
     /**
@@ -1161,6 +1267,7 @@ class RunSavedPreset extends Component
      * - month
      * - organization_id
      * - vehicle_id
+     * - rental_id
      * - payment_method
      * - kind
      * - is_commissionable
@@ -1173,12 +1280,13 @@ class RunSavedPreset extends Component
             'month' => 'month',
             'renter' => 'organization_id',
             'vehicle' => 'vehicle_id',
+            'rental' => 'rental_id',
             'payment_method' => 'payment_method',
             'kind' => 'kind',
             'commissionable_flag' => 'is_commissionable',
         ];
 
-        foreach (['month', 'renter', 'vehicle', 'payment_method', 'kind', 'commissionable_flag'] as $dimension) {
+        foreach (['month', 'renter', 'vehicle', 'rental', 'payment_method', 'kind', 'commissionable_flag'] as $dimension) {
             if (in_array($dimension, $dimensions, true) && isset($mapping[$dimension])) {
                 return $mapping[$dimension];
             }
@@ -1189,11 +1297,6 @@ class RunSavedPreset extends Component
 
     /**
      * Riordina le colonne della tabella risultati in un ordine più leggibile.
-     *
-     * Ordine logico:
-     * - contesto / raggruppamenti;
-     * - valori economici principali;
-     * - valori secondari / di supporto.
      *
      * @param array<int, string> $columns
      * @return array<int, string>
@@ -1207,6 +1310,7 @@ class RunSavedPreset extends Component
             'month',
             'organization_id',
             'vehicle_id',
+            'rental_id',
             'payment_method',
             'kind',
             'is_commissionable',
@@ -1233,19 +1337,12 @@ class RunSavedPreset extends Component
 
         $sorted = [];
 
-        /**
-         * Inserisce prima le colonne note nell'ordine desiderato.
-         */
         foreach ($preferredOrder as $column) {
             if (in_array($column, $columns, true)) {
                 $sorted[] = $column;
             }
         }
 
-        /**
-         * Aggiunge in coda eventuali colonne non previste,
-         * così non perdiamo nulla se in futuro ne comparirà una nuova.
-         */
         foreach ($columns as $column) {
             if (! in_array($column, $sorted, true)) {
                 $sorted[] = $column;

@@ -110,6 +110,7 @@ class ReportRunner
                     'month',
                     'renter',
                     'vehicle',
+                    'rental',
                 ],
                 'allowed_filters' => [
                     'date_from',
@@ -131,6 +132,7 @@ class ReportRunner
                     'month',
                     'renter',
                     'vehicle',
+                    'rental',
                     'payment_method',
                     'kind',
                     'commissionable_flag',
@@ -158,6 +160,7 @@ class ReportRunner
                     'month',
                     'renter',
                     'vehicle',
+                    'rental',
                     'payment_method',
                     'kind',
                     'commissionable_flag',
@@ -287,6 +290,16 @@ class ReportRunner
             $query->where('rentals.vehicle_id', $filters['vehicle_id']);
         }
 
+        /**
+         * Filtro per singolo noleggio.
+         *
+         * Usiamo sempre rentals.id perché tutti i report
+         * partono da rentals oppure fanno join con rentals.
+         */
+        if (array_key_exists('rental_id', $filters) && filled($filters['rental_id'])) {
+            $query->where('rentals.id', $filters['rental_id']);
+        }
+
         if (
             in_array($reportType, ['cash_by_payment_date', 'cash_by_closure_month'], true)
             && array_key_exists('payment_method', $filters)
@@ -323,31 +336,47 @@ class ReportRunner
         foreach ($dimensions as $dimension) {
             match ($dimension) {
                 'month' => $this->applyMonthDimension($query, $reportType),
+
                 'renter' => $this->applySimpleDimension(
                     query: $query,
                     column: 'rentals.organization_id',
                     alias: 'organization_id'
                 ),
+
                 'vehicle' => $this->applySimpleDimension(
                     query: $query,
                     column: 'rentals.vehicle_id',
                     alias: 'vehicle_id'
                 ),
+
+                /**
+                 * Nuova dimensione:
+                 * raggruppa il report per singolo noleggio.
+                 */
+                'rental' => $this->applySimpleDimension(
+                    query: $query,
+                    column: 'rentals.id',
+                    alias: 'rental_id'
+                ),
+
                 'payment_method' => $this->applySimpleDimension(
                     query: $query,
                     column: 'rental_charges.payment_method',
                     alias: 'payment_method'
                 ),
+
                 'kind' => $this->applySimpleDimension(
                     query: $query,
                     column: 'rental_charges.kind',
                     alias: 'kind'
                 ),
+
                 'commissionable_flag' => $this->applySimpleDimension(
                     query: $query,
                     column: 'rental_charges.is_commissionable',
                     alias: 'is_commissionable'
                 ),
+
                 default => throw new InvalidArgumentException("Dimensione non supportata: {$dimension}"),
             };
         }
@@ -454,6 +483,14 @@ class ReportRunner
 
         if (in_array('vehicle', $dimensions, true)) {
             $query->orderBy('vehicle_id');
+        }
+
+        /**
+         * Se il report è raggruppato per noleggio,
+         * ordiniamo anche per ID del noleggio.
+         */
+        if (in_array('rental', $dimensions, true)) {
+            $query->orderBy('rental_id');
         }
 
         if (in_array('payment_method', $dimensions, true)) {

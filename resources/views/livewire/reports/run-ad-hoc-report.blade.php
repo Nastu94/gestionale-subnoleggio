@@ -277,6 +277,61 @@
                             @enderror
                         </div>
                     @endif
+                    
+                    @if (in_array('rental_id', $availableFilters, true))
+                        <div class="relative">
+                            <label for="adhoc_rental_search" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-200">
+                                {{ $this->getFilterLabel('rental_id') }}
+                            </label>
+
+                            <div class="mb-1 text-xs text-gray-500 dark:text-gray-400">
+                                {{ $this->getFilterDescription('rental_id') }}
+                            </div>
+
+                            <input
+                                id="adhoc_rental_search"
+                                type="text"
+                                wire:model.live.debounce.300ms="rentalSearch"
+                                placeholder="Cerca noleggio per numero, cliente o targa"
+                                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900
+                                    focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200
+                                    dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:focus:border-indigo-400"
+                            >
+
+                            @if ($selectedRentalLabel && $filters['rental_id'])
+                                <div class="mt-2 flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300">
+                                    <span>Selezionato: {{ $selectedRentalLabel }}</span>
+
+                                    <button
+                                        type="button"
+                                        wire:click="clearRentalSelection"
+                                        class="font-medium hover:underline"
+                                    >
+                                        Rimuovi
+                                    </button>
+                                </div>
+                            @endif
+
+                            @if (! empty($rentalOptions))
+                                <div class="mt-2 max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+                                    @foreach ($rentalOptions as $rentalOption)
+                                        <button
+                                            type="button"
+                                            wire:key="adhoc-rental-option-{{ $rentalOption['id'] }}"
+                                            wire:click="selectRental({{ $rentalOption['id'] }}, @js($rentalOption['label']))"
+                                            class="block w-full border-b border-gray-100 px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-50 last:border-b-0 dark:border-gray-800 dark:text-gray-200 dark:hover:bg-gray-800"
+                                        >
+                                            {{ $rentalOption['label'] }}
+                                        </button>
+                                    @endforeach
+                                </div>
+                            @endif
+
+                            @error('filters.rental_id')
+                                <div class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    @endif
 
                     @if (in_array('payment_method', $availableFilters, true))
                         <div>
