@@ -746,3 +746,414 @@ Quando tocchi il codice, chiediti sempre queste tre cose:
 3. questa modifica cambia il valore documentale/economico del noleggio?
 
 Se almeno una risposta è “forse”, non è una modifica locale: è una modifica di dominio.
+
+---
+
+## 20. Approfondimento tecnico — flusso noleggi
+
+Questa sezione entra nel dettaglio del flusso noleggi così com’è implementato oggi tra route, controller, Livewire e model.
+
+### 20.1 Dove vive davvero il flusso
+
+A livello di entry point applicativo, l’area noleggi espone:
+
+- index
+- create
+- show
+- update
+- azioni di stato (`checkout`, `inuse`, `checkin`, `close`, `cancel`, `noshow`)
+- azioni economiche (`payment`, `distance-overage`)
+- checklist create
+- generazione contratto
+
+Ma il punto importante è questo:
+
+- `RentalController` espone il resource controller principale
+- `store()`, `update()` e `destroy()` nel controller risultano ancora placeholder / TODO
+- la **creazione reale della bozza** è implementata nel componente Livewire `App\Livewire\Rentals\CreateWizard`
+- la vista elenco monta `App\Livewire\Rentals\RentalsBoard`
+
+Quindi chi deve toccare il flusso non deve fermarsi al controller resource: una parte importante del comportamento effettivo vive nei componenti Livewire.
+
+### 20.2 Creazione noleggio: source of truth attuale
+
+La creazione parte dalla pagina `resources/views/pages/rentals/create.blade.php`, che monta `livewire:rentals.create-wizard`.
+
+Il wizard lavora in più step ma, a livello di dominio, i passaggi veri sono questi.
+
+#### Step 1 — Bozza noleggio
+
+Il wizard valida e salva una bozza con:
+
+- veicolo
+- sedi pickup/return
+- date pianificate
+- note
+- eventuale `final_amount_override`
+- coperture / franchigie
+
+Durante `saveDraft()`:
+
+- viene cercata l’assegnazione attiva del veicolo (`VehicleAssignment::active()`)
+- il noleggio viene sempre creato o aggiornato come `draft`
+- alla prima creazione viene allocato `number_id` tramite `RentalNumberAllocator`
+- viene denormalizzato `amount` se il pricing è risolvibile con `VehiclePricingService`
+- viene creato o confermato il record `coverage()` 1:1
+
+#### Regole forti già presenti in step 1
+
+Prima di passare avanti, il wizard applica `assertVehicleAvailability()`.
+
+Questa regola:
+
+- lavora sulle **date pianificate**, non sulle date effettive
+- cerca overlap sullo stesso `vehicle_id`
+- ignora noleggi in `cancelled` e `no_show`
+- usa la regola classica di overlap: `startA < endB && endA > startB`
+
+Questo significa che il primo presidio di disponibilità in creazione non è il planner e non è il controller, ma il wizard stesso.
+
+#### Popolamento veicoli disponibili nel wizard
+
+`loadOptions()` applica una regola diversa a seconda del ruolo:
+
+- **admin**: vede veicoli attivi **non assegnati** a nessun renter tramite `whereDoesntHave('assignments', fn($q) => $q->active())`
+- **renter**: vede solo veicoli con assegnazione attiva alla propria organizzazione
+
+Questa regola è importante perché la creazione noleggio non dipende solo dai permessi utente, ma anche dal perimetro flotta effettivamente affidato.
+
+#### Step 2 — Cliente
+
+Il wizard permette di:
+
+- selezionare un cliente esistente
+- creare o aggiornare il cliente inline
+
+Qui la logica è più ricca di quanto sembri, perché una parte del form cliente è già allineata a CARGOS:
+
+- `first_name`, `last_name`
+- `birth_place_code`
+- `police_place_code`
+- `citizenship_place_code`
+- `identity_document_type_code`
+- `identity_document_place_code`
+- `driver_license_place_code`
+
+Il salvataggio cliente fa anche mapping e derivazioni:
+
+- costruzione di `name` da `first_name + last_name`
+- mapping del tipo documento CARGOS verso `doc_id_type` interno
+- derivazione campi testuali di residenza da `police_place_code`
+- salvataggio di cittadinanza e codici CARGOS nel model cliente
+
+#### Regole forti già presenti in step 2
+
+Prima di procedere allo step successivo, il wizard impone:
+
+- cliente associato obbligatorio
+- nessun overlap per lo stesso cliente nel periodo (`assertCustomerNoOverlap()`)
+- patente valida almeno fino alla data/ora di riconsegna (`assertDriverLicenseValidThroughReturn()`)
+
+Quest’ultima è una regola di dominio concreta, non solo documentale: blocca il passaggio allo step successivo se la patente scade prima della fine del noleggio.
+
+#### Step 3 — Contratto
+
+La generazione contratto passa da `GenerateRentalContract`.
+
+Dopo la generazione:
+
+- se lo stato del rental è `draft`, viene portato a `reserved`
+- il contratto corrente viene riletto dalla collection `contract` cercando il media con `custom_properties.current === true`
+
+Quindi, nello stato attuale del progetto, la vera transizione “bozza pronta all’uso” è:
+
+`draft -> reserved` dopo generazione contratto.
+
+### 20.3 Controller noleggi: transizioni operative
+
+Il `RentalController` attuale è soprattutto il punto di ingresso delle transizioni operative e delle azioni economiche.
+
+#### Checkout
+
+`checkout()` applica queste verifiche:
+
+- esistenza checklist `pickup`
+- presenza del contratto nella collection `contract`
+- presenza firma checklist pickup
+- presenza contratto firmato nella collection `signatures`
+
+Se tutto è valido:
+
+- lo stato viene impostato direttamente a `in_use`
+- `actual_pickup_at` viene valorizzato se mancante
+
+Questo è un punto importante: nel codice commenti e route parlano ancora di `checkout`, ma il flusso effettivo **non usa più `checked_out` come stato principale**, perché il checkout porta direttamente a `in_use`.
+
+#### In use
+
+`inuse()` esiste ancora come endpoint separato e accetta transizioni da:
+
+- `draft`
+- `checked_out`
+- `reserved`
+
+Anche qui, se valido:
+
+- lo stato diventa `in_use`
+- `actual_pickup_at` viene impostato se assente
+
+Questa coesistenza indica una compatibilità con flussi precedenti o alternativi. Non va rimossa senza prima allineare board, UI e permessi.
+
+#### Check-in
+
+`checkin()` può partire solo da:
+
+- `in_use`
+- `checked_out`
+
+Verifiche applicate:
+
+- esistenza checklist `return`
+- per ogni danno con `phase in ['return', 'during']`, presenza di almeno una foto nella collection `photos`
+
+Se tutto è valido:
+
+- stato `checked_in`
+- `actual_return_at` valorizzato se mancante
+
+Questa è una regola importante da ricordare: **il danno senza foto blocca il check-in**.
+
+#### Close
+
+`close()` delega la validazione sostanziale a `CloseRentalGuard`.
+
+Regole del guard:
+
+1. il rental deve essere in stato `checked_in`
+2. deve esistere la checklist `return`
+3. se richieste, le firme devono essere presenti
+4. se richiesto, deve esistere il pagamento base
+5. se ci sono km extra, deve esistere il pagamento `distance_overage`
+6. se `closed_at` è già valorizzato e fuori grace period, lo snapshot è considerato bloccato (`snapshot_locked`)
+
+Durante la chiusura:
+
+- se l’organizzazione del rental è di tipo `renter`, viene calcolata e salvata la fee admin con `AdminFeeResolver`
+- lo stato passa a `closed`
+- vengono valorizzati `closed_at` e `closed_by`
+
+Esiste anche un override applicativo del blocco `snapshot_locked`, ma solo per chi ha `rentals.close.override`.
+
+#### Cancel / No-show
+
+`cancel()` e `noshow()` sono già convergenti dal punto di vista del dato finale:
+
+- entrambi sono consentiti solo da `draft` o `reserved`
+- entrambi salvano `status = cancelled`
+
+Questo significa che `no_show` è ormai più una nozione di flusso/permesso che uno stato finale primario persistito.
+
+### 20.4 Modello economico del noleggio
+
+Il noleggio ha due livelli economici distinti.
+
+#### Livello 1 — Totale denormalizzato sul rental
+
+Nel wizard, `amount` viene valorizzato come importo calcolato dal pricing quando possibile.
+
+Questo valore è utile, ma **non sostituisce** le righe economiche reali.
+
+#### Livello 2 — Righe economiche in `rental_charges`
+
+Le righe economiche vere vivono in `RentalCharge`.
+
+Tipi principali:
+
+- `base`
+- `distance_overage`
+- `damage`
+- `surcharge`
+- `fine`
+- `other`
+- `acconto`
+- `base+distance_overage`
+
+`storePayment()` in controller registra una riga come pagamento già contabilizzato.
+
+Regole importanti:
+
+- il `kind` è univoco per rental tra i record non soft-deleted
+- quindi, per come è scritto oggi il codice, **può esistere una sola riga per tipo** su uno stesso noleggio
+- il default di `is_commissionable` non è libero: viene impostato automaticamente per `base`, `distance_overage`, `base+distance_overage`, `acconto` solo se il rental ha `assignment_id`
+
+Questo ha una conseguenza pratica importante:
+
+se un domani serviranno più righe dello stesso tipo sullo stesso noleggio, la logica attuale di unicità andrà ripensata prima a livello applicativo e poi eventualmente a livello report.
+
+#### Flag derivati usati dalla UI
+
+Il model `Rental` espone accessor usati direttamente da UI e controller:
+
+- `has_base_payment`
+- `base_payment_at`
+- `distance_overage_km`
+- `needs_distance_overage_payment`
+- `has_distance_overage_payment`
+- `can_checkout`
+- `can_close`
+
+Questi accessor non sono cosmetici: sono parte della logica operativa del flusso.
+
+#### Calcolo km extra
+
+`distance_overage_km`:
+
+- preferisce i km letti dalle checklist (`pickupChecklist()->mileage`, `returnChecklist()->mileage`)
+- se mancano, fa fallback su `mileage_out` / `mileage_in` del rental
+- ricostruisce i km inclusi dallo snapshot contrattuale (`pricing_snapshot`)
+- se possibile usa `km_daily_limit * days`
+- in fallback legge campi legacy tipo `included_km_total`
+
+Questa parte è delicata: il kilometraggio extra non è un semplice delta tra campi del rental, ma una risoluzione composta tra checklist, rental e snapshot.
+
+### 20.5 Checklist e danni: regole reali
+
+#### Checklist
+
+Il model `RentalChecklist` è più di un contenitore dati.
+
+Gestisce:
+
+- due tipi canonici (`pickup`, `return`)
+- lock persistente (`locked_at`, `locked_by_user_id`, `locked_reason`)
+- collegamento al media firmato (`signed_media_id`)
+- ultimo PDF generato (`last_pdf_media_id`)
+- sostituzione checklist precedente (`replaces_checklist_id`)
+- activity log su create/update/delete
+
+Collection media rilevanti:
+
+- `photos`
+- `checklist_pdfs`
+- `checklist_pickup_signed`
+- `checklist_return_signed`
+- `signatures` (legacy/generica ancora mantenuta)
+
+Questo spiega perché il codice di chiusura e di `inuse()` controlla più collection possibili per la firma pickup: il flusso è stato evoluto senza eliminare del tutto la compatibilità precedente.
+
+#### Danni
+
+`RentalDamage` modella il danno emerso durante il noleggio.
+
+Campi utili al dominio:
+
+- `phase` (`pickup`, `return`, `during`)
+- `area`
+- `severity`
+- `description`
+- `estimated_cost`
+- `photos_count`
+
+Collection media:
+
+- `photos`
+
+Regola già usata nel controller:
+
+- in `checkin()`, ogni danno di fase `return` o `during` deve avere almeno una foto
+
+Quindi, quando si modifica UI o API danni, bisogna sempre preservare la sincronizzazione tra:
+
+- creazione danno
+- upload foto
+- conteggio / presenza media
+- logica di blocco del check-in
+
+### 20.6 Policy e scoping specifici dei noleggi
+
+La `RentalPolicy` segue il pattern tenant classico:
+
+- per renter: accesso solo se `rental.organization_id === user.organization_id`
+- per admin: basta il permesso
+
+Per le azioni di workflow (`checkout`, `checkin`, `close`, `cancel`, `noshow`) la policy attuale controlla soprattutto il permesso, con meno enfasi sul confronto tenant rispetto ai metodi `view/update/delete`.
+
+Questo non è automaticamente sbagliato, ma significa che il corretto scoping dipende anche dal fatto che il rental sia già stato recuperato dentro un perimetro corretto.
+
+### 20.7 Board e planner: attenzione alla divergenza dal dominio
+
+L’elenco noleggi (`resources/views/pages/rentals/index.blade.php`) monta `RentalsBoard`.
+
+In quel componente convivono:
+
+- tabella
+- kanban
+- planner mese/settimana/giorno
+- ricerca libera su id cliente e targa
+- logiche di disponibilità visiva e overbooking
+
+Punti importanti del board:
+
+- il planner usa come date “effettive” `actual_*` con fallback a `planned_*`
+- il planner è quindi più aderente al movimento reale del noleggio rispetto alla sola pianificazione
+- la creazione rapida dal planner apre il wizard già precompilato con veicolo e data/ora
+
+#### Punto di attenzione tecnico
+
+`RentalsBoard::restrictToViewer()` usa una logica di scoping che non è espressa nello stesso modo della `RentalPolicy`.
+
+Nel componente compaiono infatti riferimenti a:
+
+- `renter_id`
+- `sub_renter_id`
+- fallback su `organization_id = user.id`
+
+mentre il model `Rental` e la `RentalPolicy` ragionano soprattutto con `organization_id`.
+
+Questo non significa automaticamente che il board sia sbagliato, ma significa che questa parte va trattata come **zona sensibile**: prima di toccarla bisogna verificare la coerenza reale con schema DB e policy attuali.
+
+### 20.8 Debito tecnico e ambiguità da conoscere prima di toccare il flusso
+
+#### 1. Resource controller non completo
+
+`store()`, `update()` e `destroy()` nel `RentalController` risultano ancora TODO.
+
+Quindi il flusso vero non è centralizzato in un singolo punto applicativo.
+
+#### 2. `checked_out` è ancora vivo come compatibilità, ma non è più il centro del workflow
+
+Nel codice esistono ancora riferimenti a `checked_out` in:
+
+- controller
+- planner / board
+- transizioni permesse
+
+ma `checkout()` porta direttamente a `in_use`.
+
+Chi semplifica questa parte deve farlo in modo coerente su tutto il progetto, non solo in un metodo.
+
+#### 3. `no_show` è ancora nominato ma viene normalizzato a `cancelled`
+
+Il wizard ignora ancora `no_show` negli overlap e la route dedicata esiste, ma il dato finale salvato è `cancelled`.
+
+Questa è una legacy compatibility da tenere a mente.
+
+#### 4. `has_distance_overage_payment` merita attenzione
+
+L’accessor nel model costruisce la query combinando `where()` e `orWhere()`.
+
+Prima di toccare quella logica o riusarla in report/guard, conviene verificarne bene il grouping SQL reale, perché è il classico punto in cui una query apparentemente innocua può restituire veri positivi troppo larghi.
+
+### 20.9 Checklist operativa per sviluppatori sulla sezione noleggi
+
+Quando devi modificare qualcosa nell’area noleggi, questa è la sequenza minima consigliata:
+
+1. controlla la route effettivamente usata
+2. verifica se il comportamento vive nel controller o in Livewire
+3. controlla `RentalPolicy`
+4. controlla gli accessor del model `Rental`
+5. controlla se la modifica impatta `RentalChecklist`, `RentalDamage` o `RentalCharge`
+6. controlla se la modifica cambia il contratto o lo snapshot
+7. controlla se la modifica tocca report e fee admin
+
+Se salti uno di questi livelli, è molto facile introdurre inconsistenze silenziose.
