@@ -468,8 +468,3 @@ Le aree chiave già coperte dal dominio sono:
 - reportistica economica
 - integrazione CARGOS
 
----
-
-## Licenza
-
-Definire la licenza del progetto in base alla modalità di distribuzione del repository.
