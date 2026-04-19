@@ -1157,3 +1157,414 @@ Quando devi modificare qualcosa nell’area noleggi, questa è la sequenza minim
 7. controlla se la modifica tocca report e fee admin
 
 Se salti uno di questi livelli, è molto facile introdurre inconsistenze silenziose.
+
+---
+
+## 21. Approfondimento tecnico — contratto, media, firme e checklist firmate
+
+Questa sezione descrive la pipeline documentale del progetto. Qui il principio da tenere a mente è semplice:
+
+**un media non è solo un file allegato**. In diversi punti del codice il caricamento di un file cambia lo stato logico del dominio, congela dati economici, blocca modifiche future o innesca invii email.
+
+### 21.1 Architettura del flusso documentale
+
+I punti applicativi principali sono:
+
+- `RentalContractController@generate` per la generazione del PDF contratto
+- `GenerateRentalContract` come service reale che costruisce HTML, snapshot e media finale
+- `RentalMediaController` per upload, open e delete dei media noleggio/checklist/danni/firme
+- `MediaObserver` per l’invio mail automatico dei documenti firmati
+- `RentalDamageMediaObserver` per mantenere sincronizzato `photos_count`
+
+La logica documentale quindi è distribuita su:
+
+- controller di orchestrazione
+- service di generazione PDF
+- model con collection media dedicate
+- observer che reagiscono alla creazione dei media
+
+### 21.2 Contratto: generazione reale e snapshot congelato
+
+`RentalContractController@generate()` è un thin controller: autorizza e delega tutto a `GenerateRentalContract`.
+
+Il service `GenerateRentalContract` è la vera source of truth del contratto. Il suo comportamento reale è più ricco di quanto sembri.
+
+#### Relazioni lette dal service
+
+Prima di generare il PDF, il service carica:
+
+- `vehicle`
+- `customer`
+- `organization` del rental
+- sedi pickup/return
+- eventuale `secondDriver`
+- eventuale `coverage()`
+- eventuale `contractSnapshot()` già esistente
+
+Quindi il PDF non è un rendering “cieco” del solo `Rental`, ma un aggregato documentale che usa più relazioni.
+
+#### Snapshot pricing: freeze-once
+
+Il punto architetturale più importante è questo:
+
+- se esiste già uno snapshot in `RentalContractSnapshot`, il service lo riusa
+- se non esiste, lo costruisce dal listino attivo e lo salva una sola volta
+- da quel momento il contratto deve restare ancorato allo snapshot, non ai listini correnti
+
+Il model `RentalContractSnapshot` contiene:
+
+- `rental_id`
+- `pricing_snapshot` JSON
+- `created_by_user_id`
+
+Questo significa che il contratto è progettato per **non cambiare retroattivamente** se cambia un listino o una tariffa dopo la prima generazione.
+
+#### Contenuto reale dello snapshot
+
+Nel JSON dello snapshot vengono congelati, tra gli altri:
+
+- `pricelist_id`
+- `currency`
+- `days`
+- `tariff_total_cents`
+- `km_daily_limit`
+- `extra_km_cents`
+- `deposit_cents`
+- `second_driver_daily_cents`
+- `tariff_override_cents`
+
+Il punto delicato è `tariff_override_cents`:
+
+- è l’unico campo pensato per restare mutabile
+- deriva da `rentals.final_amount_override`
+- viene sincronizzato nello snapshot anche dopo la prima creazione tramite `syncTariffOverrideOnly()`
+
+Quindi il principio non è “snapshot totalmente immutabile”, ma piuttosto:
+
+- **freeze-once per tutti i valori strutturali di pricing**
+- **eccezione controllata per l’override tariffario**
+
+#### Totali usati nel PDF
+
+Il service distingue chiaramente tra:
+
+- tariffa listino congelata
+- eventuale override della tariffa
+- seconda guida congelata
+- totale finale effettivo
+
+Questo è importante: chi modifica il PDF o il pricing deve evitare di calcolare direttamente dal rental valori che il service sta già ricostruendo dallo snapshot.
+
+### 21.3 Contratto non firmato vs contratto firmato
+
+Il service salva il PDF in collection diverse a seconda del contesto.
+
+#### Collection usate dal Rental
+
+Sul model `Rental` sono registrate le collection:
+
+- `contract`
+- `signatures`
+- `documents`
+- `signature_customer`
+- `signature_lessor`
+
+#### Regola di salvataggio del PDF
+
+Il service sceglie la collection di destinazione così:
+
+- `contract` per il contratto base / non firmato
+- `signatures` per il contratto firmato
+
+Ogni nuova generazione versiona solo la collection di destinazione:
+
+- i media precedenti nella stessa collection vengono marcati con `current = false`
+- il nuovo media viene salvato con `current = true`
+- viene salvato anche `generated_with_signatures`
+- viene allegato `pricing_snapshot` come custom property sul media
+
+Questa scelta è importante perché consente:
+
+- storico versioni nella stessa collection
+- risoluzione del documento corrente
+- fallback legacy sul media stesso se manca la tabella snapshot
+
+#### Risoluzione del contratto corrente
+
+`GenerateRentalContract::resolveCurrentContractMedia()` preferisce:
+
+1. collection `signatures`
+2. collection `contract`
+
+E dentro ogni collection preferisce il media con `current = true`.
+
+Quindi, nel dominio applicativo, un contratto firmato corrente “vince” sempre su quello non firmato.
+
+### 21.4 Firme: cliente, noleggiante, organizzazione
+
+Il progetto gestisce più livelli di firma e non sono intercambiabili.
+
+#### Firma cliente
+
+Sul `Rental` esiste la collection `signature_customer`.
+
+È una firma grafica immagine usata nel rendering del contratto PDF. Non coincide automaticamente con il PDF firmato completo: sono due cose diverse.
+
+#### Firma noleggiante su Rental
+
+Sul `Rental` esiste anche `signature_lessor`.
+
+Questa è una firma override specifica del noleggio.
+
+#### Firma aziendale su Organization
+
+Sul model `Organization` esiste la collection single-file `signature_company`.
+
+Questa rappresenta la firma aziendale di default del noleggiante.
+
+#### Precedenza reale della firma noleggiante
+
+Il service `GenerateRentalContract` applica una precedenza esplicita:
+
+1. override sul `Rental` (`signature_lessor`)
+2. firma dell’`Organization` che funge da noleggiante effettivo
+3. fallback alla firma aziendale dell’organizzazione renter collegata al rental
+
+Quindi la firma del noleggiante non è una semplice “immagine letta dal rental”, ma una risoluzione a cascata.
+
+#### Sync Rental -> Organization
+
+Quando `RentalMediaController@storeLessorSignature()` salva una firma noleggiante sul rental, chiama anche `syncLessorSignatureToOrganization()`.
+
+Questa funzione:
+
+- copia il media su `Organization.signature_company`
+- mantiene una sola firma aziendale corrente
+
+Quindi il caricamento firma sul rental ha anche un effetto di propagazione sulla configurazione di default dell’organizzazione.
+
+### 21.5 Checklist firmate e lock persistente
+
+Questa è una delle parti più sensibili del dominio documentale.
+
+#### Collection firmate per checklist
+
+Ogni checklist usa collection firmate diverse in base al tipo:
+
+- `checklist_pickup_signed`
+- `checklist_return_signed`
+
+Resta anche la collection `signatures` per compatibilità/legacy.
+
+#### Upload del firmato
+
+`RentalMediaController@storeChecklistSigned()`:
+
+- autorizza tramite `uploadSignature`
+- rifiuta l’operazione se la checklist è già locked
+- carica PDF/immagine nella collection firmata corretta
+- imposta campi di lock persistente sul model
+
+Campi aggiornati durante il lock:
+
+- `signed_by_customer = true`
+- `signed_by_operator = true`
+- `signature_media_uuid`
+- `locked_at`
+- `locked_by_user_id`
+- `locked_reason = customer_signed_pdf`
+- `signed_media_id`
+
+Quindi il caricamento del firmato non è solo un upload: è una **transizione documentale irreversibile a livello di dominio**, salvo logiche esplicite di sostituzione future.
+
+#### Policy checklist e read-only effettivo
+
+`RentalChecklistPolicy` applica il lock a più livelli:
+
+- `update()` vietato se locked
+- `uploadPhoto()` vietato se locked
+- `uploadSignature()` vietato se locked
+- `deleteMedia()` vietato se locked
+- `generatePdf()` vietato se locked
+
+Questo significa che la sola presenza di `locked_at` rende di fatto la checklist in sola lettura applicativa.
+
+### 21.6 Danni e media collegati alla checklist
+
+I media dei danni non sono indipendenti dalla checklist.
+
+#### Regola di policy
+
+`RentalDamagePolicy` verifica la checklist della fase corrispondente (`pickup`, `return`, `during`).
+
+Se la checklist di quella fase è locked:
+
+- update danno vietato
+- upload foto vietato
+- delete media vietato
+
+#### Regola nel controller media
+
+`RentalMediaController` applica anche un ulteriore blocco operativo:
+
+- se il danno appartiene a una checklist locked, `storeDamagePhoto()` risponde `423 Locked`
+- lo stesso succede in delete media per i media dei danni
+
+Questo doppio presidio è voluto: policy + controller.
+
+#### Observer `photos_count`
+
+`RentalDamageMediaObserver` osserva il modello Media di Spatie e, quando un media `photos` viene creato o cancellato per un `RentalDamage`, ricalcola `photos_count` direttamente da DB.
+
+Quindi `photos_count` è un campo denormalizzato mantenuto in modo reattivo, non affidato alla UI.
+
+### 21.7 Upload e delete media: regole reali
+
+Il `RentalMediaController` è il punto più importante per capire cosa si può o non si può più fare una volta che un documento esiste.
+
+#### Upload contratto base
+
+`storeContract()`:
+
+- salva in `Rental.contract`
+- autorizza con `contractGenerate` + `uploadMedia`
+- non applica lock di dominio
+
+#### Upload contratto firmato
+
+`storeSignedContract()`:
+
+- salva una volta sul `Rental` in `signatures`
+- duplica il media sulla checklist pickup in `signatures`
+- quindi il contratto firmato è presente sia sul rental sia sulla checklist
+
+Questa duplicazione spiega perché alcune parti del codice controllano la firma sia sul rental sia sulla checklist pickup.
+
+#### Upload documenti generici rental
+
+`storeRentalDocument()` consente upload in collection:
+
+- `documents`
+- `id_card`
+- `driver_license`
+- `privacy`
+- `other`
+
+Qui c’è un dettaglio tecnico importante: il model `Rental` dichiara esplicitamente `documents`, ma il controller consente anche collection ulteriori. Prima di usare stabilmente queste collection in UI o conversioni, conviene verificare se il progetto le tratta ormai come convenzione consolidata o come estensione compatibile ma non ancora omogeneamente formalizzata.
+
+#### Open media
+
+`open()`:
+
+- autorizza in base al model padre del media
+- per `Rental` e `RentalChecklist` usa `view`
+- per `Organization` oggi non applica un controllo specifico ulteriore
+- restituisce inline il file se presente su disco
+- fallback su redirect URL pubblica se il disk è `public`
+
+Questo metodo è importante perché è il punto di accesso ai documenti in visualizzazione e va trattato come endpoint sensibile.
+
+#### Delete media
+
+`destroy()` applica regole forti:
+
+- media di `RentalChecklist` locked: non eliminabili
+- media firmato che ha causato il lock (`signed_media_id`): non eliminabile
+- media di `RentalDamage` collegati a checklist locked: non eliminabili
+- media di `Rental.signatures`: non eliminabili
+
+Quindi il contratto firmato e i media probatori collegati a checklist locked vengono trattati come prova documentale da non alterare.
+
+### 21.8 Observer mail: il documento firmato genera effetti esterni
+
+`MediaObserver` ascolta la creazione dei media nelle collection firmate “normalizzate”:
+
+- `checklist_pickup_signed`
+- `checklist_return_signed`
+- `signatures`
+
+Quando intercetta uno di questi media:
+
+- risale al `Rental`
+- risale al `Customer`
+- decide il subject in base alla collection
+- invia l’email a fine request
+- traccia lo stato su `media_email_deliveries` per il cliente
+- opzionalmente invia notifica best effort anche all’admin
+
+#### Perché a fine request
+
+L’observer usa `app()->terminating(...)` perché al momento del solo evento `created` il file potrebbe non essere ancora fisicamente scritto su storage.
+
+Questa è una scelta tecnica importante: evita race condition tra record media creato e file ancora non disponibile.
+
+#### Dedup e rigenerazioni
+
+L’observer distingue tra:
+
+- primo invio
+- reinvio richiesto
+- rigenerazione dello stesso documento logico con nuovo media
+
+Quindi non sta inviando mail “alla cieca a ogni upload”: ha già una logica di dedup e tracciamento per cliente.
+
+### 21.9 Interazione fra PDF, media e stato noleggio
+
+Le dipendenze reali da ricordare sono queste:
+
+- il contratto generato porta il rental da `draft` a `reserved`
+- il checkout richiede contratto presente + firme richieste
+- il check-in richiede checklist return + danni con foto
+- la chiusura può richiedere firme, pagamenti base e overage
+- il media firmato può innescare email automatiche
+- la checklist firmata blocca ulteriori modifiche e cancellazioni
+
+Quindi PDF, media e stato noleggio non sono layer indipendenti: si condizionano a vicenda.
+
+### 21.10 Debito tecnico e punti di attenzione su questa sezione
+
+#### 1. Convivenza di collection legacy e nuove
+
+Nel codice convivono:
+
+- `checklist_pickup_signed` / `checklist_return_signed`
+- `signatures` su checklist
+- `signatures` su rental
+- naming legacy normalizzati in observer
+
+Prima di ripulire queste collection bisogna mappare bene tutti i punti in cui vengono lette, non solo quelli in cui vengono scritte.
+
+#### 2. Differenza tra firma grafica e contratto firmato
+
+Non vanno confusi:
+
+- `signature_customer` / `signature_lessor` come immagini usate nel PDF
+- PDF/immagine firmata caricata in `signatures` o `checklist_*_signed`
+
+Sono due piani diversi del dominio documentale.
+
+#### 3. Collection consentite dal controller ma non tutte formalizzate nello stesso modo sul model
+
+Il controller documenti rental ammette collection aggiuntive oltre a `documents`.
+
+Prima di estendere conversioni, UI o reporting media, conviene verificare se questa flessibilità è voluta in modo definitivo.
+
+#### 4. Effetto collaterale della firma noleggiante
+
+Caricare una firma noleggiante sul rental aggiorna anche la firma aziendale di default dell’organizzazione.
+
+È utile, ma è anche un effetto collaterale forte: chi modifica questo pezzo deve essere consapevole che non sta toccando solo il rental corrente.
+
+### 21.11 Checklist operativa per sviluppatori sulla pipeline documentale
+
+Quando devi modificare contratto, media o firme, questa è la sequenza minima consigliata:
+
+1. controlla se il cambiamento tocca `GenerateRentalContract`
+2. controlla se modifica lo snapshot o solo il rendering PDF
+3. controlla la collection media coinvolta
+4. controlla se esiste un observer collegato
+5. controlla se la checklist può andare in lock
+6. controlla le policy di checklist/damage
+7. controlla se il documento viene usato come prerequisito di stato (`checkout`, `close`)
+
+Se cambi solo il punto di upload o solo la view PDF, senza fare questa verifica, rischi di rompere la pipeline documentale senza accorgertene.
