@@ -5,10 +5,10 @@ namespace App\Livewire\Reports;
 use App\Domain\Fees\AdminFeeResolver;
 use App\Models\Organization;
 use App\Models\Rental;
-use App\Models\Vehicle;
 use App\Models\ReportPreset;
+use App\Models\Vehicle;
 use App\Services\Reports\ReportRunner;
-use Illuminate\Support\Collection;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Livewire\Component;
@@ -20,7 +20,8 @@ use Livewire\Component;
  * - configurare un report "al volo";
  * - eseguirlo senza persistere nulla su database;
  * - mostrare risultati, colonne, grafico e dati arricchiti
- *   con la stessa logica della tab "run saved preset".
+ *   con la stessa logica della tab "run saved preset";
+ * - mostrare la data di chiusura quando il report è raggruppato per singolo noleggio.
  */
 class RunAdHocReport extends Component
 {
@@ -427,6 +428,7 @@ class RunAdHocReport extends Component
             'organization_id' => 'Renter',
             'vehicle_id' => 'Veicolo',
             'rental_id' => 'Noleggio',
+            'rental_closed_at' => 'Data chiusura noleggio',
             'payment_method' => 'Metodo di pagamento',
             'kind' => 'Tipo di voce',
             'is_commissionable' => 'Commissionabile',
@@ -696,7 +698,7 @@ class RunAdHocReport extends Component
      * - id noleggio
      * - number_id
      * - nome cliente
-     * - targa / marca / modello veicolo
+     * - targa / marca / modello veicolo.
      */
     protected function searchRentals(string $search): void
     {
@@ -1120,7 +1122,13 @@ class RunAdHocReport extends Component
     }
 
     /**
-     * Arricchisce le righe risultato con nomi umani e totali resolver.
+     * Arricchisce le righe risultato con nomi umani, data chiusura noleggio
+     * e totali resolver.
+     *
+     * Nota:
+     * rental_closed_at viene aggiunto qui in modo robusto quando la riga contiene
+     * rental_id. Così la tabella mostra la data anche se la query aggregata non
+     * restituisce direttamente la colonna.
      *
      * @param array<int, array<string, mixed>> $rows
      * @return array<int, array<string, mixed>>
@@ -1136,7 +1144,7 @@ class RunAdHocReport extends Component
 
         $organizationMap = $this->loadOrganizationMap($rows);
         $vehicleMap = $this->loadVehicleMap($rows);
-        $rentalMap = $this->loadRentalMap($rows);
+        $rentalMetaMap = $this->loadRentalMetaMap($rows);
 
         $commissionableTotalsByGroup = $this->buildResolvedCommissionableTotalsByGroup(
             runtimePreset: $runtimePreset,
@@ -1144,7 +1152,7 @@ class RunAdHocReport extends Component
         );
 
         return collect($rows)
-            ->map(function (array $row) use ($organizationMap, $vehicleMap, $rentalMap, $commissionableTotalsByGroup): array {
+            ->map(function (array $row) use ($organizationMap, $vehicleMap, $rentalMetaMap, $commissionableTotalsByGroup): array {
                 $groupKey = $this->buildRowGroupKey($row);
 
                 if (array_key_exists('organization_id', $row)) {
@@ -1158,8 +1166,17 @@ class RunAdHocReport extends Component
                 }
 
                 if (array_key_exists('rental_id', $row)) {
-                    $rentalId = $row['rental_id'];
-                    $row['rental_id'] = $rentalMap[(int) $rentalId] ?? $rentalId;
+                    $rentalId = (int) $row['rental_id'];
+
+                    /**
+                     * Aggiunge la data chiusura noleggio come colonna informativa.
+                     * Non fa parte del raggruppamento: serve solo alla lettura tabellare.
+                     */
+                    if (! array_key_exists('rental_closed_at', $row)) {
+                        $row['rental_closed_at'] = $rentalMetaMap[$rentalId]['closed_at'] ?? null;
+                    }
+
+                    $row['rental_id'] = $rentalMetaMap[$rentalId]['label'] ?? $row['rental_id'];
                 }
 
                 if (array_key_exists('payment_method', $row)) {
@@ -1189,17 +1206,16 @@ class RunAdHocReport extends Component
     }
 
     /**
-     * Carica etichette umane dei noleggi presenti nelle righe.
+     * Carica i dati utili dei noleggi presenti nelle righe risultato.
      *
-     * Etichetta proposta:
-     * - numero noleggio
-     * - cliente
-     * - veicolo
+     * La mappa contiene:
+     * - label leggibile del noleggio;
+     * - closed_at, usato per mostrare la data di chiusura in tabella.
      *
      * @param array<int, array<string, mixed>> $rows
-     * @return array<int, string>
+     * @return array<int, array<string, mixed>>
      */
-    protected function loadRentalMap(array $rows): array
+    protected function loadRentalMetaMap(array $rows): array
     {
         $rentalIds = collect($rows)
             ->pluck('rental_id')
@@ -1223,6 +1239,7 @@ class RunAdHocReport extends Component
                 'number_id',
                 'customer_id',
                 'vehicle_id',
+                'closed_at',
             ])
             ->mapWithKeys(function (Rental $rental): array {
                 $vehicleLabel = trim(implode(' ', array_filter([
@@ -1240,7 +1257,10 @@ class RunAdHocReport extends Component
                 $label = implode(' — ', $labelParts);
 
                 return [
-                    $rental->id => $label !== '' ? $label : ('#' . $rental->id),
+                    $rental->id => [
+                        'label' => $label !== '' ? $label : ('#' . $rental->id),
+                        'closed_at' => $rental->closed_at,
+                    ],
                 ];
             })
             ->toArray();
@@ -1275,6 +1295,10 @@ class RunAdHocReport extends Component
 
         if (! empty($filters['vehicle_id'])) {
             $rentals->where('vehicle_id', (int) $filters['vehicle_id']);
+        }
+
+        if (! empty($filters['rental_id'])) {
+            $rentals->where('id', (int) $filters['rental_id']);
         }
 
         $groupedTotals = [];
@@ -1670,6 +1694,10 @@ class RunAdHocReport extends Component
             return $this->formatMonthValue((string) $value);
         }
 
+        if ($column === 'rental_closed_at') {
+            return $this->formatDateValue($value);
+        }
+
         if (in_array($column, [
             'sum_contract_total',
             'sum_admin_fee_amount',
@@ -1732,6 +1760,24 @@ class RunAdHocReport extends Component
     }
 
     /**
+     * Formatta una data database in formato leggibile.
+     *
+     * @param mixed $value
+     */
+    protected function formatDateValue(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '—';
+        }
+
+        try {
+            return Carbon::parse($value)->format('d/m/Y');
+        } catch (\Throwable $exception) {
+            return (string) $value;
+        }
+    }
+
+    /**
      * Riordina le colonne risultati.
      *
      * @param array<int, string> $columns
@@ -1744,6 +1790,7 @@ class RunAdHocReport extends Component
             'organization_id',
             'vehicle_id',
             'rental_id',
+            'rental_closed_at',
             'payment_method',
             'kind',
             'is_commissionable',

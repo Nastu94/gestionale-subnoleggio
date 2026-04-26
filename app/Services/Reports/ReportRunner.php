@@ -350,13 +350,12 @@ class ReportRunner
                 ),
 
                 /**
-                 * Nuova dimensione:
-                 * raggruppa il report per singolo noleggio.
+                 * Dimensione noleggio:
+                 * raggruppa il report per singolo noleggio e aggiunge
+                 * anche la data di chiusura del noleggio come colonna informativa.
                  */
-                'rental' => $this->applySimpleDimension(
-                    query: $query,
-                    column: 'rentals.id',
-                    alias: 'rental_id'
+                'rental' => $this->applyRentalDimension(
+                    query: $query
                 ),
 
                 'payment_method' => $this->applySimpleDimension(
@@ -389,6 +388,25 @@ class ReportRunner
     {
         $query->addSelect(DB::raw("{$column} as {$alias}"));
         $query->groupBy($column);
+    }
+
+    /**
+     * Applica la dimensione "rental".
+     *
+     * Oltre all'ID del noleggio, aggiunge anche la data di chiusura.
+     *
+     * Nota:
+     * usiamo MAX(rentals.closed_at) perché nei report basati su rental_charges
+     * lo stesso noleggio può avere più righe economiche. La data di chiusura
+     * resta comunque una sola per noleggio, quindi MAX evita problemi SQL
+     * con GROUP BY e ONLY_FULL_GROUP_BY.
+     */
+    protected function applyRentalDimension($query): void
+    {
+        $query->addSelect(DB::raw('rentals.id as rental_id'));
+        $query->addSelect(DB::raw('MAX(rentals.closed_at) as rental_closed_at'));
+
+        $query->groupBy('rentals.id');
     }
 
     /**

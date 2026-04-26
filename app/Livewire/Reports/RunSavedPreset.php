@@ -8,6 +8,7 @@ use App\Models\Rental;
 use App\Models\ReportPreset;
 use App\Models\Vehicle;
 use App\Services\Reports\ReportRunner;
+use Illuminate\Support\Carbon;
 use InvalidArgumentException;
 use Livewire\Component;
 
@@ -18,12 +19,12 @@ use Livewire\Component;
  * - caricare l'elenco dei preset disponibili;
  * - permettere la selezione di un preset;
  * - mostrare il dettaglio del preset selezionato;
- * - raccogliere le date runtime (non salvate nel preset);
- * - eseguire il report fondendo preset + date runtime;
+ * - raccogliere le date runtime, non salvate nel preset;
+ * - eseguire il report fondendo preset e date runtime;
  * - tradurre etichette tecniche in linguaggio più umano per la UI;
- * - risolvere i nomi reali di renter/veicolo;
- * - aggiungere il totale da commissionare, calcolato col resolver,
- *   solo quando la granularità del report lo consente.
+ * - risolvere i nomi reali di renter, veicolo e noleggio;
+ * - mostrare la data di chiusura quando il report è raggruppato per singolo noleggio;
+ * - aggiungere il totale da commissionare e la commissione admin calcolati tramite resolver.
  */
 class RunSavedPreset extends Component
 {
@@ -281,6 +282,7 @@ class RunSavedPreset extends Component
             'organization_id' => 'Renter',
             'vehicle_id' => 'Veicolo',
             'rental_id' => 'Noleggio',
+            'rental_closed_at' => 'Data chiusura noleggio',
             'payment_method' => 'Metodo di pagamento',
             'kind' => 'Tipo di voce',
             'is_commissionable' => 'Commissionabile',
@@ -353,11 +355,6 @@ class RunSavedPreset extends Component
     /**
      * Determina se un preset può usare una vista grafica.
      *
-     * Regola prodotto:
-     * - se tra i raggruppamenti è presente "month",
-     *   il report può usare anche barre o linea;
-     * - altrimenti la vista effettiva resta tabella.
-     *
      * @param array<int, string> $dimensions
      */
     protected function canUseChartView(array $dimensions): bool
@@ -367,9 +364,6 @@ class RunSavedPreset extends Component
 
     /**
      * Restituisce il tipo di vista effettivo del preset.
-     *
-     * Se il preset non ha il raggruppamento per mese,
-     * la vista effettiva viene forzata a tabella.
      *
      * @param array<int, string> $dimensions
      */
@@ -442,7 +436,7 @@ class RunSavedPreset extends Component
         $filters = $reportPreset->filters ?? [];
 
         /**
-         * Le date non fanno più parte del preset salvato:
+         * Le date non fanno parte del preset salvato:
          * rimuoviamo esplicitamente eventuali valori legacy.
          */
         unset($filters['date_from'], $filters['date_to']);
@@ -551,8 +545,10 @@ class RunSavedPreset extends Component
     /**
      * Arricchisce le righe risultato con:
      * - nomi reali di renter e veicoli;
-     * - etichette umane per payment_method/kind/commissionabile;
-     * - totale da commissionare, quando il report lo consente.
+     * - etichetta umana del noleggio;
+     * - data di chiusura del noleggio quando è presente rental_id;
+     * - etichette umane per payment_method, kind e commissionabile;
+     * - totale da commissionare e commissione admin tramite resolver.
      *
      * @param array<int, array<string, mixed>> $rows
      * @return array<int, array<string, mixed>>
@@ -568,18 +564,18 @@ class RunSavedPreset extends Component
 
         $organizationMap = $this->loadOrganizationMap($rows);
         $vehicleMap = $this->loadVehicleMap($rows);
-        $rentalMap = $this->loadRentalMap($rows);
+        $rentalMetaMap = $this->loadRentalMetaMap($rows);
 
         /**
-         * Il totale da commissionare tramite resolver ha senso solo sui report
-         * basati sulla chiusura del noleggio.
+         * Il totale da commissionare tramite resolver viene calcolato
+         * con la stessa granularità delle dimensioni del report.
          */
         $commissionableTotalsByGroup = $this->shouldAppendResolvedCommissionableTotal($runtimePreset)
             ? $this->buildResolvedCommissionableTotalsByGroup($runtimePreset, $adminFeeResolver)
             : [];
 
         return collect($rows)
-            ->map(function (array $row) use ($organizationMap, $vehicleMap, $rentalMap, $commissionableTotalsByGroup): array {
+            ->map(function (array $row) use ($organizationMap, $vehicleMap, $rentalMetaMap, $commissionableTotalsByGroup): array {
                 $groupKey = $this->buildRowGroupKey($row);
 
                 if (array_key_exists('organization_id', $row)) {
@@ -593,8 +589,17 @@ class RunSavedPreset extends Component
                 }
 
                 if (array_key_exists('rental_id', $row)) {
-                    $rentalId = $row['rental_id'];
-                    $row['rental_id'] = $rentalMap[(int) $rentalId] ?? $rentalId;
+                    $rentalId = (int) $row['rental_id'];
+
+                    /**
+                     * Aggiunge la data di chiusura come colonna informativa.
+                     * È una colonna di contesto, non una nuova dimensione.
+                     */
+                    if (! array_key_exists('rental_closed_at', $row)) {
+                        $row['rental_closed_at'] = $rentalMetaMap[$rentalId]['closed_at'] ?? null;
+                    }
+
+                    $row['rental_id'] = $rentalMetaMap[$rentalId]['label'] ?? $row['rental_id'];
                 }
 
                 if (array_key_exists('payment_method', $row)) {
@@ -626,12 +631,16 @@ class RunSavedPreset extends Component
     }
 
     /**
-     * Carica etichette umane dei noleggi presenti nelle righe.
+     * Carica i dati utili dei noleggi presenti nelle righe risultato.
+     *
+     * La mappa contiene:
+     * - label leggibile del noleggio;
+     * - closed_at, usato per mostrare la data di chiusura in tabella.
      *
      * @param array<int, array<string, mixed>> $rows
-     * @return array<int, string>
+     * @return array<int, array<string, mixed>>
      */
-    protected function loadRentalMap(array $rows): array
+    protected function loadRentalMetaMap(array $rows): array
     {
         $rentalIds = collect($rows)
             ->pluck('rental_id')
@@ -655,6 +664,7 @@ class RunSavedPreset extends Component
                 'number_id',
                 'customer_id',
                 'vehicle_id',
+                'closed_at',
             ])
             ->mapWithKeys(function (Rental $rental): array {
                 $vehicleLabel = trim(implode(' ', array_filter([
@@ -672,7 +682,10 @@ class RunSavedPreset extends Component
                 $label = implode(' — ', $labelParts);
 
                 return [
-                    $rental->id => $label !== '' ? $label : ('#' . $rental->id),
+                    $rental->id => [
+                        'label' => $label !== '' ? $label : ('#' . $rental->id),
+                        'closed_at' => $rental->closed_at,
+                    ],
                 ];
             })
             ->toArray();
@@ -689,8 +702,8 @@ class RunSavedPreset extends Component
 
     /**
      * Costruisce una mappa aggregata per gruppo usando il resolver:
-     * - totale da commissionare
-     * - commissione admin
+     * - totale da commissionare;
+     * - commissione admin.
      *
      * @return array<string, array<string, float>>
      */
@@ -707,7 +720,7 @@ class RunSavedPreset extends Component
             ]);
 
         /**
-         * Applichiamo comunque il range date al mondo del noleggio,
+         * Applichiamo il range date al mondo del noleggio,
          * usando la chiusura come riferimento coerente col resolver.
          */
         $rentals->where('status', 'closed')
@@ -723,6 +736,10 @@ class RunSavedPreset extends Component
 
         if (! empty($filters['vehicle_id'])) {
             $rentals->where('vehicle_id', (int) $filters['vehicle_id']);
+        }
+
+        if (! empty($filters['rental_id'])) {
+            $rentals->where('id', (int) $filters['rental_id']);
         }
 
         $groupedTotals = [];
@@ -758,10 +775,6 @@ class RunSavedPreset extends Component
                     $groupValues['vehicle_id'] = $rental->vehicle_id;
                 }
 
-                /**
-                 * Se il report è raggruppato per singolo noleggio,
-                 * i totali resolver devono rispettare la stessa granularità.
-                 */
                 if ($dimension === 'rental') {
                     $groupValues['rental_id'] = $rental->id;
                 }
@@ -807,9 +820,6 @@ class RunSavedPreset extends Component
             }
         }
 
-        /**
-         * Nessuna dimensione selezionata: gruppo unico.
-         */
         if (empty($groupParts)) {
             return '__all__';
         }
@@ -1042,6 +1052,10 @@ class RunSavedPreset extends Component
             return $this->formatMonthValue((string) $value);
         }
 
+        if ($column === 'rental_closed_at') {
+            return $this->formatDateValue($value);
+        }
+
         if (in_array($column, [
             'sum_contract_total',
             'sum_admin_fee_amount',
@@ -1104,16 +1118,25 @@ class RunSavedPreset extends Component
     }
 
     /**
+     * Formatta una data database in formato leggibile.
+     *
+     * @param mixed $value
+     */
+    protected function formatDateValue(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '—';
+        }
+
+        try {
+            return Carbon::parse($value)->format('d/m/Y');
+        } catch (\Throwable $exception) {
+            return (string) $value;
+        }
+    }
+
+    /**
      * Prepara i dati del grafico in base al preset runtime e ai risultati ottenuti.
-     *
-     * Regole:
-     * - table: nessun grafico richiesto;
-     * - bar: serve almeno una dimensione e una metrica numerica;
-     * - line: serve almeno la dimensione "month".
-     *
-     * Il grafico mostra sempre due serie:
-     * - totale principale del report
-     * - commissione admin
      */
     protected function prepareChartData(ReportPreset $runtimePreset): void
     {
@@ -1158,9 +1181,6 @@ class RunSavedPreset extends Component
             return;
         }
 
-        /**
-         * Serie principale del grafico.
-         */
         $primaryMetricColumn = $this->resolveChartMetricColumn($metrics);
 
         if ($primaryMetricColumn === null) {
@@ -1169,10 +1189,6 @@ class RunSavedPreset extends Component
             return;
         }
 
-        /**
-         * Serie secondaria fissa: commissione admin.
-         * Deve essere disponibile in tutte le righe arricchite.
-         */
         $secondaryMetricColumn = 'resolved_admin_fee_amount';
 
         $points = collect($this->reportRows)
@@ -1218,23 +1234,10 @@ class RunSavedPreset extends Component
     /**
      * Determina la metrica principale del grafico.
      *
-     * Regola:
-     * - se è disponibile il totale da commissionare calcolato tramite resolver,
-     *   usiamo sempre quello come serie principale;
-     * - altrimenti ripieghiamo sulla prima metrica numerica compatibile.
-     *
      * @param array<int, string> $metrics
      */
     protected function resolveChartMetricColumn(array $metrics): ?string
     {
-        /**
-         * Se il totale da commissionare è presente nelle colonne arricchite,
-         * deve avere priorità assoluta nel grafico.
-         *
-         * Questo consente di confrontare sempre:
-         * - totale da commissionare
-         * - commissione admin
-         */
         if (in_array('resolved_commissionable_total', $this->reportColumns, true)) {
             return 'resolved_commissionable_total';
         }
@@ -1262,15 +1265,6 @@ class RunSavedPreset extends Component
 
     /**
      * Determina quale colonna usare come etichetta del grafico.
-     *
-     * Priorità:
-     * - month
-     * - organization_id
-     * - vehicle_id
-     * - rental_id
-     * - payment_method
-     * - kind
-     * - is_commissionable
      *
      * @param array<int, string> $dimensions
      */
@@ -1304,30 +1298,20 @@ class RunSavedPreset extends Component
     protected function sortReportColumns(array $columns): array
     {
         $preferredOrder = [
-            /**
-             * Contesto / raggruppamenti
-             */
             'month',
             'organization_id',
             'vehicle_id',
             'rental_id',
+            'rental_closed_at',
             'payment_method',
             'kind',
             'is_commissionable',
-
-            /**
-             * Valori economici principali
-             */
             'sum_contract_total',
             'sum_paid_total',
             'sum_paid_commissionable',
             'resolved_commissionable_total',
             'resolved_admin_fee_amount',
             'sum_admin_fee_amount',
-
-            /**
-             * Valori secondari
-             */
             'sum_paid_non_commissionable',
             'avg_admin_fee_percent',
             'count_rentals_closed',
