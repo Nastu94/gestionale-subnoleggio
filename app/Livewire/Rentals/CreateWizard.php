@@ -1098,7 +1098,17 @@ class CreateWizard extends Component
 
     /**
      * Verifica sovrapposizioni per lo stesso veicolo nelle date scelte.
-     * Overlap rule: A.start < B.end && A.end > B.start
+     *
+     * Regola overlap:
+     * - existing_start < selected_end
+     * - existing_end > selected_start
+     *
+     * Per le prenotazioni già presenti usiamo il periodo operativo effettivo:
+     * - actual_pickup_at se valorizzato, altrimenti planned_pickup_at
+     * - actual_return_at se valorizzato, altrimenti planned_return_at
+     *
+     * Questo evita falsi negativi quando un noleggio è partito o rientrato
+     * in date diverse da quelle pianificate.
      *
      * Esclusioni:
      * - status in ['cancelled', 'no_show'] NON blocca nuove prenotazioni.
@@ -1119,18 +1129,22 @@ class CreateWizard extends Component
 
         $exists = Rental::query()
             ->where('vehicle_id', $vehicleId)
-            ->when($this->rentalId, fn(Builder $q) => $q->where('id','!=',$this->rentalId))
-            // ✅ Ignora noleggi annullati / no-show
+            ->when($this->rentalId, fn(Builder $q) => $q->where('id', '!=', $this->rentalId))
+            // Ignora noleggi annullati / no-show.
             ->whereNotIn('status', $ignoreStatuses)
-            // Overlap interval
             ->where(function (Builder $q) use ($start, $end) {
-                $q->where('planned_pickup_at', '<', $end)
-                ->where('planned_return_at', '>', $start);
+                /**
+                 * Periodo effettivo del noleggio esistente:
+                 * se actual_* è valorizzato ha priorità, altrimenti si usa planned_*.
+                 */
+                $q->whereRaw('COALESCE(actual_pickup_at, planned_pickup_at) < ?', [$end])
+                    ->whereRaw('COALESCE(actual_return_at, planned_return_at) > ?', [$start]);
             })
             ->exists();
 
         if ($exists) {
             $this->dispatch('toast', type: 'error', message: 'Il veicolo è già prenotato per le date selezionate.');
+
             throw ValidationException::withMessages([
                 'rentalData.vehicle_id' => 'Il veicolo selezionato risulta già prenotato nelle date indicate.',
                 'rentalData.planned_return_at' => 'Intervallo non disponibile per questo veicolo.',
@@ -1140,6 +1154,10 @@ class CreateWizard extends Component
 
     /**
      * Verifica che lo stesso cliente non abbia già una prenotazione nello stesso periodo.
+     *
+     * Per le prenotazioni già presenti usiamo il periodo operativo effettivo:
+     * - actual_pickup_at se valorizzato, altrimenti planned_pickup_at
+     * - actual_return_at se valorizzato, altrimenti planned_return_at
      *
      * Esclusioni:
      * - status in ['cancelled', 'no_show'] NON blocca nuove prenotazioni.
@@ -1152,17 +1170,21 @@ class CreateWizard extends Component
 
         if (!$customerId || !$start || !$end) return;
 
-        /** Stati da ignorare per l'overlap (vedi nota nel metodo veicolo). */
+        /** Stati da ignorare per l'overlap, coerenti con il controllo veicolo. */
         $ignoreStatuses = ['cancelled', 'no_show'];
 
         $exists = Rental::query()
             ->where('customer_id', $customerId)
-            ->when($this->rentalId, fn(Builder $q) => $q->where('id','!=',$this->rentalId))
-            // ✅ Ignora noleggi annullati / no-show
+            ->when($this->rentalId, fn(Builder $q) => $q->where('id', '!=', $this->rentalId))
+            // Ignora noleggi annullati / no-show.
             ->whereNotIn('status', $ignoreStatuses)
             ->where(function (Builder $q) use ($start, $end) {
-                $q->where('planned_pickup_at', '<', $end)
-                ->where('planned_return_at', '>', $start);
+                /**
+                 * Periodo effettivo del noleggio esistente:
+                 * se actual_* è valorizzato ha priorità, altrimenti si usa planned_*.
+                 */
+                $q->whereRaw('COALESCE(actual_pickup_at, planned_pickup_at) < ?', [$end])
+                    ->whereRaw('COALESCE(actual_return_at, planned_return_at) > ?', [$start]);
             })
             ->exists();
 

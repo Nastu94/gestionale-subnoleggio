@@ -457,26 +457,42 @@ class DashboardController extends Controller
      * Risolve l'organizzazione noleggiante da usare nel contratto vuoto.
      *
      * Regole:
-     * - organization admin => usa quella;
-     * - organization renter con licenza valida => usa quella;
-     * - organization renter senza licenza valida/scaduta => fallback a una admin organization.
+     * - se l'organizzazione corrente è admin, usiamo quella;
+     * - se è renter con licenza valida e non scaduta, usiamo quella;
+     * - altrimenti fallback SEMPRE ad "AMD Mobility";
+     * - se "AMD Mobility" non esiste, fallback finale sul primo admin disponibile.
      *
      * @param \App\Models\Organization|null $organization
      * @return \App\Models\Organization|null
      */
     private function resolveBlankContractLessorOrganization(?Organization $organization): ?Organization
     {
+        /*
+         * Se non abbiamo un'organizzazione corrente,
+         * proviamo direttamente con il fallback esplicito AMD Mobility.
+         */
         if (!$organization) {
             return Organization::query()
-                ->where('type', 'admin')
-                ->orderBy('id')
-                ->first();
+                ->where('name', 'AMD Mobility')
+                ->first()
+                ?: Organization::query()
+                    ->where('type', 'admin')
+                    ->orderBy('id')
+                    ->first();
         }
 
+        /*
+         * Se l'organizzazione corrente è admin,
+         * è già il noleggiante effettivo.
+         */
         if ($organization->isAdmin()) {
             return $organization;
         }
 
+        /*
+         * Se il renter ha una licenza valida,
+         * può essere lui il noleggiante effettivo.
+         */
         $hasValidLicense = (bool) $organization->rental_license
             && (
                 is_null($organization->rental_license_expires_at)
@@ -488,10 +504,20 @@ class DashboardController extends Controller
             return $organization;
         }
 
+        /*
+         * Se il renter NON ha licenza valida,
+         * il fallback deve essere SEMPRE AMD Mobility.
+         *
+         * Solo se AMD Mobility non esiste in tabella,
+         * usiamo come ultima rete di sicurezza il primo admin disponibile.
+         */
         return Organization::query()
-            ->where('type', 'admin')
-            ->orderBy('id')
-            ->first();
+            ->where('name', 'AMD Mobility')
+            ->first()
+            ?: Organization::query()
+                ->where('type', 'admin')
+                ->orderBy('id')
+                ->first();
     }
 
     /**

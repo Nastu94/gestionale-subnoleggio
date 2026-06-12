@@ -268,31 +268,56 @@ class RentalController extends Controller
     }
 
     /**
-     * Transizione: reserved/draft → cancelled
+     * Transizione: reserved/draft → cancelled.
+     *
+     * Quando una prenotazione viene annullata prima dell'uso reale del veicolo,
+     * eventuali timestamp effettivi già valorizzati devono essere ripuliti.
+     * In questo modo il planner non userà actual_pickup_at / actual_return_at
+     * per posizionare una prenotazione che non è mai partita.
      */
     public function cancel(Request $request, Rental $rental)
     {
         $this->authorize('cancel', $rental);
 
         if (!in_array($rental->status, ['draft', 'reserved'], true)) {
-            return response()->json(['ok' => false, 'message' => 'Cancellabile solo da draft/reserved.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return response()->json([
+                'ok' => false,
+                'message' => 'Cancellabile solo da draft/reserved.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $rental->status = 'cancelled';
-        $rental->save();
+        DB::transaction(function () use ($rental) {
+            $rental->forceFill([
+                'status'           => 'cancelled',
 
-        return response()->json(['ok' => true, 'status' => $rental->status], Response::HTTP_OK);
+                /**
+                 * Prenotazione annullata prima dell'utilizzo:
+                 * gli orari effettivi non devono restare valorizzati,
+                 * altrimenti planner e controlli disponibilità useranno date sbagliate.
+                 */
+                'actual_pickup_at' => null,
+                'actual_return_at' => null,
+            ])->save();
+        });
+
+        return response()->json([
+            'ok' => true,
+            'status' => $rental->status,
+        ], Response::HTTP_OK);
     }
 
     /**
-     * Transizione: reserved/draft → cancelled (ex no_show)
-     * Nota: lo stato "no_show" viene eliminato e ricondotto a "cancelled".
+     * Transizione: reserved/draft → cancelled (ex no_show).
+     *
+     * Nota: lo stato "no_show" viene ricondotto a "cancelled".
+     * Anche in questo caso azzeriamo gli actual perché il noleggio
+     * non deve risultare iniziato o rientrato realmente.
      */
     public function noshow(Request $request, Rental $rental)
     {
         $this->authorize('noshow', $rental);
 
-        // ✅ Consenti solo dai casi “pre-uso”
+        // Consenti solo dai casi pre-uso.
         if (!in_array($rental->status, ['draft', 'reserved'], true)) {
             return response()->json([
                 'ok' => false,
@@ -300,10 +325,24 @@ class RentalController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $rental->status = 'cancelled';
-        $rental->save();
+        DB::transaction(function () use ($rental) {
+            $rental->forceFill([
+                'status'           => 'cancelled',
 
-        return response()->json(['ok' => true, 'status' => $rental->status], Response::HTTP_OK);
+                /**
+                 * No-show/annullamento prima dell'uso:
+                 * rimuoviamo eventuali timestamp operativi sporchi
+                 * per evitare che planner e availability usino date effettive non valide.
+                 */
+                'actual_pickup_at' => null,
+                'actual_return_at' => null,
+            ])->save();
+        });
+
+        return response()->json([
+            'ok' => true,
+            'status' => $rental->status,
+        ], Response::HTTP_OK);
     }
 
     /**
